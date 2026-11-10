@@ -44,3 +44,21 @@ test('corpses fall over and come to rest on the ground', async () => {
     assert.ok(Math.abs(t.tilt) > 1.0, `corpse lying down (tilt ${t.tilt.toFixed(2)})`);
   }
 });
+
+test('bodies can be removed and counted (restart leaves nothing behind)', async () => {
+  await RAPIER.init();
+  for (const R of [RAPIER, null]) {
+    const phys = await createPhysics({ RAPIER: R, heightAt: flat, half: 200 });
+    const c = phys.addCorpse({ x: 0, y: 0, z: 0 }, 0, { x: 0, y: 1, z: 1 });
+    const p = phys.addProjectile({ x: 0, y: 5, z: 0 }, { x: 0, y: 0, z: 1 }, 'stone');
+    assert.deepEqual(phys.counts(), { projectiles: 1, corpses: 1 });
+    phys.removeCorpse(c); phys.remove(p);
+    assert.deepEqual(phys.counts(), { projectiles: 0, corpses: 0 });
+  }
+});
+
+test('withTimeout rejects a promise that never settles', async () => {
+  const { withTimeout } = await import('../src/physics.js');
+  await assert.rejects(withTimeout(new Promise(() => {}), 50), /timeout/);
+  assert.equal(await withTimeout(Promise.resolve(7), 50), 7);
+});

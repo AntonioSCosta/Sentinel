@@ -6,6 +6,7 @@ import { decide, REACH } from './ai.js';
 import { loadMaterials, terrainMaterial } from './materials.js';
 import { createPhysics } from './physics.js';
 import { createRender } from './render.js';
+import { withTimeout } from './physics.js';
 import { resolveQuality } from './quality.js';
 
 /**
@@ -455,7 +456,8 @@ const keys = {}; let mouseL = false, mouseR = false;
 
 function resetWorld() {
   // clear dynamic objects
-  for (const e of enemies) scene.remove(e.m.root);
+  for (const e of enemies) { scene.remove(e.m.root); if (e.corpse) phys.removeCorpse(e.corpse); }
+  for (const p of projectiles) phys.remove(p.pid);
   for (const p of projectiles) scene.remove(p.mesh);
   for (const p of pickups) scene.remove(p.mesh);
   enemies = []; projectiles = []; pickups = [];
@@ -584,8 +586,10 @@ window.addEventListener('contextmenu', e => e.preventDefault());
 window.addEventListener('wheel', e => { if (state === 'play') selectW((P.w + (e.deltaY > 0 ? 1 : 2)) % 3); }, { passive: true });
 function lock() { try { const r = cv.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (_) {} }
 document.addEventListener('pointerlockchange', () => {
-  if (document.pointerLockElement !== cv && state === 'play') pauseGame();
+  if (document.pointerLockElement === cv) { if (resumePending && state === 'pause') finishResume(); }
+  else if (state === 'play') pauseGame();
 });
+document.addEventListener('pointerlockerror', lockRefused);
 function selectW(w) { if (w === P.w) return; P.w = w; P.swing = 0; P.charging = false; C.feint(P.f); C.endBlock(P.f); P.throwT = 0; P.cd = Math.max(P.cd, .3); updateHUDWeapon(); }
 
 /* =========================================================
@@ -863,7 +867,8 @@ function updateEnemies(dt) {
     if (e.dead) {
       e.deadT += dt;
       if (phys.ok && e.corpse) {
-        if (e.deadT < 6) { const t = phys.getTransform(e.corpse); r.quaternion.set(t.q.x, t.q.y, t.q.z, t.q.w); r.position.set(0, -.9, 0).applyQuaternion(r.quaternion).add(V(t.p.x, t.p.y, t.p.z)); }
+        if (e.deadT >= 6) { phys.removeCorpse(e.corpse); e.corpse = null; } // settled: freeze the pose, free the body
+        else { const t = phys.getTransform(e.corpse); r.quaternion.set(t.q.x, t.q.y, t.q.z, t.q.w); r.position.set(0, -.9, 0).applyQuaternion(r.quaternion).add(V(t.p.x, t.p.y, t.p.z)); }
       } else if (e.deadT < 1) { r.rotation.x = -Math.PI / 2 * smooth(0, .7, e.deadT); r.position.y = e.pos.y + .15 * smooth(0, .7, e.deadT); }
       for (const m of e.m.mats) m.emissive.setRGB(0, 0, 0);
       continue;
@@ -1190,7 +1195,16 @@ function releaseAll() {
   P.prevL = false; P.charging = false; C.feint(P.f); C.endBlock(P.f);
 }
 function pauseGame() { releaseAll(); state = 'pause'; $('pauseobj').textContent = $('objt').textContent; $('sens2').value = $('sens').value; $('pause').classList.remove('hidden'); }
-function resume() { state = 'play'; $('pause').classList.add('hidden'); releaseAll(); lock(); }
+// Resume only once the browser has actually granted pointer lock (Chrome refuses it for ~1 s after Esc).
+let resumePending = false;
+function finishResume() { resumePending = false; state = 'play'; $('pause').classList.add('hidden'); $('pausehint').textContent = ''; releaseAll(); }
+function lockRefused() { if (state === 'pause') $('pausehint').textContent = 'O browser ainda não deixou prender o rato. Espera um segundo e clica em CONTINUAR outra vez.'; }
+function resume() {
+  releaseAll();
+  if (!cv.requestPointerLock) { finishResume(); return; } // no pointer lock support (tests)
+  resumePending = true;
+  try { const r = cv.requestPointerLock(); if (r && r.catch) r.catch(lockRefused); } catch (_) { lockRefused(); }
+}
 function endScreen(kicker, title, text) {
   try { document.exitPointerLock && document.exitPointerLock(); } catch (_) {}
   $('endk').textContent = kicker; $('endt').textContent = title; $('endp').textContent = text;
@@ -1240,13 +1254,14 @@ for (const b of document.querySelectorAll('[data-q]')) {
 }
 setListener(camera);
 resetWorld();
+$('start').disabled = false; $('start').textContent = 'COMEÇAR';
 return {
   start: d => { if (d != null) diff = d; startGame(); }, step, render: () => R.render(), setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
   P, supplyTents, heightAt, CAMP, scene, camera,
   get enemies() { return enemies; }, get mission() { return mission; }, get state() { return state; },
   get projectiles() { return projectiles; }, get pickups() { return pickups; },
   input: { mouse: (l, r) => { mouseL = l; mouseR = r; }, mouseMove: (dx, dy) => { if (P.charging) { P.acc.x += dx; P.acc.y += dy; } } },
-  physicsOk: phys.ok, spawnEnemyJavelin, vm: { stuckVisible: () => STUCK.filter(m => m.visible).length },
+  physicsOk: phys.ok, physCounts: () => phys.counts(), V3: THREE.Vector3, damageEnemyForTest: (e, d) => damageEnemy(e, d, false, e.pos.clone()), spawnEnemyJavelin, vm: { stuckVisible: () => STUCK.filter(m => m.visible).length },
 };
 }
 
@@ -1256,7 +1271,7 @@ export async function boot() {
   const canvas = document.getElementById('gl');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   let rapier = null;
-  try { rapier = (await import('https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.0/+esm')).default; await rapier.init(); }
+  try { rapier = await withTimeout((async () => { const R = (await import('https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.0/+esm')).default; await R.init(); return R; })(), 8000); }
   catch (err) { console.warn('Rapier unavailable, using simple physics', err); rapier = null; }
   renderer.useLegacyLights = true;
   const game = await createGame({ THREE, renderer, canvas, document, window, rapier, loader: new THREE.TextureLoader(), quality: (() => { try { return window.localStorage.getItem('viriato.quality') || 'medium'; } catch (_) { return 'medium'; } })() });

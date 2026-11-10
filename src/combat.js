@@ -7,6 +7,7 @@ export const RECOVERY = { up: .55, left: .4, right: .4, thrust: .45 }; // lock-o
 export const DMG = { up: 1.3, left: 1, right: 1, thrust: .8 };         // damage multiplier per direction
 export const FULL_CHARGE = .8;        // s of holding for full power
 export const PARRY_WINDOW = .15;      // sword block started this recently → perfect parry
+export const PARRY_COOLDOWN = .45;    // a guard re-raised sooner than this after the last one gets no parry (anti-mashing)
 export const SHIELD_ARC = 75;         // degrees each side covered by the caetra / scutum
 export const SWORD_ARC = 60;          // degrees each side covered by a sword block
 export const ATTACK_COST = 11;        // stamina per swing
@@ -26,7 +27,7 @@ export function dirFromMouse(dx, dy) {
 
 export function createFighter(opts = {}) {
   return { stamina: 100, shieldHP: 100, stuckJavelins: 0, phase: 'idle', dir: null, t: 0, released: false, power: .5,
-    blocking: null, blockT: 0, ...opts };
+    blocking: null, blockT: 0, sinceBlock: 99, parryOk: true, ...opts };
 }
 
 const chargePower = t => .5 + .5 * Math.min(1, t / FULL_CHARGE);
@@ -58,16 +59,16 @@ export function beginBlock(f, kind) {
   if (f.phase === 'windup') feint(f);
   if (f.phase !== 'idle') return false;
   if (kind === 'shield' && f.shieldHP <= 0) return false;
-  f.blocking = kind; f.blockT = 0;
+  f.blocking = kind; f.blockT = 0; f.parryOk = f.sinceBlock >= PARRY_COOLDOWN;
   return true;
 }
 
-export function endBlock(f) { f.blocking = null; f.blockT = 0; }
+export function endBlock(f) { if (f.blocking) f.sinceBlock = 0; f.blocking = null; f.blockT = 0; }
 
 /** Advance timers; returns events: {type:'strike',dir,power} and {type:'recovered'}. */
 export function tickFighter(f, dt) {
   const ev = [];
-  if (f.blocking) f.blockT += dt;
+  if (f.blocking) f.blockT += dt; else f.sinceBlock += dt;
   if (f.phase === 'windup') {
     f.t += dt;
     if (!f.released && f.t > OVERHOLD) f.stamina = Math.max(0, f.stamina - 10 * dt);
@@ -95,7 +96,7 @@ export function resolveHit(def, { dir, power, fromAngle, baseDamage, kind = 'mel
   const interrupt = () => { if (def.phase === 'windup') { def.phase = 'idle'; def.dir = null; def.released = false; } };
 
   if (def.blocking === 'sword' && ang <= SWORD_ARC && kind === 'melee') {
-    if (def.blockT <= PARRY_WINDOW) return { result: 'parried', damage: 0, staminaCost: 0, attackerStagger: .8 };
+    if (def.blockT <= PARRY_WINDOW && def.parryOk) return { result: 'parried', damage: 0, staminaCost: 0, attackerStagger: .8 };
     const cost = SWORD_BLOCK_COST * power;
     if (def.stamina < cost) { def.stamina = 0; endBlock(def); stagger(def, .6); return { result: 'guardBroken', damage: raw * .5, staminaCost: cost, attackerStagger: 0 }; }
     def.stamina -= cost;

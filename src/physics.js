@@ -3,6 +3,11 @@
 
 const GRAV = { javelin: 11, stone: 9.8 };
 
+/** Reject if `promise` has not settled within `ms` (used for the Rapier CDN import). */
+export function withTimeout(promise, ms) {
+  return Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout after ' + ms + ' ms')), ms))]);
+}
+
 /**
  * @param RAPIER initialised @dimforge/rapier3d-compat module, or null for the fallback
  * @param heightAt (x, z) → terrain height
@@ -17,6 +22,7 @@ function simplePhysics(heightAt) {
   const proj = new Map(), corpses = new Map();
   return {
     ok: false,
+    counts: () => ({ projectiles: proj.size, corpses: corpses.size }),
     addProjectile(pos, vel, kind) { const id = next++; proj.set(id, { p: { ...pos }, v: { ...vel }, g: GRAV[kind] || 9.8 }); return id; },
     remove(id) { proj.delete(id); },
     getPos(id) { const o = proj.get(id); return o && o.p; },
@@ -60,6 +66,7 @@ function rapierPhysics(R, heightAt, half, seg) {
   const v3 = o => ({ x: o.x, y: o.y, z: o.z });
   return {
     ok: true,
+    counts: () => ({ projectiles: proj.size, corpses: corpses.size }),
     addProjectile(pos, vel, kind) {
       const body = world.createRigidBody(R.RigidBodyDesc.dynamic().setTranslation(pos.x, pos.y, pos.z).setLinvel(vel.x, vel.y, vel.z)
         .setCcdEnabled(true).setGravityScale((GRAV[kind] || 9.81) / 9.81));

@@ -90,3 +90,13 @@ test('being hit during windup interrupts the attack', () => {
   const r = C.resolveHit(f, { dir: 'left', power: 1, fromAngle: 0, baseDamage: 20 });
   assert.equal(r.result, 'hit'); assert.notEqual(f.phase, 'windup');
 });
+
+test('Q mashing: a guard re-raised within the cooldown gets no perfect parry', () => {
+  const d = C.createFighter();
+  C.beginBlock(d, 'sword'); C.tickFighter(d, .05); C.endBlock(d); C.tickFighter(d, .1);
+  C.beginBlock(d, 'sword'); C.tickFighter(d, .05);
+  assert.equal(C.resolveHit(d, { dir: 'left', power: 1, fromAngle: 0, baseDamage: 20 }).result, 'blocked');
+  C.endBlock(d); C.tickFighter(d, C.PARRY_COOLDOWN + .05);
+  C.beginBlock(d, 'sword'); C.tickFighter(d, .05);
+  assert.equal(C.resolveHit(d, { dir: 'left', power: 1, fromAngle: 0, baseDamage: 20 }).result, 'parried');
+});
