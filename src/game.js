@@ -416,6 +416,7 @@ function makeSoldier(kind) {
     const jv = add(new THREE.CylinderGeometry(.015, .015, 1.5, 6), wood, 0, 0, .25, hand); jv.rotation.x = Math.PI / 2;
     add(new THREE.ConeGeometry(.03, .16, 8), metal, 0, 0, 1.06, hand).rotation.x = Math.PI / 2;
     const pa = add(new THREE.CylinderGeometry(.36, .36, .04, 28), shieldM, .36, .2, .28, spine); pa.rotation.x = Math.PI / 2;
+    root.userData.parma = grp(.36, .2, .3, spine); // grip point reference for the shield-hand IK
     add(new THREE.TorusGeometry(.36, .015, 6, 28), metal, .36, .2, .3, spine);
     add(new THREE.SphereGeometry(.07, 12, 8), metal, .36, .2, .31, spine);
   } else {
@@ -952,6 +953,23 @@ const RELAX = { x: -.05, y: -1, z: .12 };          // arm hanging while marching
 const toModel = v => ({ x: -v.x, y: v.y, z: v.z }); // swing.js x = attacker's right = model −x
 const lerp3 = (a, b, t) => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), z: lerp(a.z, b.z, t) });
 function aimArm(arm, v, k) { _v.set(v.x, v.y, v.z).normalize(); _q.setFromUnitVectors(DOWN, _v); arm.quaternion.slerp(_q, k); }
+const _S = new THREE.Vector3(), _T = new THREE.Vector3(), _d = new THREE.Vector3(), _p = new THREE.Vector3(), _u = new THREE.Vector3(), _f = new THREE.Vector3(), _el = new THREE.Vector3(), _qi = new THREE.Quaternion();
+const UPPER = .3, FORE = .28;
+/** Two-bone IK: put the left hand on the grip behind the shield (scutum or parma). */
+function ikArm(m, k) {
+  const sh = m.root.userData.scutum || m.root.userData.parma; if (!sh) return false;
+  sh.updateMatrix(); _T.set(0, 0, -.09).applyMatrix4(sh.matrix);
+  _S.copy(m.arms[0].position);
+  _d.subVectors(_T, _S); const d = Math.min(_d.length(), UPPER + FORE - .002); _d.normalize();
+  const a1 = Math.acos(clamp((UPPER * UPPER + d * d - FORE * FORE) / (2 * UPPER * d), -1, 1));
+  _p.set(.8, -.35, -.45).normalize(); _p.addScaledVector(_d, -_p.dot(_d)).normalize(); // elbow out and back
+  _u.copy(_d).multiplyScalar(Math.cos(a1)).addScaledVector(_p, Math.sin(a1));
+  _q.setFromUnitVectors(DOWN, _u); m.arms[0].quaternion.slerp(_q, k);
+  _el.set(0, -UPPER, 0).applyQuaternion(m.arms[0].quaternion).add(_S);
+  _f.subVectors(_T, _el).normalize().applyQuaternion(_qi.copy(m.arms[0].quaternion).invert());
+  m.elbows[0].quaternion.slerp(_q.setFromUnitVectors(DOWN, _f), k);
+  return true;
+}
 /** Pose a soldier from its measured velocity and fighter state. Returns the vertical bob. */
 function setPose(e, dt) {
   const m = e.m, f = e.f, k = Math.min(1, dt * 14), combat = e.state === 'chase';
@@ -992,9 +1010,6 @@ function setPose(e, dt) {
   m.elbows[1].rotation.x = lerp(m.elbows[1].rotation.x, -elbow, ka);
   m.spine.rotation.y = lerp(m.spine.rotation.y, twist, ka);
   m.spine.rotation.x = lerp(m.spine.rotation.x, lean, k);
-  // shield arm: forward behind the scutum in combat; it swings gently while marching
-  aimArm(m.arms[0], combat ? { x: .25, y: -.45, z: .85 } : { x: .08, y: -1, z: -Math.sin(e.stride) * amp * .5 }, k);
-  m.elbows[0].rotation.x = lerp(m.elbows[0].rotation.x, combat ? -1.1 : -.15, k);
   const sc = m.root.userData.scutum;
   if (sc) {
     const b = f.blocking === 'shield', atk = f.phase === 'windup' || f.phase === 'strike';
@@ -1002,6 +1017,11 @@ function setPose(e, dt) {
     sc.position.y = lerp(sc.position.y, b ? .36 : .17, k);
     sc.position.z = lerp(sc.position.z, b ? .44 : combat ? .36 : .28, k);
     sc.rotation.y = lerp(sc.rotation.y, b ? 0 : combat ? .3 : .6, k);
+  }
+  // shield arm: two-bone IK so the hand grips the shield from behind; free arm swings while marching
+  if (!ikArm(m, k)) {
+    aimArm(m.arms[0], { x: .08, y: -1, z: -Math.sin(e.stride) * amp * .5 }, k);
+    m.elbows[0].rotation.x = lerp(m.elbows[0].rotation.x, -.15, k);
   }
   return bob;
 }
