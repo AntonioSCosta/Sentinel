@@ -4,7 +4,7 @@ import * as C from './combat.js';
 import { zoneFromHeight, ZONE_MULT, LEG_SLOW } from './damage.js';
 import { decide, REACH } from './ai.js';
 import { steer, footwork } from './locomotion.js';
-import { loadMaterials, terrainMaterial, makeMailMaps } from './materials.js';
+import { loadMaterials, terrainMaterial, makeMailMaps, loadFoliage } from './materials.js';
 import { createPhysics } from './physics.js';
 import { createRender } from './render.js';
 import { withTimeout } from './physics.js';
@@ -77,6 +77,7 @@ const DOT = makeDotTex();
 
 const phys = await createPhysics({ RAPIER: rapier, heightAt, half: WORLD });
 const MATS = await loadMaterials({ THREE, loader, quality, anisotropy: renderer.capabilities ? renderer.capabilities.getMaxAnisotropy() : 4 });
+const FOL = await loadFoliage({ THREE, loader, document, anisotropy: renderer.capabilities ? renderer.capabilities.getMaxAnisotropy() : 4 });
 { const mm = makeMailMaps(THREE, document); if (mm) { MATS.mail.map = mm.map; MATS.mail.normalMap = mm.normal; MATS.mail.color.setHex(0xffffff); } }
 /** A private copy of a shared PBR material (textures stay shared). */
 const MAT = (name, extra) => { const m = MATS[name].clone(); if (extra) Object.assign(m, extra); return m; };
@@ -123,7 +124,7 @@ function instanced(geo, mat, list, shadow = true) {
 }
 setSeed(777);
 {
-  const pines = [], oaks = [], rocks = [], grass = [];
+  const pines = [], oaks = [], rocks = [], grass = [], shrubs = [];
   const blocked = (x, z, m) => Math.abs(x - roadX(z)) < 7 + m || inCamp(x, z, 12 + m) || Math.hypot(x - CASTRO.x, z - CASTRO.z) < 16 + m;
   for (let n = 0; n < 1400 && pines.length + oaks.length < 520; n++) {
     const x = rr(-WORLD + 8, WORLD - 8), z = rr(-WORLD + 8, WORLD - 8);
@@ -148,20 +149,49 @@ setSeed(777);
     const y = heightAt(x, z); if (y > 30) continue;
     grass.push({ x, y, z, s: rr(.7, 1.4), ry: rr(0, TAU) });
   }
-  const trunkG = new THREE.CylinderGeometry(.18, .3, 4, 10); trunkG.translate(0, 2, 0);
-  const pineG = new THREE.ConeGeometry(2.3, 6.5, 7); pineG.translate(0, 6.2, 0);
-  const pineG2 = new THREE.ConeGeometry(1.7, 4.5, 7); pineG2.translate(0, 8.6, 0);
-  const oakG = new THREE.IcosahedronGeometry(2.8, 1); oakG.translate(0, 5.2, 0); oakG.scale(1.2, .85, 1.2);
-  const trunkM = MAT('bark_pine');
-  instanced(trunkG, trunkM, pines.concat(oaks));
-  instanced(pineG, new THREE.MeshStandardMaterial({ color: 0x2f4a26, roughness: .9, flatShading: true }), pines);
-  instanced(pineG2, new THREE.MeshStandardMaterial({ color: 0x36522a, roughness: .9, flatShading: true }), pines);
-  instanced(oakG, new THREE.MeshStandardMaterial({ color: 0x55652c, roughness: .9, flatShading: true }), oaks);
+  for (let n = 0; n < 6000 && shrubs.length < 900; n++) {          // mato: low evergreen shrubs, thicker where the forest is
+    const x = rr(-WORLD + 6, WORLD - 6), z = rr(-WORLD + 6, WORLD - 6);
+    if (blocked(x, z, -4)) continue;
+    if (rand() > .25 + vnoise(x * .025 + 40, z * .025)) continue;
+    const y = heightAt(x, z); if (y > 40) continue;
+    shrubs.push({ x, y: y - .05, z, s: rr(.6, 1.4), sy: rr(.5, 1.1), ry: rr(0, TAU) });
+  }
+  // maritime pine: tall bare trunk with an umbrella crown; holm/cork oak: short trunk, forked limbs, wide dense crown
+  const pineTrunk = new THREE.CylinderGeometry(.16, .3, 8.2, 10); pineTrunk.translate(0, 4.1, 0);
+  const oakTrunk = mergeGeos([
+    (() => { const g = new THREE.CylinderGeometry(.24, .38, 3.4, 10); g.translate(0, 1.7, 0); return g; })(),
+    (() => { const g = new THREE.CylinderGeometry(.1, .2, 2.4, 8); g.translate(0, 1.2, 0); g.rotateZ(.6); g.translate(.2, 3, 0); return g; })(),
+    (() => { const g = new THREE.CylinderGeometry(.1, .2, 2.2, 8); g.translate(0, 1.1, 0); g.rotateZ(-.55); g.rotateY(2.1); g.translate(-.1, 3, .1); return g; })(),
+  ]);
+  instanced(pineTrunk, MAT('bark_pine'), pines);
+  instanced(oakTrunk, MAT('bark_oak'), oaks);
+  const leafy = (name, geo, mat, depth, list) => { const im = instanced(geo, mat, list); im.name = name; im.customDepthMaterial = depth; return im; };
+  leafy('pine-canopy', canopyGeo({ cards: 44, rx: 2.6, ry: 1.2, cy: 8.4, w: 1.7, h: 1.4, seed: 5, flat: .6 }), FOL.pine, FOL.pineDepth, pines);
+  leafy('oak-canopy', canopyGeo({ cards: 54, rx: 3.3, ry: 2.1, cy: 5.3, w: 1.8, h: 1.8, seed: 9 }), FOL.oak, FOL.oakDepth, oaks);
+  leafy('shrubs', canopyGeo({ cards: 12, rx: .9, ry: .55, cy: .55, w: 1, h: 1, seed: 13 }), FOL.shrub, FOL.shrubDepth, shrubs);
   instanced(new THREE.DodecahedronGeometry(1, 0), MAT('terrain_rock', { flatShading: true }), rocks);
   const gg = new THREE.PlaneGeometry(.9, .7); gg.translate(0, .35, 0);
   const gg2 = gg.clone(); gg2.rotateY(Math.PI / 2);
   const grassGeo = mergeGeos([gg, gg2]);
   GRASS = instanced(grassGeo, new THREE.MeshStandardMaterial({ color: 0x7c8040, roughness: 1, side: THREE.DoubleSide }), grass, false);
+}
+/**
+ * A crown made of crossed leaf cards scattered in an ellipsoid. Normals point outward from the crown centre,
+ * which lights the cards as one soft rounded mass instead of flat planes.
+ */
+function canopyGeo({ cards, rx, ry, cy, w, h, seed, flat = 0 }) {
+  let s = seed; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  const parts = [];
+  for (let i = 0; i < cards; i++) {
+    const p = new THREE.PlaneGeometry(w * (.8 + r() * .4), h * (.8 + r() * .4));
+    p.rotateX((r() - .5) * (1.6 - flat * 1.2)); p.rotateY(r() * Math.PI); p.rotateZ((r() - .5) * .6);
+    const a = r() * TAU, rad = Math.sqrt(r()) * .85, yy = (r() * 2 - 1) * (1 - flat * .5);
+    p.translate(Math.cos(a) * rx * rad, cy + yy * ry, Math.sin(a) * rx * rad);
+    parts.push(p);
+  }
+  const g = mergeGeos(parts), pos = g.attributes.position, nor = g.attributes.normal, v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) { v.set(pos.getX(i) / rx, (pos.getY(i) - cy) / ry + .35, pos.getZ(i) / rx).normalize(); nor.setXYZ(i, v.x, v.y, v.z); }
+  return g;
 }
 function mergeGeos(list) {
   const pos = [], nor = [], uv = [];

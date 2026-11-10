@@ -151,3 +151,44 @@ export function makeMailMaps(THREE, document, size = 256) {
   map.colorSpace = THREE.SRGBColorSpace;
   return { map, normal: nmap };
 }
+
+/** Pine needle tufts drawn on a canvas (no CC0 conifer card was available). */
+function needleCanvas(document, size = 512, seed = 3) {
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const g = c.getContext && c.getContext('2d'); if (!g) return null;
+  let s = seed; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  g.clearRect(0, 0, size, size);
+  for (let t = 0; t < 9; t++) {                       // twigs, each with dense needle tufts
+    let x = r() * size, y = size * (.85 + r() * .15); const ang = -Math.PI / 2 + (r() - .5) * .9, len = size * (.5 + r() * .4);
+    g.strokeStyle = '#4a3624'; g.lineWidth = 3; g.beginPath(); g.moveTo(x, y);
+    const ex = x + Math.cos(ang) * len, ey = y + Math.sin(ang) * len; g.lineTo(ex, ey); g.stroke();
+    for (let k = 0; k < 70; k++) {
+      const f = r(), px = x + (ex - x) * f, py = y + (ey - y) * f;
+      for (let n = 0; n < 6; n++) {
+        const a = ang + (r() - .5) * 2.6, l = size * (.04 + r() * .05), sh = 70 + r() * 50;
+        g.strokeStyle = `rgb(${sh * .45 | 0},${sh | 0},${sh * .38 | 0})`; g.lineWidth = 1.4;
+        g.beginPath(); g.moveTo(px, py); g.lineTo(px + Math.cos(a) * l, py + Math.sin(a) * l); g.stroke();
+      }
+    }
+  }
+  return c;
+}
+
+/**
+ * Cut-out foliage materials. oak/shrub use the CC0 Poly Haven leaf cards (assets/textures/foliage/*.png),
+ * pine uses procedural needles. Each comes with a depth material so shadows follow the leaf shapes.
+ */
+export async function loadFoliage({ THREE, loader, document, anisotropy = 4 }) {
+  const make = (color, tex) => {
+    const m = new THREE.MeshStandardMaterial({ color, roughness: .85, side: THREE.DoubleSide, alphaTest: .5, map: tex || null });
+    if (!tex) m.alphaTest = 0; // no cut-out mask available: plain leaves
+    return m;
+  };
+  const prep = t => { if (!t) return null; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = anisotropy; return t; };
+  const [oakT, shrubT] = loader ? await Promise.all(['oak', 'shrub'].map(n => tryLoad(loader, `assets/textures/foliage/${n}_leaves.png`).then(prep))) : [null, null];
+  const nc = document && needleCanvas(document);
+  const pineT = nc ? prep(new THREE.CanvasTexture(nc)) : null;
+  const out = { oak: make(oakT ? 0xffffff : 0x4f6a2c, oakT), shrub: make(shrubT ? 0xffffff : 0x6b7a3a, shrubT), pine: make(pineT ? 0xffffff : 0x2f4a26, pineT) };
+  for (const k of ['oak', 'shrub', 'pine']) out[k + 'Depth'] = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: out[k].map, alphaTest: out[k].alphaTest });
+  return out;
+}

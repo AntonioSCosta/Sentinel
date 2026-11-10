@@ -15,3 +15,5 @@ Todas as texturas abaixo são do Poly Haven e estão sob licença **CC0** (domí
 | wood | raw_plank_wall | https://polyhaven.com/a/raw_plank_wall |
 | iron | rusty_metal_03 | https://polyhaven.com/a/rusty_metal_03 |
 | leather | leather_white | https://polyhaven.com/a/leather_white |
+| foliage/oak_leaves.png | tree_small_02 (leaf blades, recomposed on searsia_lucida twigs) | https://polyhaven.com/a/tree_small_02 |
+| foliage/shrub_leaves.png | searsia_lucida (leaves and twigs, recomposed) | https://polyhaven.com/a/searsia_lucida |

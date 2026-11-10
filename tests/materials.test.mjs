@@ -52,3 +52,14 @@ test('terrain material is a standard material that accepts the splat attribute',
   const t = terrainMaterial(THREE, mats);
   assert.ok(t.isMeshStandardMaterial); assert.equal(typeof t.onBeforeCompile, 'function');
 });
+
+test('foliage: cut-out leaf materials for oak, shrub and pine; still three materials when files are missing', async () => {
+  const { loadFoliage } = await import('../src/materials.js');
+  const ok = await loadFoliage({ THREE, loader: stubLoader(), document: null });
+  for (const k of ['oak', 'shrub', 'pine']) { assert.ok(ok[k].isMeshStandardMaterial, k); assert.equal(ok[k].side, THREE.DoubleSide); }
+  assert.ok(ok.oak.map && ok.shrub.map, 'oak and shrub use the CC0 leaf cards');
+  assert.equal(ok.oak.alphaTest, .5);
+  assert.ok(ok.oakDepth && ok.oakDepth.alphaTest === .5, 'shadows respect the leaf cut-out');
+  const none = await loadFoliage({ THREE, loader: stubLoader(() => true), document: null });
+  assert.deepEqual(['oak', 'shrub', 'pine'].map(k => !!none[k]), [true, true, true]);
+});
