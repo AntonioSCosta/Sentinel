@@ -8,7 +8,7 @@ import { loadMaterials, terrainMaterial } from './materials.js';
 import { createPhysics } from './physics.js';
 import { createRender } from './render.js';
 import { withTimeout } from './physics.js';
-import { sweepHit, capsuleOf, glance, bladeSegment, toWorld } from './swing.js';
+import { sweepHit, capsuleOf, glance, bladeSegment, toWorld, bladeDir } from './swing.js';
 import { resolveQuality } from './quality.js';
 
 /**
@@ -303,73 +303,75 @@ function makeSoldier(kind) {
         crestM = mm('wool_red'), fur = mm('wool_brown'), wood = mm('wood');
   const root = new THREE.Group(); root.rotation.order = 'YXZ';
   const add = (g, m, x, y, z, p) => { const o = new THREE.Mesh(g, m); o.position.set(x, y, z); o.castShadow = true; (p || root).add(o); return o; };
+  const grp = (x, y, z, p) => { const g = new THREE.Group(); g.position.set(x, y, z); (p || root).add(g); return g; };
   const CAP = (r, len) => new THREE.CapsuleGeometry(r, len, 3, 8);
-  // legs: thigh, shin, caliga (sandal-boot)
-  const legs = [];
-  for (const sx of [-.12, .12]) {
-    const hip = new THREE.Group(); hip.position.set(sx, .92, 0); root.add(hip);
+  // Model faces +z, so its right side is −x. Index 1 = right limb (sword arm).
+  const legs = [], knees = [];
+  for (const sx of [.12, -.12]) {
+    const hip = grp(sx, .92, 0);
     add(CAP(.075, .3), skin, 0, -.22, 0, hip);
-    add(CAP(.062, .32), skin, 0, -.6, .01, hip);
-    add(new THREE.CylinderGeometry(.075, .085, .16, 12), leather, 0, -.82, .02, hip);
-    add(new THREE.BoxGeometry(.12, .06, .24), leather, 0, -.89, .05, hip);
-    legs.push(hip);
+    const knee = grp(0, -.45, 0, hip);
+    add(CAP(.062, .26), skin, 0, -.17, .01, knee);
+    add(new THREE.CylinderGeometry(.075, .085, .16, 12), leather, 0, -.37, .02, knee);
+    add(new THREE.BoxGeometry(.12, .06, .24), leather, 0, -.44, .05, knee);
+    legs.push(hip); knees.push(knee);
   }
-  // body
-  const torso = new THREE.CylinderGeometry(.25, .28, .62, 20); torso.scale(1, 1, .72);
-  add(torso, tunic, 0, 1.3, 0);
   const skirt = new THREE.CylinderGeometry(.28, .33, .28, 20, 1, true); skirt.scale(1, 1, .75);
   add(skirt, tunic, 0, .95, 0).material.side = THREE.DoubleSide;
+  if (kind !== 'velite') for (let k = 0; k < 8; k++) { const a = (k / 8 - .5) * 1.6; add(new THREE.BoxGeometry(.05, .22, .015), leather, Math.sin(a) * .29, .96, Math.cos(a) * .22 + .02).rotation.y = a; }
+  // spine: everything above the hips twists and leans with the blow
+  const spine = grp(0, .95, 0); spine.rotation.order = 'YXZ';
+  const torso = new THREE.CylinderGeometry(.25, .28, .62, 20); torso.scale(1, 1, .72);
+  add(torso, tunic, 0, .35, 0, spine);
   if (kind !== 'velite') {
-    for (let k = 0; k < 5; k++) { const b = new THREE.CylinderGeometry(.285 - k * .004, .3 - k * .004, .075, 20, 1, true); b.scale(1, 1, .76); add(b, armor, 0, 1.12 + k * .08, 0); }
-    for (const sx of [-1, 1]) { const sp = new THREE.SphereGeometry(.15, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2); sp.scale(1, .55, 1.1); add(sp, armor, sx * .24, 1.56, 0); }
-    // pteruges: leather strips over the skirt
-    for (let k = 0; k < 8; k++) { const a = (k / 8 - .5) * 1.6; add(new THREE.BoxGeometry(.05, .22, .015), leather, Math.sin(a) * .29, .96, Math.cos(a) * .22 + .02).rotation.y = a; }
+    for (let k = 0; k < 5; k++) { const b = new THREE.CylinderGeometry(.285 - k * .004, .3 - k * .004, .075, 20, 1, true); b.scale(1, 1, .76); add(b, armor, 0, .17 + k * .08, 0, spine); }
+    for (const sx of [-1, 1]) { const sp = new THREE.SphereGeometry(.15, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2); sp.scale(1, .55, 1.1); add(sp, armor, sx * .24, .61, 0, spine); }
   }
   const belt = new THREE.TorusGeometry(.27, .025, 6, 24); belt.rotateX(Math.PI / 2); belt.scale(1, 1, .76);
-  add(belt, leather, 0, 1.06, 0);
-  // head
-  const head = new THREE.Group(); head.position.set(0, 1.66, 0); root.add(head);
+  add(belt, leather, 0, .11, 0, spine);
+  const head = grp(0, .71, 0, spine);
   add(new THREE.CylinderGeometry(.06, .07, .1, 10), skin, 0, .03, 0, head);
   const hg = new THREE.SphereGeometry(.12, 14, 10); hg.scale(.95, 1.1, 1); add(hg, skin, 0, .18, .01, head);
-  add(new THREE.ConeGeometry(.025, .06, 6), skin, 0, .17, .125, head).rotation.x = Math.PI / 2; // nose
+  add(new THREE.ConeGeometry(.025, .06, 6), skin, 0, .17, .125, head).rotation.x = Math.PI / 2;
   if (kind === 'velite') {
-    const hood = new THREE.SphereGeometry(.15, 16, 10, 0, Math.PI * 2, 0, Math.PI * .62); add(hood, fur, 0, .2, -.02, head);
-    const pelt = new THREE.ConeGeometry(.16, .3, 12, 1, true); add(pelt, fur, 0, .02, -.12, head).rotation.x = .5;
+    add(new THREE.SphereGeometry(.15, 16, 10, 0, Math.PI * 2, 0, Math.PI * .62), fur, 0, .2, -.02, head);
+    add(new THREE.ConeGeometry(.16, .3, 12, 1, true), fur, 0, .02, -.12, head).rotation.x = .5;
   } else {
-    const cap = new THREE.SphereGeometry(.14, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2); add(cap, helm, 0, .22, 0, head);
-    const ng = new THREE.CylinderGeometry(.15, .19, .07, 18, 1, true, Math.PI * .65, Math.PI * .7); add(ng, helm, 0, .2, 0, head).material.side = THREE.DoubleSide;
-    add(new THREE.BoxGeometry(.02, .015, .2), helm, 0, .24, .07, head); // brow ridge
-    for (const sx of [-1, 1]) { const cg = new THREE.BoxGeometry(.015, .15, .09); add(cg, helm, sx * .125, .13, .05, head).rotation.z = sx * .08; }
-    if (kind === 'centurion') { const crest = new THREE.TorusGeometry(.17, .035, 8, 28, Math.PI); add(crest, crestM, 0, .3, 0, head); }
+    add(new THREE.SphereGeometry(.14, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), helm, 0, .22, 0, head);
+    add(new THREE.CylinderGeometry(.15, .19, .07, 18, 1, true, Math.PI * .65, Math.PI * .7), helm, 0, .2, 0, head).material.side = THREE.DoubleSide;
+    add(new THREE.BoxGeometry(.02, .015, .2), helm, 0, .24, .07, head);
+    for (const sx of [-1, 1]) add(new THREE.BoxGeometry(.015, .15, .09), helm, sx * .125, .13, .05, head).rotation.z = sx * .08;
+    if (kind === 'centurion') add(new THREE.TorusGeometry(.17, .035, 8, 28, Math.PI), crestM, 0, .3, 0, head);
     else add(new THREE.CylinderGeometry(.015, .025, .06, 8), helm, 0, .37, 0, head);
   }
-  // arms: upper arm, forearm, hand
-  const arms = [];
-  for (const sx of [-.34, .34]) {
-    const sh = new THREE.Group(); sh.position.set(sx, 1.56, 0); root.add(sh);
+  // arms: shoulder → upper arm, elbow → forearm, hand
+  const arms = [], elbows = [];
+  for (const sx of [.34, -.34]) {
+    const sh = grp(sx, .61, 0, spine);
     add(CAP(.058, .2), kind === 'velite' ? skin : armor, 0, -.15, 0, sh);
-    add(CAP(.05, .2), skin, 0, -.42, 0, sh);
-    add(new THREE.CylinderGeometry(.055, .055, .08, 10), leather, 0, -.48, 0, sh); // bracer
-    add(new THREE.SphereGeometry(.05, 10, 8), skin, 0, -.58, 0, sh);
-    arms.push(sh);
+    const el = grp(0, -.3, 0, sh);
+    add(CAP(.05, .18), skin, 0, -.12, 0, el);
+    add(new THREE.CylinderGeometry(.055, .055, .08, 10), leather, 0, -.18, 0, el);
+    add(new THREE.SphereGeometry(.05, 10, 8), skin, 0, -.28, 0, el);
+    arms.push(sh); elbows.push(el);
   }
-  const hand = new THREE.Group(); hand.position.set(0, -.6, 0); arms[1].add(hand);
+  const hand = grp(0, -.3, 0, elbows[1]);
   if (kind === 'velite') {
     const jv = add(new THREE.CylinderGeometry(.015, .015, 1.5, 6), wood, 0, 0, .25, hand); jv.rotation.x = Math.PI / 2;
     add(new THREE.ConeGeometry(.03, .16, 8), metal, 0, 0, 1.06, hand).rotation.x = Math.PI / 2;
-    const pa = add(new THREE.CylinderGeometry(.36, .36, .04, 28), shieldM, -.36, 1.15, .28); pa.rotation.x = Math.PI / 2;
-    const rim = new THREE.TorusGeometry(.36, .015, 6, 28); add(rim, metal, -.36, 1.15, .3);
-    add(new THREE.SphereGeometry(.07, 12, 8), metal, -.36, 1.15, .31);
+    const pa = add(new THREE.CylinderGeometry(.36, .36, .04, 28), shieldM, .36, .2, .28, spine); pa.rotation.x = Math.PI / 2;
+    add(new THREE.TorusGeometry(.36, .015, 6, 28), metal, .36, .2, .3, spine);
+    add(new THREE.SphereGeometry(.07, 12, 8), metal, .36, .2, .31, spine);
   } else {
-    // gladius: leaf blade, guard, grip, pommel — blade points forward (+z)
+    // gladius continues the line of the forearm (−y), so the blade follows the swing arc
     const bs = new THREE.Shape(); bs.moveTo(-.025, 0); bs.lineTo(.025, 0); bs.lineTo(.028, .38); bs.lineTo(.0, .5); bs.lineTo(-.028, .38); bs.closePath();
     const bg = new THREE.ExtrudeGeometry(bs, { depth: .008, bevelEnabled: true, bevelThickness: .003, bevelSize: .004, bevelSegments: 2, curveSegments: 4 });
-    const blade = add(bg, metal, 0, -.02, .1, hand); blade.rotation.x = Math.PI / 2;
-    add(new THREE.BoxGeometry(.12, .035, .045), gold, 0, -.02, .08, hand);
-    const grip = add(new THREE.CylinderGeometry(.016, .016, .1, 10), wood, 0, -.02, .02, hand); grip.rotation.x = Math.PI / 2;
-    add(new THREE.SphereGeometry(.03, 12, 8), gold, 0, -.02, -.04, hand);
-    // curved scutum
-    const sc = new THREE.Group(); sc.position.set(-.3, 1.12, .3); root.add(sc);
+    bg.translate(0, 0, -.004);
+    add(bg, metal, 0, -.06, 0, hand).rotation.x = Math.PI;
+    add(new THREE.BoxGeometry(.12, .035, .045), gold, 0, -.04, 0, hand);
+    add(new THREE.CylinderGeometry(.016, .016, .1, 10), wood, 0, .02, 0, hand);
+    add(new THREE.SphereGeometry(.03, 12, 8), gold, 0, .08, 0, hand);
+    const sc = grp(.3, .17, .32, spine);
     const sg = new THREE.CylinderGeometry(.62, .62, 1.08, 20, 2, true, -.6, 1.2); sg.translate(0, 0, -.62);
     add(sg, shieldM, 0, 0, 0, sc);
     const inner = new THREE.CylinderGeometry(.6, .6, 1.06, 24, 1, true, -.59, 1.18); inner.translate(0, 0, -.62); add(inner, wood, 0, 0, 0, sc).material.side = THREE.BackSide;
@@ -378,7 +380,7 @@ function makeSoldier(kind) {
     add(new THREE.BoxGeometry(.04, .9, .02), gold, 0, 0, .005, sc);
     root.userData.scutum = sc;
   }
-  return { root, legs, arms, head, mats };
+  return { root, legs, knees, arms, elbows, spine, head, mats };
 }
 
 /* =========================================================
@@ -871,18 +873,65 @@ function faceTo(e, tx, tz, dt, rate = 6) {
   const target = Math.atan2(tx - e.pos.x, tz - e.pos.z);
   e.yaw += clamp(wrapA(target - e.yaw), -rate * dt, rate * dt);
 }
-// Readable, direction-specific poses: the raised gladius shows where the blow will come from (player's view).
-const WINDUP_POSE = { up: { x: -2.8, z: 0 }, left: { x: -1.5, z: 1.3 }, right: { x: -1.5, z: -1.1 }, thrust: { x: .7, z: .2 } };
-const STRIKE_POSE = { up: { x: .5, z: 0 }, left: { x: -1.2, z: -.7 }, right: { x: -1.2, z: .9 }, thrust: { x: -1.6, z: 0 } };
-function setPose(e, w, dt) {
-  const arm = e.m.arms[1], f = e.f, k = Math.min(1, dt * 12);
-  let tx = w * .5 - (e.state === 'chase' ? .5 : 0), tz = 0;
-  if (f.phase === 'windup') { const p = WINDUP_POSE[f.dir], q = Math.min(1, f.t / (C.WINDUP[f.dir] * .7)); tx = p.x * q; tz = p.z * q; }
-  else if (f.phase === 'recovery' && f.dir) { const p = STRIKE_POSE[f.dir]; tx = p.x; tz = p.z; }
-  arm.rotation.x = lerp(arm.rotation.x, tx, f.phase === 'recovery' ? Math.min(1, dt * 30) : k);
-  arm.rotation.z = lerp(arm.rotation.z, tz, f.phase === 'recovery' ? Math.min(1, dt * 30) : k);
-  const sc = e.m.root.userData.scutum;
-  if (sc) { const b = f.blocking === 'shield'; sc.position.x = lerp(sc.position.x, b ? -.04 : -.3, k); sc.position.y = lerp(sc.position.y, b ? 1.28 : 1.12, k); sc.position.z = lerp(sc.position.z, b ? .4 : .3, k); }
+// Animation. Arms follow the same blade arc (swing.js) that decides hits, so what you see is what lands.
+const _v = new THREE.Vector3(), _q = new THREE.Quaternion(), DOWN = new THREE.Vector3(0, -1, 0);
+const GUARD = { x: -.1, y: -.45, z: .9 };          // combat stance: blade held toward the foe
+const RELAX = { x: -.05, y: -1, z: .12 };          // arm hanging while marching
+const toModel = v => ({ x: -v.x, y: v.y, z: v.z }); // swing.js x = attacker's right = model −x
+const lerp3 = (a, b, t) => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), z: lerp(a.z, b.z, t) });
+function aimArm(arm, v, k) { _v.set(v.x, v.y, v.z).normalize(); _q.setFromUnitVectors(DOWN, _v); arm.quaternion.slerp(_q, k); }
+/** Pose a soldier from its measured velocity and fighter state. Returns the vertical bob. */
+function setPose(e, dt) {
+  const m = e.m, f = e.f, k = Math.min(1, dt * 14), combat = e.state === 'chase';
+  // legs: stride advances with distance walked, so feet don't slide; works forwards, backwards and sideways
+  const fx = Math.sin(e.yaw), fz = Math.cos(e.yaw);
+  const vf = e.mv.x * fx + e.mv.z * fz, vs = e.mv.x * -fz + e.mv.z * fx, sp = Math.hypot(vf, vs);
+  e.stride = (e.stride || 0) + sp * dt * 3.5;
+  const amp = Math.min(.7, sp * .2), fwdK = sp > .05 ? vf / sp : 1, sideK = sp > .05 ? vs / sp : 0;
+  const stance = combat ? .2 : .04;
+  for (let i = 0; i < 2; i++) {
+    const ph = e.stride + i * Math.PI, s = Math.sin(ph), lift = Math.max(0, Math.cos(ph));
+    m.legs[i].rotation.x = lerp(m.legs[i].rotation.x, s * amp * fwdK - stance * .7, k);
+    m.legs[i].rotation.z = lerp(m.legs[i].rotation.z, s * amp * sideK * .45 + (i ? -1 : 1) * (combat ? .06 : 0), k);
+    m.knees[i].rotation.x = lerp(m.knees[i].rotation.x, stance + lift * amp * 1.3, k);
+  }
+  const bob = Math.abs(Math.sin(e.stride)) * amp * .06 - (combat ? .03 : 0);
+  // sword arm, elbow, spine twist and lean
+  let aim = combat ? GUARD : RELAX, elbow = combat ? .7 : .1, twist = 0, lean = clamp(vf * .04, -.1, .2) + (combat ? .1 : 0);
+  if (f.phase === 'windup' && f.dir) {
+    const q = Math.min(1, f.t / (C.WINDUP[f.dir] * .8));
+    aim = lerp3(aim, toModel(bladeDir(f.dir, 0)), q);
+    elbow = lerp(elbow, f.dir === 'thrust' ? 1.7 : f.dir === 'up' ? .55 : 1.2, q);
+    twist = (f.dir === 'left' ? .55 : f.dir === 'right' ? -.6 : f.dir === 'thrust' ? -.3 : 0) * q;
+    lean -= f.dir === 'up' ? .15 * q : 0;
+  } else if (f.phase === 'strike' && f.dir) {
+    const p = Math.min(1, f.t / C.STRIKE_TIME[f.dir]);
+    aim = toModel(bladeDir(f.dir, p));
+    elbow = f.dir === 'thrust' ? lerp(1.7, .05, p) : lerp(f.dir === 'up' ? .55 : 1.2, .15, Math.min(1, p * 1.6));
+    twist = f.dir === 'left' ? lerp(.55, -.55, p) : f.dir === 'right' ? lerp(-.6, .55, p) : f.dir === 'thrust' ? lerp(-.3, .25, p) : 0;
+    lean += .18 * Math.sin(Math.PI * p);
+  } else if (f.phase === 'recovery' && f.dir) {
+    aim = lerp3(toModel(bladeDir(f.dir, 1)), GUARD, .35); elbow = .4;
+  } else if (f.phase === 'staggered') {
+    aim = { x: -.5, y: -.5, z: .2 }; elbow = .3; lean = -.32; twist = .25;
+  }
+  const ka = f.phase === 'strike' ? Math.min(1, dt * 45) : k;
+  aimArm(m.arms[1], aim, ka);
+  m.elbows[1].rotation.x = lerp(m.elbows[1].rotation.x, -elbow, ka);
+  m.spine.rotation.y = lerp(m.spine.rotation.y, twist, ka);
+  m.spine.rotation.x = lerp(m.spine.rotation.x, lean, k);
+  // shield arm: forward behind the scutum in combat; it swings gently while marching
+  aimArm(m.arms[0], combat ? { x: .25, y: -.45, z: .85 } : { x: .08, y: -1, z: -Math.sin(e.stride) * amp * .5 }, k);
+  m.elbows[0].rotation.x = lerp(m.elbows[0].rotation.x, combat ? -1.1 : -.15, k);
+  const sc = m.root.userData.scutum;
+  if (sc) {
+    const b = f.blocking === 'shield', atk = f.phase === 'windup' || f.phase === 'strike';
+    sc.position.x = lerp(sc.position.x, b ? .02 : atk ? .38 : .3, k);
+    sc.position.y = lerp(sc.position.y, b ? .36 : .17, k);
+    sc.position.z = lerp(sc.position.z, b ? .44 : combat ? .36 : .28, k);
+    sc.rotation.y = lerp(sc.rotation.y, b ? 0 : combat ? .3 : .6, k);
+  }
+  return bob;
 }
 function updateEnemies(dt) {
   const dm = DIFF[diff];
@@ -897,6 +946,7 @@ function updateEnemies(dt) {
       for (const m of e.m.mats) m.emissive.setRGB(0, 0, 0);
       continue;
     }
+    const px0 = e.pos.x, pz0 = e.pos.z;
     e.ph += dt; e.barkT -= dt; e.cd -= dt;
     if (e.flash > 0) e.flash -= dt;
     const fl = Math.max(0, e.flash) * 4; for (const m of e.m.mats) m.emissive.setRGB(fl * .6, 0, 0);
@@ -980,17 +1030,14 @@ function updateEnemies(dt) {
     if (pd < 1.0 && pd > 1e-3) { e.pos.x -= (P.pos.x - e.pos.x) / pd * (1 - pd); e.pos.z -= (P.pos.z - e.pos.z) / pd * (1 - pd); }
     resolve(e.pos, .4);
     e.pos.y = heightAt(e.pos.x, e.pos.z);
-    // animate
-    e.moving = lerp(e.moving, speed > 0 ? 1 : 0, Math.min(1, dt * 8));
-    const w = Math.sin(e.ph * (speed > 2.5 ? 10 : 6.5)) * .6 * e.moving;
-    e.m.legs[0].rotation.x = w; e.m.legs[1].rotation.x = -w;
-    e.m.arms[0].rotation.x = -w * .5;
+    // animate from the velocity actually travelled this frame
+    if (dt > 1e-4) { const a = Math.min(1, dt * 12); e.mv.x = lerp(e.mv.x, (e.pos.x - px0) / dt, a); e.mv.z = lerp(e.mv.z, (e.pos.z - pz0) / dt, a); }
+    const bob = setPose(e, dt);
     if (e.kind === 'velite' && e.atkT > 0) {
       const k = 1 - e.atkT / .55;
-      e.m.arms[1].rotation.x = k < .7 ? lerp(0, -2.5, k / .7) : lerp(-2.5, .4, (k - .7) / .3);
-    } else setPose(e, w, dt);
-    r.position.set(e.pos.x, e.pos.y + Math.abs(w) * .04, e.pos.z); r.rotation.y = e.yaw;
-    r.rotation.x = e.f.phase === 'staggered' ? lerp(r.rotation.x, -.22, Math.min(1, dt * 10)) : lerp(r.rotation.x, 0, Math.min(1, dt * 6));
+      e.m.arms[1].rotation.set(k < .7 ? lerp(0, -2.5, k / .7) : lerp(-2.5, .4, (k - .7) / .3), 0, 0);
+    }
+    r.position.set(e.pos.x, e.pos.y + bob, e.pos.z); r.rotation.y = e.yaw;
   }
 }
 
