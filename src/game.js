@@ -5,6 +5,8 @@ import { zoneFromHeight, ZONE_MULT, LEG_SLOW } from './damage.js';
 import { decide, REACH } from './ai.js';
 import { loadMaterials, terrainMaterial } from './materials.js';
 import { createPhysics } from './physics.js';
+import { createRender } from './render.js';
+import { resolveQuality } from './quality.js';
 
 /**
  * Builds the whole game. Rendering, DOM and window are injected so the game can run headless in tests.
@@ -17,18 +19,18 @@ const $ = id => document.getElementById(id);
 /* =========================================================
    Renderer, scene, light
    ========================================================= */
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 const FOG = 0xcfb894;
-scene.fog = new THREE.Fog(FOG, 40, 260);
+scene.fog = new THREE.FogExp2(FOG, .0058);
 scene.background = new THREE.Color(FOG);
 const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, .05, 900);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
-window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); if (R) R.resize(window.innerWidth, window.innerHeight); });
+let R = null, GRASS = null;
 
 scene.add(new THREE.HemisphereLight(0xc9dcff, 0x5a4630, .62));
 const sun = new THREE.DirectionalLight(0xffdcae, 1.0);
@@ -136,7 +138,7 @@ setSeed(777);
     rocks.push({ x, y: y - s * .25, z, s, sy: s * rr(.5, .9), ry: rr(0, TAU), rx: rr(-.3, .3) });
     addCol(x, z, s * .85);
   }
-  for (let n = 0; n < 9000 && grass.length < 5200; n++) {
+  for (let n = 0; n < 14000 && grass.length < 7000; n++) {
     const x = rr(-WORLD + 4, WORLD - 4), z = rr(-WORLD + 4, WORLD - 4);
     if (Math.abs(x - roadX(z)) < 3 || inCamp(x, z, 2)) continue;
     const y = heightAt(x, z); if (y > 30) continue;
@@ -155,7 +157,7 @@ setSeed(777);
   const gg = new THREE.PlaneGeometry(.9, .7); gg.translate(0, .35, 0);
   const gg2 = gg.clone(); gg2.rotateY(Math.PI / 2);
   const grassGeo = mergeGeos([gg, gg2]);
-  instanced(grassGeo, new THREE.MeshStandardMaterial({ color: 0x7c8040, roughness: 1, side: THREE.DoubleSide }), grass, false);
+  GRASS = instanced(grassGeo, new THREE.MeshStandardMaterial({ color: 0x7c8040, roughness: 1, side: THREE.DoubleSide }), grass, false);
 }
 function mergeGeos(list) {
   const pos = [], nor = [], uv = [];
@@ -1198,10 +1200,15 @@ function step(dt) {
   if (state !== 'menu') VM.visible = state === 'play' || state === 'pause';
   updateFires(dt); updateParticles(dt);
 }
+R = await createRender({ THREE, renderer, scene, camera, sun, grass: GRASS, quality: resolveQuality(quality), devicePixelRatio: window.devicePixelRatio || 1 });
+for (const b of document.querySelectorAll('[data-q]')) {
+  b.setAttribute('aria-pressed', b.dataset.q === R.state.preset ? 'true' : 'false');
+  b.addEventListener('click', () => { R.setQuality(b.dataset.q); try { window.localStorage.setItem('viriato.quality', b.dataset.q); } catch (_) {} for (const o of document.querySelectorAll('[data-q]')) o.setAttribute('aria-pressed', o.dataset.q === R.state.preset ? 'true' : 'false'); });
+}
 setListener(camera);
 resetWorld();
 return {
-  start: d => { if (d != null) diff = d; startGame(); }, step, render: () => renderer.render(scene, camera), resume, use, damagePlayer,
+  start: d => { if (d != null) diff = d; startGame(); }, step, render: () => R.render(), setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
   P, supplyTents, heightAt, CAMP, scene, camera,
   get enemies() { return enemies; }, get mission() { return mission; }, get state() { return state; },
   get projectiles() { return projectiles; }, get pickups() { return pickups; },
@@ -1219,7 +1226,7 @@ export async function boot() {
   try { rapier = (await import('https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.0/+esm')).default; await rapier.init(); }
   catch (err) { console.warn('Rapier unavailable, using simple physics', err); rapier = null; }
   renderer.useLegacyLights = true;
-  const game = await createGame({ THREE, renderer, canvas, document, window, rapier, loader: new THREE.TextureLoader(), quality: 'medium' });
+  const game = await createGame({ THREE, renderer, canvas, document, window, rapier, loader: new THREE.TextureLoader(), quality: (() => { try { return window.localStorage.getItem('viriato.quality') || 'medium'; } catch (_) { return 'medium'; } })() });
   if (!game.physicsOk) document.getElementById('physnote').classList.remove('hidden');
   let last = 0;
   const frame = t => { const dt = Math.min(.05, (t - last) / 1000 || 0); last = t; game.step(dt); game.render(); requestAnimationFrame(frame); };
