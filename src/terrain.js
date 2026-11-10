@@ -49,8 +49,8 @@ export const inCamp = (x, z, m = 0) => Math.abs(x - CAMP.x) < CAMP.half + m && M
 /* collision grid of static circles */
 export const GRID = 8, grid = new Map();
 export const gkey = (i, j) => (i + 200) * 1000 + (j + 200);
-export function addCol(x, z, r) {
-  const c = { x, z, r };
+export function addCol(x, z, r, h = 99) {
+  const c = { x, z, r, h };
   for (let i = Math.floor((x - r) / GRID); i <= Math.floor((x + r) / GRID); i++)
     for (let j = Math.floor((z - r) / GRID); j <= Math.floor((z + r) / GRID); j++) {
       const k = gkey(i, j); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(c);
@@ -75,3 +75,11 @@ export function losTerrain(ax, ay, az, bx, by, bz) {
 
 
 export function clearColliders() { grid.clear(); }
+
+/** True if (x, z) — at height `above` over the ground — is inside a static collider (trunk, log, rock…). */
+export function solidAt(x, z, above = 0) {
+  const l = grid.get(gkey(Math.floor(x / GRID), Math.floor(z / GRID)));
+  if (!l) return false;
+  for (const c of l) if (above < c.h && Math.hypot(x - c.x, z - c.z) < c.r) return true;
+  return false;
+}

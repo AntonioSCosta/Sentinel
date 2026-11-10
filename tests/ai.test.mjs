@@ -5,7 +5,7 @@ import { decide } from '../src/ai.js';
 
 const legio = () => ({ kind: 'legio', fighter: createFighter() });
 const idle = createFighter();
-const ctx = o => ({ dist: 1.8, playerFighter: idle, difficulty: 1, attackersNow: 0, rng: () => .5, ...o });
+const ctx = o => ({ dist: 1.5, playerFighter: idle, difficulty: 1, attackersNow: 0, rng: () => .5, ...o });
 
 test('respects the simultaneous attacker limit (2 normal, 3 hard)', () => {
   assert.equal(decide(legio(), ctx({ attackersNow: 2 })), 'circle');
@@ -21,7 +21,7 @@ test('never feints below Hard', () => {
 });
 test('punishes a staggered player in range', () => {
   const pf = createFighter(); stagger(pf, .8);
-  assert.match(decide(legio(), ctx({ playerFighter: pf, dist: 2 })), /^attack:(up|left|right|thrust)$/);
+  assert.match(decide(legio(), ctx({ playerFighter: pf, dist: 1.5 })), /^attack:(up|left|right|thrust)$/);
 });
 test('approaches when out of reach and waits while busy', () => {
   assert.equal(decide(legio(), ctx({ dist: 6 })), 'approach');

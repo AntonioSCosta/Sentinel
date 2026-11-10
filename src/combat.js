@@ -3,7 +3,9 @@
 
 export const DIRS = ['up', 'left', 'right', 'thrust'];
 export const WINDUP = { up: .5, left: .35, right: .35, thrust: .4 };   // minimum telegraph before a strike lands (s)
-export const RECOVERY = { up: .55, left: .4, right: .4, thrust: .45 }; // lock-out after a strike (s)
+export const STRIKE_TIME = { up: .3, left: .26, right: .26, thrust: .22 }; // blade travelling its arc (s)
+export const RECOVERY = { up: .45, left: .32, right: .32, thrust: .38 }; // lock-out after the arc (s)
+export const FLINCH = .3;            // hit while attacking → blow lost, short stagger
 export const DMG = { up: 1.3, left: 1, right: 1, thrust: .8 };         // damage multiplier per direction
 export const FULL_CHARGE = .8;        // s of holding for full power
 export const PARRY_WINDOW = .15;      // sword block started this recently → perfect parry
@@ -51,6 +53,9 @@ export function feint(f) {
   return true;
 }
 
+/** The blade met a guard or a wall: the swing ends early. */
+export function stopBlade(f) { if (f.phase === 'strike') { f.phase = 'recovery'; f.t = RECOVERY[f.dir] + .1; } }
+
 export function stagger(f, time) {
   f.phase = 'staggered'; f.t = time; f.released = false; f.blocking = null;
 }
@@ -74,8 +79,13 @@ export function tickFighter(f, dt) {
     if (!f.released && f.t > OVERHOLD) f.stamina = Math.max(0, f.stamina - 10 * dt);
     if (f.released && f.t >= WINDUP[f.dir]) {
       ev.push({ type: 'strike', dir: f.dir, power: f.power });
-      f.phase = 'recovery'; f.t = RECOVERY[f.dir];
+      f.phase = 'strike'; f.t = 0;
     }
+  } else if (f.phase === 'strike') {
+    const T = STRIKE_TIME[f.dir], p0 = Math.min(1, f.t / T);
+    f.t += dt; const p1 = Math.min(1, f.t / T);
+    ev.push({ type: 'swing', dir: f.dir, power: f.power, p0, p1 });
+    if (p1 >= 1) { f.phase = 'recovery'; f.t = RECOVERY[f.dir]; }
   } else if (f.phase === 'recovery' || f.phase === 'staggered') {
     f.t -= dt;
     if (f.t <= 0) { f.phase = 'idle'; f.t = 0; f.dir = null; ev.push({ type: 'recovered' }); }
@@ -93,7 +103,7 @@ export function resolveHit(def, { dir, power, fromAngle, baseDamage, kind = 'mel
   const raw = baseDamage * (DMG[dir] ?? 1) * power;
   const ang = Math.abs(fromAngle);
   const out = { result: 'hit', damage: raw, staminaCost: 0, attackerStagger: 0 };
-  const interrupt = () => { if (def.phase === 'windup') { def.phase = 'idle'; def.dir = null; def.released = false; } };
+  const interrupt = () => { if (def.phase === 'windup' || def.phase === 'strike') stagger(def, FLINCH); };
 
   if (def.blocking === 'sword' && ang <= SWORD_ARC && kind === 'melee') {
     if (def.blockT <= PARRY_WINDOW && def.parryOk) return { result: 'parried', damage: 0, staminaCost: 0, attackerStagger: .8 };

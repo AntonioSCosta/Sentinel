@@ -1,7 +1,7 @@
 // Pure duel decisions for Roman soldiers, evaluated each AI tick.
 import { DIRS } from './combat.js';
 
-export const REACH = 2.2;
+export const REACH = 1.75;  // start a blow from here; the attacker steps in during the windup
 const BLOCK_CHANCE = [.25, .6, .85];   // chance to read and block a visible player windup, by difficulty
 const FEINT_CHANCE = .15;             // Hard only
 

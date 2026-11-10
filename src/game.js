@@ -1,4 +1,4 @@
-import { TAU, rand, rr, clamp, lerp, smooth, wrapA, setSeed, vnoise, WORLD, roadX, CAMP, CASTRO, heightAt, inCamp, addCol, resolve, losTerrain, clearColliders } from './terrain.js';
+import { solidAt, TAU, rand, rr, clamp, lerp, smooth, wrapA, setSeed, vnoise, WORLD, roadX, CAMP, CASTRO, heightAt, inCamp, addCol, resolve, losTerrain, clearColliders } from './terrain.js';
 import { initAudio, SFX, spatial, setListener } from './audio.js';
 import * as C from './combat.js';
 import { zoneFromHeight, ZONE_MULT, LEG_SLOW } from './damage.js';
@@ -7,6 +7,7 @@ import { loadMaterials, terrainMaterial } from './materials.js';
 import { createPhysics } from './physics.js';
 import { createRender } from './render.js';
 import { withTimeout } from './physics.js';
+import { sweepHit, capsuleOf, glance, bladeSegment, toWorld } from './swing.js';
 import { resolveQuality } from './quality.js';
 
 /**
@@ -137,7 +138,7 @@ setSeed(777);
     if (blocked(x, z, -3)) continue;
     const s = rr(.6, 2.4), y = heightAt(x, z);
     rocks.push({ x, y: y - s * .25, z, s, sy: s * rr(.5, .9), ry: rr(0, TAU), rx: rr(-.3, .3) });
-    addCol(x, z, s * .85);
+    addCol(x, z, s * .85, s * .55);
   }
   for (let n = 0; n < 14000 && grass.length < 7000; n++) {
     const x = rr(-WORLD + 4, WORLD - 4), z = rr(-WORLD + 4, WORLD - 4);
@@ -466,7 +467,7 @@ function resetWorld() {
   setSeed(4242);
   endT = 0; endArgs = null;
   Object.assign(P, { f: C.createFighter(), charging: false, chargeT: 0, acc: { x: 0, y: 0 }, prevL: false, swingDir: null, bashCd: 0, bashT: 0, cleanT: 0,
-    lastDefense: null, incomingDir: null, vy: 0, hp: 100, ground: true, crouch: 0, w: 0, dardos: 5, pedras: 12, atk: 0, cd: 0,
+    lastDefense: null, incomingDir: null, vel: { x: 0, z: 0 }, push: null, kick: 0, swingHits: new Set(), vy: 0, hp: 100, ground: true, crouch: 0, w: 0, dardos: 5, pedras: 12, atk: 0, cd: 0,
     kills: 0, shots: 0, hits: 0, heads: 0, time: 0, swing: 0, throwT: 0, hurtT: 0 });
   P.pos.set(CASTRO.x - 9, 0, CASTRO.z - 5); P.pos.y = heightAt(P.pos.x, P.pos.z);
   P.yaw = Math.PI * .28; P.pitch = -.05;
@@ -623,35 +624,52 @@ function attack() {
 const deg = r => r * 180 / Math.PI;
 const flatFwd = () => V(-Math.sin(P.yaw), 0, -Math.cos(P.yaw));
 /** Player falcata strike lands (called from the fighter's 'strike' event). */
-function meleeStrike(dir, power) {
+const playerFacing = () => P.yaw + Math.PI; // swing.js convention: forward = (sin, cos)
+/** The blade met a tree, log or wall before anyone: it bounces off. Checks the tip of the arc segment. */
+function bladeBounced(pos, facing, dir, p) {
+  const tip = toWorld(bladeSegment(dir, p).tip, pos, facing);
+  return solidAt(tip.x, tip.z, tip.y - heightAt(tip.x, tip.z));
+}
+/** Player falcata: called every tick of the arc with the progress span [p0, p1]. */
+function playerSwing(ev) {
   if (state !== 'play') return;
-  P.swing = 1; P.swingDir = dir; SFX.swing();
-  const f = flatFwd(), reach = dir === 'thrust' ? 3.2 : 2.8;
-  let hitAny = false;
+  if (ev.p0 === 0) { P.swingHits = new Set(); P.swing = 1; P.swingDir = ev.dir; SFX.swing(); }
+  const facing = playerFacing();
+  if (bladeBounced(P.pos, facing, ev.dir, ev.p1)) { C.stopBlade(P.f); SFX.clank(.7); P.kick = .12; showPrompt('A lâmina bateu num obstáculo', .7); return; }
+  const f = flatFwd();
   for (const e of enemies) {
-    if (e.dead) continue;
-    const d = V(e.pos.x - P.pos.x, 0, e.pos.z - P.pos.z), dist = d.length();
-    if (dist > reach || Math.abs(e.pos.y - P.pos.y) > 1.8) continue;
-    d.normalize(); if (d.dot(f) < (dir === 'thrust' ? .8 : .45)) continue;
-    hitAny = true;
+    if (e.dead || P.swingHits.has(e)) continue;
+    if (Math.abs(e.pos.x - P.pos.x) > 4 || Math.abs(e.pos.z - P.pos.z) > 4) continue;
+    const r = sweepHit(P.pos, facing, ev.dir, ev.p0, ev.p1, capsuleOf(e.pos));
+    if (!r.hit) continue;
+    P.swingHits.add(e);
+    const d = V(e.pos.x - P.pos.x, 0, e.pos.z - P.pos.z).normalize();
     const ef = V(Math.sin(e.yaw), 0, Math.cos(e.yaw));
     const fromAngle = deg(Math.acos(clamp(ef.dot(d.clone().negate()), -1, 1)));
     const unaware = e.state === 'march' || e.state === 'guard';
-    const at = V(e.pos.x - d.x * .4, e.pos.y + 1.2, e.pos.z - d.z * .4);
-    if (unaware && fromAngle > 90) { damageEnemy(e, 40 * C.DMG[dir] * power * 3.5, false, at, 'golpe furtivo'); continue; }
-    const res = C.resolveHit(e.f, { dir, power, fromAngle, baseDamage: 40 });
-    if (res.result === 'parried') { C.stagger(P.f, res.attackerStagger); SFX.clank(); burst('spark', at, 12); showPrompt('O romano aparou o teu golpe!', .9); }
-    else if (res.result === 'blocked') { SFX.clank(); burst('spark', at, 8); e.flash = .05; }
-    else {
-      const hRel = clamp(.62 + P.pitch * .6 + (dir === 'up' ? .12 : 0), 0, 1), zone = zoneFromHeight(hRel);
-      if (res.result === 'guardBroken') feed('Quebraste-lhe a guarda');
-      if (zone === 'legs') e.slowT = LEG_SLOW.time;
-      damageEnemy(e, res.damage * ZONE_MULT[zone], zone === 'head', V(e.pos.x, e.pos.y + 1.85 * hRel, e.pos.z));
-    }
+    // speed bonus: running into the blow hits harder (relative closing speed)
+    const ev2 = e.vel || { x: 0, z: 0 }, closing = (P.vel.x - ev2.x) * d.x + (P.vel.z - ev2.z) * d.z;
+    const bonus = clamp(1 + closing * .08, .8, 1.5);
+    const at = V(r.at.x, r.at.y, r.at.z);
+    if (unaware && fromAngle > 90) { damageEnemy(e, 40 * C.DMG[ev.dir] * ev.power * 3.5, false, at, 'golpe furtivo'); hitStop(.07); continue; }
+    const res = C.resolveHit(e.f, { dir: ev.dir, power: ev.power * glance(r.p) * bonus, fromAngle, baseDamage: 40 });
+    if (res.result === 'parried') { C.stopBlade(P.f); C.stagger(P.f, res.attackerStagger); SFX.clank(); burst('spark', at, 12); showPrompt('O romano aparou o teu golpe!', .9); P.kick = .2; alert(e); return; }
+    if (res.result === 'blocked') { C.stopBlade(P.f); SFX.clank(); burst('spark', at, 8); e.flash = .05; P.kick = .12; knock(e, d, .6); alert(e); return; }
+    const hRel = clamp((r.at.y - e.pos.y) / 1.85, 0, 1), zone = zoneFromHeight(hRel);
+    if (res.result === 'guardBroken') feed('Quebraste-lhe a guarda');
+    if (zone === 'legs') e.slowT = LEG_SLOW.time;
+    const g = glance(r.p);
+    if (g < .55) showPrompt('De raspão', .5);
+    damageEnemy(e, res.damage * ZONE_MULT[zone], zone === 'head', at);
+    knock(e, d, 1.2 + ev.power); hitStop(.05 + .04 * g); P.kick = .08;
     alert(e);
   }
-  makeNoise(hitAny ? 14 : 6);
+  if (ev.p1 >= 1) makeNoise(P.swingHits.size ? 14 : 6); // the swish is heard once the blow is done
 }
+/** Push a soldier back a little (he also flinches via resolveHit). */
+function knock(e, d, strength) { if (!e.vel) e.vel = { x: 0, z: 0 }; e.vel.x += d.x * strength * 2; e.vel.z += d.z * strength * 2; }
+let hitStopT = 0;
+function hitStop(t) { hitStopT = Math.max(hitStopT, t); }
 /** F: shield bash interrupts an enemy windup and knocks them back. */
 function bash() {
   if (state !== 'play' || P.w === 2 || P.f.shieldHP <= 0 || P.f.stamina < 20 || P.f.phase !== 'idle' || P.bashCd > 0) return;
@@ -669,18 +687,23 @@ function bash() {
 /** R: pull stuck javelins out of the caetra. */
 function cleanShield() { if (state === 'play' && P.f.stuckJavelins > 0 && P.cleanT <= 0) { P.cleanT = 1.2; showPrompt('A arrancar os dardos do escudo…', 1.2); } }
 /** A Roman blow lands (enemy fighter 'strike' event). */
-function enemyStrike(e, ev) {
-  const dd = V(P.pos.x - e.pos.x, 0, P.pos.z - e.pos.z), pd = dd.length(); dd.normalize();
-  const ef = V(Math.sin(e.yaw), 0, Math.cos(e.yaw));
-  if (state !== 'play' || pd > 2.7 || ef.dot(dd) < .4 || Math.abs(P.pos.y - e.pos.y) > 1.8) { SFX.swing(); return; }
+/** A Roman blade travelling its arc: hits only if it actually passes through the player. */
+function enemySwing(e, ev) {
+  if (ev.p0 === 0) { e.swingHit = false; SFX.swing(); }
+  if (e.swingHit || state !== 'play') return;
+  if (bladeBounced(e.pos, e.yaw, ev.dir, ev.p1)) { C.stopBlade(e.f); SFX.clank(spatial(e.pos) * .7); return; }
+  const r = sweepHit(e.pos, e.yaw, ev.dir, ev.p0, ev.p1, capsuleOf(P.pos, .32, 1.75 - P.crouch * .55));
+  if (!r.hit) return;
+  e.swingHit = true;
+  const dd = V(P.pos.x - e.pos.x, 0, P.pos.z - e.pos.z).normalize();
   const fromAngle = deg(Math.acos(clamp(flatFwd().dot(dd.clone().negate()), -1, 1)));
-  const res = C.resolveHit(P.f, { dir: ev.dir, power: ev.power, fromAngle, baseDamage: e.dmg * DIFF[diff].dmg });
+  const res = C.resolveHit(P.f, { dir: ev.dir, power: ev.power * glance(r.p), fromAngle, baseDamage: e.dmg * DIFF[diff].dmg });
   P.lastDefense = res.result;
-  const spark = eyePos().addScaledVector(flatFwd(), .6).add(V(0, -.3, 0));
-  if (res.result === 'parried') { C.stagger(e.f, res.attackerStagger); SFX.clank(); burst('spark', spark, 14); showPrompt('Aparo perfeito!', .8); }
-  else if (res.result === 'blocked') { SFX.clank(); burst('spark', spark, 8); P.shake = .18; }
+  const spark = V(r.at.x, r.at.y, r.at.z);
+  if (res.result === 'parried') { C.stopBlade(e.f); C.stagger(e.f, res.attackerStagger); SFX.clank(); burst('spark', spark, 14); showPrompt('Aparo perfeito!', .8); hitStop(.08); return; }
+  if (res.result === 'blocked') { C.stopBlade(e.f); SFX.clank(); burst('spark', spark, 8); P.shake = .18; P.push = { x: dd.x * 1.5, z: dd.z * 1.5 }; return; }
   if (res.result === 'guardBroken') showPrompt('Guarda quebrada!', 1);
-  if (res.damage > 0) { hurtPlayer(res.damage, e.pos); burst('blood', eyePos().add(V(0, -.4, 0)), 3); }
+  if (res.damage > 0) { hurtPlayer(res.damage, e.pos); burst('blood', spark, 4); P.push = { x: dd.x * 2.5, z: dd.z * 2.5 }; P.kick = .25; hitStop(.05); }
 }
 function use() {
   for (const t of supplyTents) {
@@ -832,7 +855,7 @@ function canSee(e) {
   if (d > range) return 0;
   const fa = Math.abs(wrapA(Math.atan2(dx, dz) - e.yaw));
   const behind = fa > 1.25;
-  if (behind && d > (P.crouch > .5 ? 1.5 : 3)) return 0;
+  if (behind && d > (P.crouch > .5 ? 1 : 2.5)) return 0;
   if (!losTerrain(e.pos.x, e.pos.y + 1.7, e.pos.z, P.pos.x, P.pos.y + 1.4 - P.crouch * .5, P.pos.z)) return 0;
   return (1 - d / range) * (behind ? .25 : 1);
 }
@@ -929,7 +952,7 @@ function updateEnemies(dt) {
           speed = moveEnemy(e, P.pos.x + Math.sin(a) * 2.6, P.pos.z + Math.cos(a) * 2.6, 1.8 * slow, dt);
         }
       }
-      for (const ev of C.tickFighter(e.f, dt)) if (ev.type === 'strike') enemyStrike(e, ev);
+      for (const ev of C.tickFighter(e.f, dt)) if (ev.type === 'swing') enemySwing(e, ev);
       if (e.kind === 'centurion' && e.barkT <= 0) { e.barkT = 6; SFX.grunt(spatial(e.pos)); for (const o of enemies) if (!o.dead && o.pos.distanceTo(e.pos) < 30) alert(o); }
     } else if (e.state === 'skirmish') {
       if (e.alarmT != null && e.alarmT > 0) { e.alarmT -= dt; if (e.alarmT <= 0) raiseAlarm(); }
@@ -991,6 +1014,8 @@ function updatePlayer(dt) {
   let speed = 5.2;
   if (P.crouch > .5) speed = 2.6; else if (sprint && ml > 0) speed = 8.6;
   if (P.block) speed *= .55;
+  P.vel.x = ml > 0 ? mx / ml * speed : 0; P.vel.z = ml > 0 ? mz / ml * speed : 0;
+  if (P.push) { P.pos.x += P.push.x * dt; P.pos.z += P.push.z * dt; const k = Math.exp(-8 * dt); P.push.x *= k; P.push.z *= k; resolve(P.pos, .38); if (Math.hypot(P.push.x, P.push.z) < .05) P.push = null; }
   if (ml > 0) {
     const ox = P.pos.x, oz = P.pos.z;
     P.pos.x += mx / ml * speed * dt; P.pos.z += mz / ml * speed * dt;
@@ -1019,7 +1044,11 @@ function updatePlayer(dt) {
   if (P.charging) {
     P.chargeT += dt;
     if (P.f.phase !== 'windup' && (P.chargeT >= .12 || released)) {
-      if (!C.beginAttack(P.f, C.dirFromMouse(P.acc.x, P.acc.y))) P.charging = false;
+      // buffered: a click during recovery/flinch starts the blow as soon as the fighter is free
+      if (!C.beginAttack(P.f, C.dirFromMouse(P.acc.x, P.acc.y))) {
+        if (P.f.phase === 'idle' && !P.f.blocking) { P.charging = false; showPrompt('Sem fôlego para atacar', .6); }
+        else if (released) P.queued = true;
+      } else if (P.queued) { P.queued = false; C.releaseAttack(P.f); P.charging = false; }
     }
     if (released && P.f.phase === 'windup') { C.releaseAttack(P.f); P.charging = false; }
     if (P.w !== 0) P.charging = false;
@@ -1031,7 +1060,7 @@ function updatePlayer(dt) {
   let inc = null, incD = 4;
   for (const e of enemies) if (!e.dead && e.f.phase === 'windup') { const d = e.pos.distanceTo(P.pos); if (d < incD) { incD = d; inc = e.f.dir; } }
   P.incomingDir = inc;
-  for (const ev of C.tickFighter(P.f, dt)) if (ev.type === 'strike') meleeStrike(ev.dir, ev.power);
+  for (const ev of C.tickFighter(P.f, dt)) if (ev.type === 'swing') playerSwing(ev);
   P.swing = Math.max(0, P.swing - dt / .45); P.throwT = Math.max(0, P.throwT - dt / .6); P.hurtT = Math.max(0, P.hurtT - dt);
 
   // pickups
@@ -1062,7 +1091,8 @@ function updateCamera(dt) {
   const by = Math.sin(P.bob * 2) * .035 * bobA, bx = Math.cos(P.bob) * .025 * bobA;
   camera.position.set(P.pos.x + bx * 0, P.pos.y + 1.68 - P.crouch * .6 + by, P.pos.z);
   const shake = P.hurtT > 0 ? (Math.random() - .5) * P.hurtT * .08 : 0;
-  camera.rotation.set(P.pitch + shake, P.yaw, shake * .5);
+  P.kick = Math.max(0, P.kick - dt * 1.5);
+  camera.rotation.set(P.pitch + shake + P.kick * .12, P.yaw, shake * .5 + P.kick * .05);
   // viewmodel
   FAL.visible = P.w === 0; JAV.visible = P.w === 1 && (P.dardos > 0 || P.throwT > 0); SLG.visible = P.w === 2;
   SHD.visible = P.w !== 2 && P.f.shieldHP > 0;
@@ -1231,6 +1261,7 @@ $('sens2').addEventListener('input', e => { setSens(+e.target.value); $('sens').
    ========================================================= */
 let menuT = 0;
 function step(dt) {
+  if (hitStopT > 0) { hitStopT -= dt; dt *= .15; } // brief impact freeze
   if (state === 'play') { updatePlayer(dt); updateEnemies(dt); updateProjectiles(dt); updateCamera(dt); updateHUD(dt); }
   else if (state === 'dead' || state === 'won') {
     if (endT > 0) { endT -= dt; if (endT <= 0 && endArgs) { endScreen(...endArgs); endArgs = null; } }

@@ -32,19 +32,14 @@ try {
   G.P.pos.set(pe.pos.x, pe.pos.y, pe.pos.z + 2.2); G.P.yaw = 0;
   for (const w of [0, 1, 2]) { key('Digit' + (w + 1)); key('Digit' + (w + 1), false); for (let k = 0; k < 6; k++) { G.input.mouse(true, false); st(70); G.input.mouse(false, false); st(5); } }
   G.start(1); forcePlay(); god = true;
-  for (const e of G.enemies.filter(e => e.group === 'patrol')) {
-    if (e.dead) continue;
-    for (const o of G.enemies) if (o !== e && !o.dead) { o.state = 'guard'; o.aware = 0; o.f.phase = 'idle'; o.pos.x += 60; }
-    e.hp = 1; e.aware = 0; e.f.phase = 'idle'; e.f.blocking = null; e.state = 'guard'; e.yaw = Math.PI; e.wT = 99; e.wander = e.pos.clone();
-    G.P.pos.set(e.pos.x, e.pos.y, e.pos.z + 2); G.P.yaw = 0; key('Digit1');
-    G.input.mouse(true, false); st(40); G.input.mouse(false, false); st(30);
-  }
+  // mission flow only: melee itself is covered by tools/smoke-combat.mjs
+  for (const e of G.enemies.filter(e => e.group === 'patrol')) if (!e.dead) { G.damageEnemyForTest(e, 999); st(2); }
   check('patrol killed', G.enemies.filter(e => e.group === 'patrol' && !e.dead).length === 0);
   for (const t of G.supplyTents) { G.P.pos.set(t.x + 3.5, G.heightAt(t.x + 3.5, t.z), t.z); G.use(); st(30); }
   check('mission 3 reached', G.mission === 2);
   st(600);
   const c = G.enemies.find(e => e.kind === 'centurion');
-  for (let k = 0; k < 60 && !c.dead; k++) { for (const o of G.enemies) if (o !== c && !o.dead) { o.state = 'guard'; o.aware = 0; o.f.phase = 'idle'; o.pos.x += 60; } c.aware = 0; c.f.phase = 'idle'; c.f.blocking = null; G.P.pos.set(c.pos.x, c.pos.y, c.pos.z + 2); G.P.yaw = 0; c.state = 'guard'; c.yaw = Math.PI; c.wT = 99; c.wander = c.pos.clone(); G.input.mouse(true, false); st(40); G.input.mouse(false, false); st(30); }
+  if (c) { G.damageEnemyForTest(c, 9999); st(2); }
   st(200);
   check('won', G.state === 'won');
   check('end screen shown', !doc.getElementById('end').classList.contains('hidden'));

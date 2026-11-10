@@ -20,14 +20,33 @@ test('charge power grows from .5 to 1 over .8 s and caps', () => {
   }
 });
 
-test('a held attack strikes once the windup is complete, then recovers', () => {
+test('after the windup the blade travels its arc (swing events up to p=1), then recovers', () => {
   const f = C.createFighter();
   C.beginAttack(f, 'left'); C.releaseAttack(f);
   const ev = [];
-  for (let i = 0; i < 40; i++) ev.push(...C.tickFighter(f, .05));
+  for (let i = 0; i < 60; i++) ev.push(...C.tickFighter(f, 1 / 60));
   assert.deepEqual(ev.filter(e => e.type === 'strike').map(e => e.dir), ['left']);
-  assert.ok(ev.some(e => e.type === 'recovered'));
-  assert.equal(f.phase, 'idle');
+  const sw = ev.filter(e => e.type === 'swing');
+  assert.ok(sw.length >= Math.floor(C.STRIKE_TIME.left * 60) - 1, 'one swing event per tick of the arc');
+  assert.equal(sw[0].p0, 0); assert.equal(sw.at(-1).p1, 1);
+  assert.ok(sw.every((e, i) => i === 0 || e.p0 === sw[i - 1].p1), 'contiguous arc');
+  assert.ok(ev.some(e => e.type === 'recovered')); assert.equal(f.phase, 'idle');
+});
+
+test('being hit mid-swing interrupts the blow (flinch)', () => {
+  const f = C.createFighter(); C.beginAttack(f, 'up'); C.releaseAttack(f);
+  for (let i = 0; i < 32; i++) C.tickFighter(f, 1 / 60);
+  assert.equal(f.phase, 'strike');
+  C.resolveHit(f, { dir: 'left', power: 1, fromAngle: 0, baseDamage: 20 });
+  assert.equal(f.phase, 'staggered');
+});
+
+test('stopBlade: a blocked blow ends the swing and goes to recovery', () => {
+  const f = C.createFighter(); C.beginAttack(f, 'right'); C.releaseAttack(f);
+  for (let i = 0; i < 24; i++) C.tickFighter(f, 1 / 60);
+  assert.equal(f.phase, 'strike'); C.stopBlade(f);
+  assert.equal(f.phase, 'recovery');
+  assert.ok(!C.tickFighter(f, 1 / 60).some(e => e.type === 'swing'));
 });
 
 test('sword block started .1 s before impact is a perfect parry', () => {
@@ -69,7 +88,7 @@ test('javelins stick in the shield (max 3) and each one makes blocking cost more
 test('spam: no new attack during recovery, and stamina runs out after a flurry', () => {
   const f = C.createFighter();
   C.beginAttack(f, 'up'); C.releaseAttack(f);
-  for (let i = 0; i < 12; i++) C.tickFighter(f, .05); // into recovery
+  for (let i = 0; i < 100 && f.phase !== 'recovery'; i++) C.tickFighter(f, 1 / 60); // into recovery
   assert.equal(f.phase, 'recovery');
   assert.equal(C.beginAttack(f, 'left'), false);
   tickUntilIdle(f);
