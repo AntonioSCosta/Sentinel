@@ -414,6 +414,10 @@ SHD.userData.idle = { x: -.5, y: -.46, z: -.62, ry: .5 };
 SHD.userData.block = { x: -.12, y: -.24, z: -.42, ry: .05 };
 SHD.userData.bash = { x: -.1, y: -.26, z: -.7, ry: 0 };
 const STUCK = [0, 1, 2].map(i => { const g = new THREE.Group(); const sh = vmMesh(new THREE.CylinderGeometry(.008, .008, .7, 5), 0x6e5032, 0, 0, .35, g); sh.rotation.x = Math.PI / 2; g.position.set(-.12 + i * .11, .06 - i * .09, .02); g.rotation.set(.25 - i * .2, .3 - i * .25, 0); g.visible = false; SHD.add(g); return g; });
+const UP = new THREE.Vector3(0, 1, 0), _e = new THREE.Euler();
+const VM_SHOULDER = [.24, -.3, -.12];               // where the sword arm hinges, in camera space
+// an enemy cut from HIS left arrives on YOUR right: mirror for the warning arrow and the guard
+const MIRROR = { left: 'right', right: 'left', up: 'up', thrust: 'thrust' };
 // first-person falcata poses: p = position, r = rotation (x,y,z)
 const FAL_POSE = {
   idle: { p: [.34, -.36, -.55], r: [-.25, -.2, -.35] },
@@ -1145,14 +1149,20 @@ function updateCamera(dt) {
   const sx = Math.cos(P.bob) * .012, sy = Math.abs(Math.sin(P.bob)) * .014;
   if (P.w === 0) {
     const b = FAL.userData.base, f = P.f;
-    let t = FAL_POSE.idle;
-    if (f.blocking === 'sword') t = FAL_POSE['block_' + (P.incomingDir || 'up')];
-    else if (f.phase === 'windup') t = FAL_POSE['wind_' + f.dir];
-    else if (f.phase === 'recovery' && f.dir) t = FAL_POSE['hit_' + f.dir];
-    else if (f.phase === 'staggered') t = FAL_POSE.stagger;
-    const k = Math.min(1, dt * (f.phase === 'recovery' ? 26 : 12));
-    FAL.position.set(lerp(FAL.position.x, t.p[0] + sx, k), lerp(FAL.position.y, t.p[1] - sy, k), lerp(FAL.position.z, t.p[2], k));
-    FAL.rotation.set(lerp(FAL.rotation.x, t.r[0], k), lerp(FAL.rotation.y, t.r[1], k), lerp(FAL.rotation.z, t.r[2], k));
+    // windup / strike / recovery follow the same arc (swing.js) that decides hits; guard and idle use fixed poses
+    let pos, quat, k = Math.min(1, dt * 12);
+    const arc = (dir, p, reach) => {
+      const v = bladeDir(dir, p), vc = _v.set(v.x, v.y, -v.z).normalize();
+      pos = [VM_SHOULDER[0] + vc.x * reach, VM_SHOULDER[1] + vc.y * reach, VM_SHOULDER[2] + vc.z * reach];
+      quat = _q.setFromUnitVectors(UP, vc).clone();
+    };
+    if (f.blocking === 'sword') { const t = FAL_POSE['block_' + MIRROR[P.incomingDir || 'up']]; pos = t.p; quat = _q.setFromEuler(_e.set(t.r[0], t.r[1], t.r[2])).clone(); }
+    else if (f.phase === 'windup' && f.dir) { arc(f.dir, 0, f.dir === 'thrust' ? .2 : .32); }
+    else if (f.phase === 'strike' && f.dir) { const p = Math.min(1, f.t / C.STRIKE_TIME[f.dir]); arc(f.dir, p, f.dir === 'thrust' ? .2 + .3 * p : .42); k = Math.min(1, dt * 45); }
+    else if (f.phase === 'recovery' && f.dir) { arc(f.dir, 1, .38); k = Math.min(1, dt * 8); }
+    else { const t = f.phase === 'staggered' ? FAL_POSE.stagger : FAL_POSE.idle; pos = t.p; quat = _q.setFromEuler(_e.set(t.r[0], t.r[1], t.r[2])).clone(); }
+    FAL.position.set(lerp(FAL.position.x, pos[0] + sx, k), lerp(FAL.position.y, pos[1] - sy, k), lerp(FAL.position.z, pos[2], k));
+    FAL.quaternion.slerp(quat, k);
   }
   if (P.w === 1) {
     const b = JAV.userData.base, t = P.throwT, k = 1 - t;
@@ -1238,7 +1248,7 @@ function updateHUD(dt) {
   const ARW = { up: '▲', left: '◀', right: '▶', thrust: '●' };
   $('chg').textContent = P.w === 0 && P.f.phase === 'windup' ? ARW[P.f.dir] : '';
   $('chg').style.opacity = P.f.phase === 'windup' ? .4 + .6 * Math.min(1, P.f.t / C.FULL_CHARGE) : 0;
-  $('incoming').textContent = P.incomingDir ? ARW[P.incomingDir] : '';
+  $('incoming').textContent = P.incomingDir ? ARW[MIRROR[P.incomingDir]] : '';
   $('vign').style.opacity = P.hp < 35 ? (.35 + Math.sin(P.time * 5) * .12) * (1 - P.hp / 35) + .2 : (P.hurtT > 0 ? P.hurtT * 1.6 : 0);
   if (hitmT > 0) { hitmT -= dt; if (hitmT <= 0) $('hitm').style.opacity = 0; }
   if (dmgT > 0) { dmgT -= dt; if (dmgT <= 0) $('dmg').style.opacity = 0; }
@@ -1337,7 +1347,7 @@ return {
   get enemies() { return enemies; }, get mission() { return mission; }, get state() { return state; },
   get projectiles() { return projectiles; }, get pickups() { return pickups; },
   input: { mouse: (l, r) => { mouseL = l; mouseR = r; }, mouseMove: (dx, dy) => { if (P.charging) { P.acc.x += dx; P.acc.y += dy; } } },
-  physicsOk: phys.ok, physCounts: () => phys.counts(), V3: THREE.Vector3, damageEnemyForTest: (e, d) => damageEnemy(e, d, false, e.pos.clone()), spawnEnemyJavelin, vm: { stuckVisible: () => STUCK.filter(m => m.visible).length },
+  physicsOk: phys.ok, physCounts: () => phys.counts(), V3: THREE.Vector3, damageEnemyForTest: (e, d) => damageEnemy(e, d, false, e.pos.clone()), spawnEnemyJavelin, vm: { stuckVisible: () => STUCK.filter(m => m.visible).length, fal: FAL },
 };
 }
 
