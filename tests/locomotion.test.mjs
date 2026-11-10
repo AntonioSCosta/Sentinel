@@ -26,8 +26,9 @@ test('lunges in during its own windup, steps back after the blow', () => {
 });
 
 test('circles at distance when told to wait, and backs off when crowded', () => {
-  const c = footwork(base({ dist: 1.6, act: 'circle', strafe: -1 }));
-  assert.ok(c.strafe < -1); assert.ok(Math.abs(c.forward) < .6);
+  const c = footwork(base({ dist: 2.4, act: 'circle', strafe: -1 }));
+  assert.ok(c.strafe < -1); assert.ok(Math.abs(c.forward) < .6, 'holds the ring at ~2.4 m');
+  assert.ok(footwork(base({ dist: 1.6, act: 'circle' })).forward < 0, 'a waiting soldier backs out to the ring');
   assert.ok(footwork(base({ dist: .8, act: 'circle' })).forward < 0);
 });
 

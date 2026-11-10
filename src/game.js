@@ -328,7 +328,7 @@ const BOX = (w, h, d) => new THREE.BoxGeometry(w, h, d);
 function makeSoldier(kind) {
   const mats = [];
   const mm = (name, extra) => { const m = MAT(name, extra); mats.push(m); return m; };
-  const tunic = mm(kind === 'velite' ? 'wool_brown' : 'wool_red'), armor = mm('iron'), skin = mm('skin'),
+  const tunic = mm(kind === 'velite' || kind === 'lusitano' ? 'wool_brown' : 'wool_red'), armor = mm('iron'), skin = mm('skin'),
         helm = mm(kind === 'centurion' ? 'bronze' : 'iron'), metal = mm('iron', { roughness: .3 }), leather = mm('leather'),
         shieldM = mm(kind === 'velite' ? 'leather' : 'canvas_red', { side: THREE.DoubleSide }), gold = mm('bronze'),
         crestM = mm('wool_red'), fur = mm('wool_brown'), wood = mm('wood');
@@ -478,7 +478,7 @@ function makeSoldier(kind) {
    Viewmodel (first-person weapons)
    ========================================================= */
 const VM = new THREE.Group(); camera.add(VM);
-const vmMat = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: .6, metalness: c === 0xd9d4c8 || c === 0xcfc9bb ? .8 : 0, fog: false });
+const vmMat = (c) => new THREE.MeshStandardMaterial({ color: c === 0xd9d4c8 ? 0x8f969d : c, roughness: c === 0xd9d4c8 ? .35 : .6, metalness: c === 0xd9d4c8 || c === 0xcfc9bb ? .85 : 0, fog: false });
 function vmMesh(g, c, x, y, z, p) { const m = new THREE.Mesh(g, vmMat(c)); m.position.set(x, y, z); (p || VM).add(m); return m; }
 // falcata
 const FAL = new THREE.Group(); VM.add(FAL);
@@ -501,7 +501,8 @@ const SHD = new THREE.Group(); VM.add(SHD);
   const b = vmMesh(new THREE.SphereGeometry(.08, 12, 8, 0, TAU, 0, Math.PI / 2), 0xb89150, 0, 0, .02, SHD); b.rotation.x = Math.PI / 2;
   for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; vmMesh(new THREE.SphereGeometry(.018, 6, 4), 0xc9a560, Math.cos(a) * .22, Math.sin(a) * .22, .02, SHD); }
 }
-SHD.userData.idle = { x: -.5, y: -.46, z: -.62, ry: .5 };
+SHD.userData.idle = { x: -.56, y: -.56, z: -.7, ry: .55 };
+SHD.scale.setScalar(.72); FAL.scale.setScalar(.85);
 SHD.userData.block = { x: -.12, y: -.24, z: -.42, ry: .05 };
 SHD.userData.bash = { x: -.1, y: -.26, z: -.7, ry: 0 };
 const STUCK = [0, 1, 2].map(i => { const g = new THREE.Group(); const sh = vmMesh(new THREE.CylinderGeometry(.008, .008, .7, 5), 0x6e5032, 0, 0, .35, g); sh.rotation.x = Math.PI / 2; g.position.set(-.12 + i * .11, .06 - i * .09, .02); g.rotation.set(.25 - i * .2, .3 - i * .25, 0); g.visible = false; SHD.add(g); return g; });
@@ -511,7 +512,7 @@ const VM_SHOULDER = [.24, -.3, -.12];               // where the sword arm hinge
 const MIRROR = { left: 'right', right: 'left', up: 'up', thrust: 'thrust' };
 // first-person falcata poses: p = position, r = rotation (x,y,z)
 const FAL_POSE = {
-  idle: { p: [.34, -.36, -.55], r: [-.25, -.2, -.35] },
+  idle: { p: [.36, -.42, -.6], r: [-.35, -.2, -.3] },
   wind_up: { p: [.3, -.05, -.42], r: [.9, -.1, -.2] }, wind_left: { p: [-.1, -.18, -.5], r: [-.2, .2, 1.25] },
   wind_right: { p: [.5, -.16, -.42], r: [-.2, -.3, -1.35] }, wind_thrust: { p: [.26, -.3, -.22], r: [-1.5, 0, 0] },
   hit_up: { p: [.1, -.48, -.62], r: [-1.6, 0, -.1] }, hit_left: { p: [.42, -.3, -.6], r: [-.3, -.3, -1.4] },
@@ -1142,7 +1143,7 @@ function updateEnemies(dt) {
     for (const o of enemies) {
       if (o === e || o.dead) continue;
       const dx = e.pos.x - o.pos.x, dz = e.pos.z - o.pos.z, d = Math.hypot(dx, dz);
-      if (d < 1.1 && d > 1e-3) { e.pos.x += dx / d * (1.1 - d) * .5; e.pos.z += dz / d * (1.1 - d) * .5; }
+      if (d < 1.45 && d > 1e-3) { e.pos.x += dx / d * (1.45 - d) * .5; e.pos.z += dz / d * (1.45 - d) * .5; }
     }
     // keep off the player
     if (pd < 1.0 && pd > 1e-3) { e.pos.x -= (P.pos.x - e.pos.x) / pd * (1 - pd); e.pos.z -= (P.pos.z - e.pos.z) / pd * (1 - pd); }

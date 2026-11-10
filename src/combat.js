@@ -18,7 +18,7 @@ export const SHIELD_COST = 15;        // stamina per blocked blow at full power
 export const SWORD_BLOCK_COST = 18;
 export const JAVELIN_SHIELD_PENALTY = .15; // extra shield cost per stuck javelin
 export const MAX_STUCK = 3;
-export const STAMINA_REGEN = 14;      // per s while idle or blocking-free
+export const STAMINA_REGEN = 22;      // per s while idle or blocking-free
 export const OVERHOLD = 1.5;          // holding a charge longer than this drains stamina
 
 export function dirFromMouse(dx, dy) {
