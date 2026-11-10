@@ -1,0 +1,119 @@
+// Pure melee combat rules shared by the player and the Roman soldiers.
+// No Three.js here: everything is plain numbers so it can be unit-tested.
+
+export const DIRS = ['up', 'left', 'right', 'thrust'];
+export const WINDUP = { up: .5, left: .35, right: .35, thrust: .4 };   // minimum telegraph before a strike lands (s)
+export const RECOVERY = { up: .55, left: .4, right: .4, thrust: .45 }; // lock-out after a strike (s)
+export const DMG = { up: 1.3, left: 1, right: 1, thrust: .8 };         // damage multiplier per direction
+export const FULL_CHARGE = .8;        // s of holding for full power
+export const PARRY_WINDOW = .15;      // sword block started this recently → perfect parry
+export const SHIELD_ARC = 75;         // degrees each side covered by the caetra / scutum
+export const SWORD_ARC = 60;          // degrees each side covered by a sword block
+export const ATTACK_COST = 11;        // stamina per swing
+export const MIN_ATTACK_STAMINA = 8;
+export const SHIELD_COST = 15;        // stamina per blocked blow at full power
+export const SWORD_BLOCK_COST = 18;
+export const JAVELIN_SHIELD_PENALTY = .15; // extra shield cost per stuck javelin
+export const MAX_STUCK = 3;
+export const STAMINA_REGEN = 14;      // per s while idle or blocking-free
+export const OVERHOLD = 1.5;          // holding a charge longer than this drains stamina
+
+export function dirFromMouse(dx, dy) {
+  if (Math.hypot(dx, dy) < 4) return 'thrust';
+  if (Math.abs(dy) > Math.abs(dx)) return dy < 0 ? 'up' : 'thrust';
+  return dx < 0 ? 'left' : 'right';
+}
+
+export function createFighter(opts = {}) {
+  return { stamina: 100, shieldHP: 100, stuckJavelins: 0, phase: 'idle', dir: null, t: 0, released: false, power: .5,
+    blocking: null, blockT: 0, ...opts };
+}
+
+const chargePower = t => .5 + .5 * Math.min(1, t / FULL_CHARGE);
+
+export function beginAttack(f, dir) {
+  if (f.phase !== 'idle' || f.blocking || f.stamina < MIN_ATTACK_STAMINA) return false;
+  f.phase = 'windup'; f.dir = dir; f.t = 0; f.released = false;
+  f.stamina = Math.max(0, f.stamina - ATTACK_COST);
+  return true;
+}
+
+export function releaseAttack(f) {
+  if (f.phase !== 'windup' || f.released) return null;
+  f.released = true; f.power = chargePower(f.t);
+  return { dir: f.dir, power: f.power };
+}
+
+export function feint(f) {
+  if (f.phase !== 'windup') return false;
+  f.phase = 'idle'; f.dir = null; f.t = 0; f.released = false;
+  return true;
+}
+
+export function stagger(f, time) {
+  f.phase = 'staggered'; f.t = time; f.released = false; f.blocking = null;
+}
+
+export function beginBlock(f, kind) {
+  if (f.phase === 'windup') feint(f);
+  if (f.phase !== 'idle') return false;
+  if (kind === 'shield' && f.shieldHP <= 0) return false;
+  f.blocking = kind; f.blockT = 0;
+  return true;
+}
+
+export function endBlock(f) { f.blocking = null; f.blockT = 0; }
+
+/** Advance timers; returns events: {type:'strike',dir,power} and {type:'recovered'}. */
+export function tickFighter(f, dt) {
+  const ev = [];
+  if (f.blocking) f.blockT += dt;
+  if (f.phase === 'windup') {
+    f.t += dt;
+    if (!f.released && f.t > OVERHOLD) f.stamina = Math.max(0, f.stamina - 10 * dt);
+    if (f.released && f.t >= WINDUP[f.dir]) {
+      ev.push({ type: 'strike', dir: f.dir, power: f.power });
+      f.phase = 'recovery'; f.t = RECOVERY[f.dir];
+    }
+  } else if (f.phase === 'recovery' || f.phase === 'staggered') {
+    f.t -= dt;
+    if (f.t <= 0) { f.phase = 'idle'; f.t = 0; f.dir = null; ev.push({ type: 'recovered' }); }
+  } else if (f.phase === 'idle' && !f.blocking) {
+    f.stamina = Math.min(100, f.stamina + STAMINA_REGEN * dt);
+  }
+  return ev;
+}
+
+/**
+ * Resolve a blow (or javelin) landing on `def`.
+ * fromAngle: degrees between the defender's facing and the direction the blow comes from (0 = straight ahead).
+ */
+export function resolveHit(def, { dir, power, fromAngle, baseDamage, kind = 'melee' }) {
+  const raw = baseDamage * (DMG[dir] ?? 1) * power;
+  const ang = Math.abs(fromAngle);
+  const out = { result: 'hit', damage: raw, staminaCost: 0, attackerStagger: 0 };
+  const interrupt = () => { if (def.phase === 'windup') { def.phase = 'idle'; def.dir = null; def.released = false; } };
+
+  if (def.blocking === 'sword' && ang <= SWORD_ARC && kind === 'melee') {
+    if (def.blockT <= PARRY_WINDOW) return { result: 'parried', damage: 0, staminaCost: 0, attackerStagger: .8 };
+    const cost = SWORD_BLOCK_COST * power;
+    if (def.stamina < cost) { def.stamina = 0; endBlock(def); stagger(def, .6); return { result: 'guardBroken', damage: raw * .5, staminaCost: cost, attackerStagger: 0 }; }
+    def.stamina -= cost;
+    return { result: 'blocked', damage: 0, staminaCost: cost, attackerStagger: 0 };
+  }
+  if (def.blocking === 'shield' && ang <= SHIELD_ARC) {
+    if (kind === 'javelin') {
+      def.stuckJavelins = Math.min(MAX_STUCK, def.stuckJavelins + 1);
+      def.shieldHP = Math.max(0, def.shieldHP - 8);
+      return { result: 'blocked', damage: 0, staminaCost: 0, attackerStagger: 0, stuck: true };
+    }
+    const cost = SHIELD_COST * power * (1 + def.stuckJavelins * JAVELIN_SHIELD_PENALTY);
+    if (def.stamina < cost) { def.stamina = 0; endBlock(def); stagger(def, .7); return { result: 'guardBroken', damage: raw * .5, staminaCost: cost, attackerStagger: 0 }; }
+    def.stamina -= cost;
+    def.shieldHP = Math.max(0, def.shieldHP - 6 * (DMG[dir] ?? 1) * power);
+    if (def.shieldHP <= 0) endBlock(def);
+    return { result: 'blocked', damage: 0, staminaCost: cost, attackerStagger: 0 };
+  }
+  interrupt();
+  return out;
+}
