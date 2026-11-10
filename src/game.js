@@ -3,12 +3,13 @@ import { initAudio, SFX, spatial, setListener } from './audio.js';
 import * as C from './combat.js';
 import { zoneFromHeight, ZONE_MULT, LEG_SLOW } from './damage.js';
 import { decide, REACH } from './ai.js';
+import { loadMaterials, terrainMaterial } from './materials.js';
 
 /**
  * Builds the whole game. Rendering, DOM and window are injected so the game can run headless in tests.
  * @returns game API used by boot() and by tools/smoke.mjs
  */
-export async function createGame({ THREE, renderer, canvas, document, window, physics }) {
+export async function createGame({ THREE, renderer, canvas, document, window, physics, loader = null, quality = 'medium' }) {
 clearColliders();
 const $ = id => document.getElementById(id);
 
@@ -68,6 +69,10 @@ function makeDotTex() {
 }
 const DOT = makeDotTex();
 
+const MATS = await loadMaterials({ THREE, loader, quality, anisotropy: renderer.capabilities ? renderer.capabilities.getMaxAnisotropy() : 4 });
+/** A private copy of a shared PBR material (textures stay shared). */
+const MAT = (name, extra) => { const m = MATS[name].clone(); if (extra) Object.assign(m, extra); return m; };
+
 /* =========================================================
    Terrain
    ========================================================= */
@@ -78,23 +83,22 @@ const DOT = makeDotTex();
   const pos = g.attributes.position;
   for (let i = 0; i < pos.count; i++) pos.setY(i, heightAt(pos.getX(i), pos.getZ(i)));
   g.computeVertexNormals();
-  const nor = g.attributes.normal, cols = [];
-  const grassA = new THREE.Color(0x4d672b), grassB = new THREE.Color(0x8c8445), rock = new THREE.Color(0x77716a),
-        rock2 = new THREE.Color(0x9b958b), dirt = new THREE.Color(0x7d6547), camp = new THREE.Color(0x6c573d), c = new THREE.Color();
+  const nor = g.attributes.normal, splat = [], campW = [];
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i), ny = nor.getY(i);
-    const v = vnoise(x * .07, z * .07), v2 = vnoise(x * .3 + 9, z * .3);
-    c.copy(grassA).lerp(grassB, clamp(v * 1.1 - .1 + (y > 20 ? .25 : 0), 0, 1));
-    c.lerp(rock, smooth(.86, .66, ny));
-    c.lerp(rock2, smooth(30, 48, y) * .7);
+    const v = vnoise(x * .05, z * .05);
+    const rock = clamp(smooth(.86, .66, ny) + smooth(30, 48, y) * .7, 0, 1);
     const dr = Math.abs(x - roadX(z));
-    if (!inCamp(x, z, 4)) c.lerp(dirt, smooth(3.8, 2.2, dr) * .9);
-    if (inCamp(x, z, 3)) c.lerp(camp, .75);
-    if (Math.hypot(x - CASTRO.x, z - CASTRO.z) < 13) c.lerp(dirt, .45);
-    const j = .92 + v2 * .16; cols.push(c.r * j, c.g * j, c.b * j);
+    const road = inCamp(x, z, 4) ? 0 : smooth(3.8, 2.2, dr) * .95;
+    const castro = Math.hypot(x - CASTRO.x, z - CASTRO.z) < 13 ? .5 : 0;
+    const dry = clamp(v * 1.2 - .25 + (y > 20 ? .3 : 0) + castro, 0, 1) * (1 - rock);
+    const grass = Math.max(0, 1 - rock - dry - road);
+    splat.push(grass, dry, rock, road);
+    campW.push(inCamp(x, z, 3) ? .85 : 0);
   }
-  g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
-  const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true }));
+  g.setAttribute('splat', new THREE.Float32BufferAttribute(splat, 4));
+  g.setAttribute('campW', new THREE.Float32BufferAttribute(campW, 1));
+  const m = new THREE.Mesh(g, terrainMaterial(THREE, MATS));
   m.receiveShadow = true;
   scene.add(m);
 }
@@ -140,16 +144,16 @@ setSeed(777);
   const pineG = new THREE.ConeGeometry(2.3, 6.5, 7); pineG.translate(0, 6.2, 0);
   const pineG2 = new THREE.ConeGeometry(1.7, 4.5, 7); pineG2.translate(0, 8.6, 0);
   const oakG = new THREE.IcosahedronGeometry(2.8, 1); oakG.translate(0, 5.2, 0); oakG.scale(1.2, .85, 1.2);
-  const trunkM = new THREE.MeshLambertMaterial({ color: 0x4a3426 });
+  const trunkM = MAT('bark_pine');
   instanced(trunkG, trunkM, pines.concat(oaks));
-  instanced(pineG, new THREE.MeshLambertMaterial({ color: 0x2f4a26, flatShading: true }), pines);
-  instanced(pineG2, new THREE.MeshLambertMaterial({ color: 0x36522a, flatShading: true }), pines);
-  instanced(oakG, new THREE.MeshLambertMaterial({ color: 0x55652c, flatShading: true }), oaks);
-  instanced(new THREE.DodecahedronGeometry(1, 0), new THREE.MeshLambertMaterial({ color: 0x86807a, flatShading: true }), rocks);
+  instanced(pineG, new THREE.MeshStandardMaterial({ color: 0x2f4a26, roughness: .9, flatShading: true }), pines);
+  instanced(pineG2, new THREE.MeshStandardMaterial({ color: 0x36522a, roughness: .9, flatShading: true }), pines);
+  instanced(oakG, new THREE.MeshStandardMaterial({ color: 0x55652c, roughness: .9, flatShading: true }), oaks);
+  instanced(new THREE.DodecahedronGeometry(1, 0), MAT('terrain_rock', { flatShading: true }), rocks);
   const gg = new THREE.PlaneGeometry(.9, .7); gg.translate(0, .35, 0);
   const gg2 = gg.clone(); gg2.rotateY(Math.PI / 2);
   const grassGeo = mergeGeos([gg, gg2]);
-  instanced(grassGeo, new THREE.MeshLambertMaterial({ color: 0x7c8040, side: THREE.DoubleSide }), grass, false);
+  instanced(grassGeo, new THREE.MeshStandardMaterial({ color: 0x7c8040, roughness: 1, side: THREE.DoubleSide }), grass, false);
 }
 function mergeGeos(list) {
   const pos = [], nor = [], uv = [];
@@ -163,12 +167,12 @@ function mergeGeos(list) {
   out.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   return out;
 }
-const M = (color, extra) => new THREE.MeshLambertMaterial(Object.assign({ color }, extra || {}));
+const M = (color, extra) => new THREE.MeshStandardMaterial(Object.assign({ color, roughness: .85 }, extra || {}));
 function mesh(geo, mat, x, y, z, parent) { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; (parent || scene).add(m); return m; }
 
 // Lusitanian castro (start area)
 {
-  const stone = M(0x8d8274, { flatShading: true }), thatch = M(0x9c8146, { flatShading: true });
+  const stone = MAT('castro_stone'), thatch = MAT('thatch', { flatShading: true });
   const huts = [[-6, -4], [5, -7], [8, 5], [-5, 7]];
   for (const [ox, oz] of huts) {
     const x = CASTRO.x + ox, z = CASTRO.z + oz, y = CASTRO.h;
@@ -191,7 +195,7 @@ function mesh(geo, mat, x, y, z, parent) { const m = new THREE.Mesh(geo, mat); m
 const supplyTents = [];
 const fireLights = [];
 {
-  const wood = M(0x6b4b2e), canvas = M(0xd8c9a6, { flatShading: true }), red = M(0x8e231c, { flatShading: true }), crate = M(0x7a5634);
+  const wood = MAT('wood'), canvas = MAT('canvas', { flatShading: true }), red = MAT('canvas_red', { flatShading: true }), crate = MAT('wood');
   const logs = [], H0 = CAMP.h;
   const h = CAMP.half;
   for (let t = -h; t <= h; t += .7) {
@@ -222,7 +226,7 @@ const fireLights = [];
   const spots = [[-17, 8], [0, 4], [17, 10]];
   for (const [ox, oz] of spots) {
     const x = CAMP.x + ox, z = CAMP.z + oz;
-    const mat = M(0xc9b68c, { flatShading: true });
+    const mat = MAT('canvas', { flatShading: true });
     const t = mesh(new THREE.ConeGeometry(2.8, 3.2, 4), mat, x, H0 + 1.6, z); t.rotation.y = Math.PI / 4; t.scale.set(1.4, 1, 1);
     for (let k = 0; k < 4; k++) mesh(new THREE.BoxGeometry(.9, .9, .9), crate, x + 3.6 + (k % 2) * 1, H0 + .45 + (k > 1 ? .9 : 0), z - .5 + (k % 2) * .2);
     for (let k = 0; k < 3; k++) mesh(new THREE.CylinderGeometry(.22, .3, .9, 8), M(0xa25a32), x - 3.4, H0 + .45, z - .8 + k * .6);
@@ -285,10 +289,10 @@ function updateParticles(dt) {
 const BOX = (w, h, d) => new THREE.BoxGeometry(w, h, d);
 function makeSoldier(kind) {
   const mats = [];
-  const mm = c => { const m = M(c); mats.push(m); return m; };
-  const tunic = mm(kind === 'velite' ? 0x7d5b38 : 0x9a2a20), armor = mm(0x8c9094), skin = mm(0xc2906c),
-        helm = mm(kind === 'centurion' ? 0xb48c3c : 0x7f8387), metal = mm(0xc8c2b4), leather = mm(0x4d3423),
-        shieldM = mm(kind === 'velite' ? 0x6d4a2c : 0x8c1f19), gold = mm(0xc9a24a), crestM = mm(0xa3241b), fur = mm(0x6a5640);
+  const mm = (name, extra) => { const m = MAT(name, extra); mats.push(m); return m; };
+  const tunic = mm(kind === 'velite' ? 'wool_brown' : 'wool_red'), armor = mm('iron'), skin = mm('skin'),
+        helm = mm(kind === 'centurion' ? 'bronze' : 'iron'), metal = mm('iron', { roughness: .3 }), leather = mm('leather'),
+        shieldM = mm(kind === 'velite' ? 'leather' : 'canvas_red'), gold = mm('bronze'), crestM = mm('wool_red'), fur = mm('wool_brown');
   const root = new THREE.Group(); root.rotation.order = 'YXZ';
   const add = (g, m, x, y, z, p) => { const o = new THREE.Mesh(g, m); o.position.set(x, y, z); o.castShadow = true; (p || root).add(o); return o; };
   const legs = [];
@@ -346,7 +350,7 @@ function makeSoldier(kind) {
    Viewmodel (first-person weapons)
    ========================================================= */
 const VM = new THREE.Group(); camera.add(VM);
-const vmMat = (c) => new THREE.MeshLambertMaterial({ color: c, fog: false });
+const vmMat = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: .6, metalness: c === 0xd9d4c8 || c === 0xcfc9bb ? .8 : 0, fog: false });
 function vmMesh(g, c, x, y, z, p) { const m = new THREE.Mesh(g, vmMat(c)); m.position.set(x, y, z); (p || VM).add(m); return m; }
 // falcata
 const FAL = new THREE.Group(); VM.add(FAL);
@@ -1205,7 +1209,7 @@ export async function boot() {
   const canvas = document.getElementById('gl');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.useLegacyLights = true;
-  const game = await createGame({ THREE, renderer, canvas, document, window, physics: null });
+  const game = await createGame({ THREE, renderer, canvas, document, window, physics: null, loader: new THREE.TextureLoader(), quality: 'medium' });
   let last = 0;
   const frame = t => { const dt = Math.min(.05, (t - last) / 1000 || 0); last = t; game.step(dt); game.render(); requestAnimationFrame(frame); };
   requestAnimationFrame(frame);
