@@ -1,0 +1,24 @@
+// Pure duel decisions for Roman soldiers, evaluated each AI tick.
+import { DIRS } from './combat.js';
+
+export const REACH = 2.2;
+const BLOCK_CHANCE = [.25, .6, .85];   // chance to read and block a visible player windup, by difficulty
+const FEINT_CHANCE = .15;             // Hard only
+
+/**
+ * @param enemy {kind, fighter}
+ * @param ctx {dist, playerFighter, difficulty 0|1|2, attackersNow, rng}
+ * @returns 'approach'|'circle'|'attack:<dir>'|'block'|'feint'|'backoff'|'idle'
+ */
+export function decide(enemy, { dist, playerFighter, difficulty, attackersNow, rng }) {
+  const f = enemy.fighter;
+  if (f.phase !== 'idle') return 'idle';
+  if (dist >= REACH) return 'approach';
+  const pick = () => 'attack:' + DIRS[Math.min(DIRS.length - 1, Math.floor(rng() * DIRS.length))];
+  if (playerFighter.phase === 'staggered') return pick();
+  if (playerFighter.phase === 'windup' && enemy.kind !== 'velite' && rng() < BLOCK_CHANCE[difficulty]) return 'block';
+  const limit = difficulty === 2 ? 3 : 2;
+  if (attackersNow >= limit) return 'circle';
+  if (difficulty === 2 && rng() < FEINT_CHANCE) return 'feint';
+  return pick();
+}
