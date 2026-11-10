@@ -1,5 +1,8 @@
 import { TAU, rand, rr, clamp, lerp, smooth, wrapA, setSeed, vnoise, WORLD, roadX, CAMP, CASTRO, heightAt, inCamp, addCol, resolve, losTerrain, clearColliders } from './terrain.js';
 import { initAudio, SFX, spatial, setListener } from './audio.js';
+import * as C from './combat.js';
+import { zoneFromHeight, ZONE_MULT, LEG_SLOW } from './damage.js';
+import { decide, REACH } from './ai.js';
 
 /**
  * Builds the whole game. Rendering, DOM and window are injected so the game can run headless in tests.
@@ -368,6 +371,19 @@ const SHD = new THREE.Group(); VM.add(SHD);
 }
 SHD.userData.idle = { x: -.5, y: -.46, z: -.62, ry: .5 };
 SHD.userData.block = { x: -.12, y: -.24, z: -.42, ry: .05 };
+SHD.userData.bash = { x: -.1, y: -.26, z: -.7, ry: 0 };
+const STUCK = [0, 1, 2].map(i => { const g = new THREE.Group(); const sh = vmMesh(new THREE.CylinderGeometry(.008, .008, .7, 5), 0x6e5032, 0, 0, .35, g); sh.rotation.x = Math.PI / 2; g.position.set(-.12 + i * .11, .06 - i * .09, .02); g.rotation.set(.25 - i * .2, .3 - i * .25, 0); g.visible = false; SHD.add(g); return g; });
+// first-person falcata poses: p = position, r = rotation (x,y,z)
+const FAL_POSE = {
+  idle: { p: [.34, -.36, -.55], r: [-.25, -.2, -.35] },
+  wind_up: { p: [.3, -.05, -.42], r: [.9, -.1, -.2] }, wind_left: { p: [-.1, -.18, -.5], r: [-.2, .2, 1.25] },
+  wind_right: { p: [.5, -.16, -.42], r: [-.2, -.3, -1.35] }, wind_thrust: { p: [.26, -.3, -.22], r: [-1.5, 0, 0] },
+  hit_up: { p: [.1, -.48, -.62], r: [-1.6, 0, -.1] }, hit_left: { p: [.42, -.3, -.6], r: [-.3, -.3, -1.4] },
+  hit_right: { p: [-.15, -.3, -.6], r: [-.3, .3, 1.3] }, hit_thrust: { p: [.12, -.24, -.85], r: [-1.55, 0, 0] },
+  block_up: { p: [.05, -.12, -.5], r: [0, 0, 1.5] }, block_left: { p: [-.12, -.2, -.5], r: [0, .3, .2] },
+  block_right: { p: [.3, -.2, -.5], r: [0, -.3, -.2] }, block_thrust: { p: [.08, -.24, -.48], r: [0, 0, .9] },
+  stagger: { p: [.42, -.5, -.45], r: [-.6, -.4, -.6] },
+};
 // javelin
 const JAV = new THREE.Group(); VM.add(JAV);
 {
@@ -393,10 +409,12 @@ const DIFF = [{ dmg: .55, detect: .7, name: 'Fácil' }, { dmg: 1, detect: 1, nam
 let diff = 1, sens = .0024;
 const WNAMES = ['Falcata', 'Dardos', 'Funda'];
 let state = 'menu';
-const P = { pos: new THREE.Vector3(), vy: 0, yaw: 0, pitch: 0, hp: 100, st: 100, ground: true, crouch: 0, w: 0, dardos: 0, pedras: 0,
-  atk: 0, cd: 0, block: false, blockBroken: 0, kills: 0, shots: 0, hits: 0, heads: 0, time: 0, stepT: 0, bob: 0, swing: 0, throwT: 0, hurtT: 0 };
+const P = { f: C.createFighter(), pos: new THREE.Vector3(), vy: 0, yaw: 0, pitch: 0, hp: 100, ground: true, crouch: 0, w: 0, dardos: 0, pedras: 0,
+  atk: 0, cd: 0, kills: 0, shots: 0, hits: 0, heads: 0, time: 0, stepT: 0, bob: 0, swing: 0, throwT: 0, hurtT: 0 };
 let enemies = [], projectiles = [], pickups = [];
 let mission = 0, tentsBurnt = 0, missionMsgT = 0, alarm = false;
+Object.defineProperty(P, 'st', { get() { return P.f.stamina; }, set(v) { P.f.stamina = v; }, enumerable: false });
+Object.defineProperty(P, 'block', { get() { return P.f.blocking != null; }, enumerable: false });
 const keys = {}; let mouseL = false, mouseR = false;
 
 function resetWorld() {
@@ -409,7 +427,8 @@ function resetWorld() {
   for (const t of supplyTents) { t.burnt = false; t.t = 0; t.mat.color.setHex(0xc9b68c); t.light.intensity = 0; t.flag.visible = true; }
   setSeed(4242);
   endT = 0; endArgs = null;
-  Object.assign(P, { meleeT: 0, vy: 0, hp: 100, st: 100, ground: true, crouch: 0, w: 0, dardos: 5, pedras: 12, atk: 0, cd: 0, block: false, blockBroken: 0,
+  Object.assign(P, { f: C.createFighter(), charging: false, chargeT: 0, acc: { x: 0, y: 0 }, prevL: false, swingDir: null, bashCd: 0, bashT: 0, cleanT: 0,
+    lastDefense: null, incomingDir: null, vy: 0, hp: 100, ground: true, crouch: 0, w: 0, dardos: 5, pedras: 12, atk: 0, cd: 0,
     kills: 0, shots: 0, hits: 0, heads: 0, time: 0, swing: 0, throwT: 0, hurtT: 0 });
   P.pos.set(CASTRO.x - 9, 0, CASTRO.z - 5); P.pos.y = heightAt(P.pos.x, P.pos.z);
   P.yaw = Math.PI * .28; P.pitch = -.05;
@@ -437,7 +456,7 @@ function spawn(kind, x, z, group) {
   const stats = { legio: { hp: 100, sp: 3.9, dmg: 13 }, velite: { hp: 65, sp: 3.7, dmg: 15 }, centurion: { hp: 460, sp: 4.4, dmg: 24 } }[kind];
   const e = { kind, m, pos: new THREE.Vector3(x, heightAt(x, z), z), hp: stats.hp, maxhp: stats.hp, sp: stats.sp, dmg: stats.dmg,
     state: group === 'patrol' ? 'march' : group === 'boss' ? 'chase' : 'guard', group, yaw: Math.PI, home: new THREE.Vector3(x, 0, z),
-    dir: -1, aware: 0, atkT: 0, cd: rr(.5, 1.5), ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, wander: null, wT: 0, strafe: rand() < .5 ? 1 : -1, moving: 0, barkT: 0 };
+    dir: -1, aware: 0, atkT: 0, f: C.createFighter({ shieldHP: kind === 'velite' ? 0 : 220, stamina: kind === 'centurion' ? 140 : 100 }), aiT: rr(0, .3), act: 'approach', releaseAt: 0, feintAt: 0, blockLeft: 0, slowT: 0, cd: rr(.5, 1.5), ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, wander: null, wT: 0, strafe: rand() < .5 ? 1 : -1, moving: 0, barkT: 0 };
   if (group === 'patrol') { e.yaw = 0; e.dir = 1; } // marching south (+z)
   enemies.push(e); return e;
 }
@@ -509,12 +528,15 @@ window.addEventListener('keydown', e => {
   if (state !== 'play') return;
   if (e.code === 'Digit1') selectW(0); if (e.code === 'Digit2') selectW(1); if (e.code === 'Digit3') selectW(2);
   if (e.code === 'KeyE') use();
+  if (e.code === 'KeyF') bash();
+  if (e.code === 'KeyR') cleanShield();
   if (e.code === 'Space') e.preventDefault();
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 window.addEventListener('mousemove', e => {
   if (state !== 'play' || document.pointerLockElement !== cv) return;
   P.yaw -= e.movementX * sens; P.pitch = clamp(P.pitch - e.movementY * sens, -1.45, 1.45);
+  if (P.charging) { P.acc.x += e.movementX; P.acc.y += e.movementY; }
 });
 window.addEventListener('mousedown', e => {
   if (state !== 'play') return;
@@ -528,7 +550,7 @@ function lock() { try { const r = cv.requestPointerLock(); if (r && r.catch) r.c
 document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement !== cv && state === 'play') pauseGame();
 });
-function selectW(w) { if (w === P.w) return; P.w = w; P.swing = 0; P.throwT = 0; P.cd = Math.max(P.cd, .3); updateHUDWeapon(); }
+function selectW(w) { if (w === P.w) return; P.w = w; P.swing = 0; P.charging = false; C.feint(P.f); C.endBlock(P.f); P.throwT = 0; P.cd = Math.max(P.cd, .3); updateHUDWeapon(); }
 
 /* =========================================================
    Player actions
@@ -540,11 +562,8 @@ function makeNoise(r) { for (const e of enemies) if (!e.dead && e.state !== 'cha
 
 function attack() {
   if (P.cd > 0 || P.block) return;
-  if (P.w === 0) {
-    if (P.st < 8) return;
-    P.cd = .55; P.swing = 1; P.st -= 10; SFX.swing();
-    P.meleeT = .12;
-  } else if (P.w === 1) {
+  if (P.w === 0) return;
+  if (P.w === 1) {
     if (P.dardos <= 0) { showPrompt('Sem dardos — apanha-os do chão', 1.2); return; }
     P.dardos--; P.cd = .85; P.throwT = 1; P.shots++; SFX.throwJ();
     const f = fwd3(), e = eyePos();
@@ -561,28 +580,67 @@ function attack() {
   }
   updateHUDWeapon();
 }
-function meleeHit() {
+const deg = r => r * 180 / Math.PI;
+const flatFwd = () => V(-Math.sin(P.yaw), 0, -Math.cos(P.yaw));
+/** Player falcata strike lands (called from the fighter's 'strike' event). */
+function meleeStrike(dir, power) {
   if (state !== 'play') return;
-  const f = V(-Math.sin(P.yaw), 0, -Math.cos(P.yaw));
+  P.swing = 1; P.swingDir = dir; SFX.swing();
+  const f = flatFwd(), reach = dir === 'thrust' ? 3.2 : 2.8;
   let hitAny = false;
   for (const e of enemies) {
     if (e.dead) continue;
-    const d = V(e.pos.x - P.pos.x, 0, e.pos.z - P.pos.z); const dist = d.length();
-    if (dist > 2.9 || Math.abs(e.pos.y - P.pos.y) > 1.8) continue;
-    d.normalize(); if (d.dot(f) < .55) continue;
-    // enemy facing us?
-    const ef = V(Math.sin(e.yaw), 0, Math.cos(e.yaw));
-    const facing = ef.dot(d) < -.5;
-    const unaware = e.state === 'march' || e.state === 'guard';
-    if (facing && !unaware && e.kind !== 'velite' && e.atkT <= 0 && rand() < (e.kind === 'centurion' ? .4 : .25)) {
-      SFX.clank(); burst('spark', V(e.pos.x - d.x * .5, e.pos.y + 1.2, e.pos.z - d.z * .5), 10); alert(e); hitAny = true; feed('O legionário aparou com o escudo'); continue;
-    }
-    let dmg = 48 * (P.ground ? 1 : 1.25);
-    if (unaware && !facing) dmg *= 3.5;
-    damageEnemy(e, dmg, false, V(e.pos.x, e.pos.y + 1.3, e.pos.z), unaware && !facing ? 'golpe furtivo' : null);
+    const d = V(e.pos.x - P.pos.x, 0, e.pos.z - P.pos.z), dist = d.length();
+    if (dist > reach || Math.abs(e.pos.y - P.pos.y) > 1.8) continue;
+    d.normalize(); if (d.dot(f) < (dir === 'thrust' ? .8 : .45)) continue;
     hitAny = true;
+    const ef = V(Math.sin(e.yaw), 0, Math.cos(e.yaw));
+    const fromAngle = deg(Math.acos(clamp(ef.dot(d.clone().negate()), -1, 1)));
+    const unaware = e.state === 'march' || e.state === 'guard';
+    const at = V(e.pos.x - d.x * .4, e.pos.y + 1.2, e.pos.z - d.z * .4);
+    if (unaware && fromAngle > 90) { damageEnemy(e, 40 * C.DMG[dir] * power * 3.5, false, at, 'golpe furtivo'); continue; }
+    const res = C.resolveHit(e.f, { dir, power, fromAngle, baseDamage: 40 });
+    if (res.result === 'parried') { C.stagger(P.f, res.attackerStagger); SFX.clank(); burst('spark', at, 12); showPrompt('O romano aparou o teu golpe!', .9); }
+    else if (res.result === 'blocked') { SFX.clank(); burst('spark', at, 8); e.flash = .05; }
+    else {
+      const hRel = clamp(.62 + P.pitch * .6 + (dir === 'up' ? .12 : 0), 0, 1), zone = zoneFromHeight(hRel);
+      if (res.result === 'guardBroken') feed('Quebraste-lhe a guarda');
+      if (zone === 'legs') e.slowT = LEG_SLOW.time;
+      damageEnemy(e, res.damage * ZONE_MULT[zone], zone === 'head', V(e.pos.x, e.pos.y + 1.85 * hRel, e.pos.z));
+    }
+    alert(e);
   }
   makeNoise(hitAny ? 14 : 6);
+}
+/** F: shield bash interrupts an enemy windup and knocks them back. */
+function bash() {
+  if (state !== 'play' || P.w === 2 || P.f.shieldHP <= 0 || P.f.stamina < 20 || P.f.phase !== 'idle' || P.bashCd > 0) return;
+  P.f.stamina -= 20; P.bashCd = .9; P.bashT = .25; SFX.thud();
+  const f = flatFwd();
+  for (const e of enemies) {
+    if (e.dead) continue;
+    const d = V(e.pos.x - P.pos.x, 0, e.pos.z - P.pos.z), dist = d.length();
+    if (dist > 2.4) continue; d.normalize(); if (d.dot(f) < .5) continue;
+    if (e.f.phase === 'windup') { C.feint(e.f); feed('Empurrão! Golpe interrompido'); }
+    C.endBlock(e.f); C.stagger(e.f, .6);
+    e.pos.addScaledVector(d, .8); alert(e);
+  }
+}
+/** R: pull stuck javelins out of the caetra. */
+function cleanShield() { if (state === 'play' && P.f.stuckJavelins > 0 && P.cleanT <= 0) { P.cleanT = 1.2; showPrompt('A arrancar os dardos do escudo…', 1.2); } }
+/** A Roman blow lands (enemy fighter 'strike' event). */
+function enemyStrike(e, ev) {
+  const dd = V(P.pos.x - e.pos.x, 0, P.pos.z - e.pos.z), pd = dd.length(); dd.normalize();
+  const ef = V(Math.sin(e.yaw), 0, Math.cos(e.yaw));
+  if (state !== 'play' || pd > 2.7 || ef.dot(dd) < .4 || Math.abs(P.pos.y - e.pos.y) > 1.8) { SFX.swing(); return; }
+  const fromAngle = deg(Math.acos(clamp(flatFwd().dot(dd.clone().negate()), -1, 1)));
+  const res = C.resolveHit(P.f, { dir: ev.dir, power: ev.power, fromAngle, baseDamage: e.dmg * DIFF[diff].dmg });
+  P.lastDefense = res.result;
+  const spark = eyePos().addScaledVector(flatFwd(), .6).add(V(0, -.3, 0));
+  if (res.result === 'parried') { C.stagger(e.f, res.attackerStagger); SFX.clank(); burst('spark', spark, 14); showPrompt('Aparo perfeito!', .8); }
+  else if (res.result === 'blocked') { SFX.clank(); burst('spark', spark, 8); P.shake = .18; }
+  if (res.result === 'guardBroken') showPrompt('Guarda quebrada!', 1);
+  if (res.damage > 0) { hurtPlayer(res.damage, e.pos); burst('blood', eyePos().add(V(0, -.4, 0)), 3); }
 }
 function use() {
   for (const t of supplyTents) {
@@ -639,8 +697,8 @@ function updateProjectiles(dt) {
         // scutum block (front-facing, not attacking)
         const toProj = V(p.prev.x - ex, 0, p.prev.z - ez).normalize();
         const ef = V(Math.sin(e.yaw), 0, Math.cos(e.yaw));
-        const aware = e.state === 'chase';
-        if (e.kind !== 'velite' && aware && !isHead && e.atkT <= 0 && ef.dot(toProj) > .6 && rand() < .45) {
+        const fromAngle = deg(Math.acos(clamp(ef.dot(toProj), -1, 1)));
+        if (e.f.blocking === 'shield' && fromAngle <= C.SHIELD_ARC) {
           SFX.clank(spatial(p.pos)); burst('spark', p.pos, 8); feed('Bloqueado pelo escudo');
           if (p.type === 'javelin') addPickup('dardo1', ex + toProj.x * 1.2, ez + toProj.z * 1.2);
           done = true; break;
@@ -692,18 +750,28 @@ function damageEnemy(e, dmg, head, where, special) {
 }
 function damagePlayer(dmg, from, ranged) {
   if (state !== 'play') return;
-  dmg *= DIFF[diff].dmg;
+  if (ranged && from !== P.pos) {
+    const dd = V(from.x - P.pos.x, 0, from.z - P.pos.z).normalize();
+    const fromAngle = deg(Math.acos(clamp(flatFwd().dot(dd), -1, 1)));
+    const res = C.resolveHit(P.f, { dir: 'left', power: 1, fromAngle, baseDamage: dmg * DIFF[diff].dmg, kind: 'javelin' });
+    P.lastDefense = res.result;
+    if (res.result === 'blocked') { SFX.thud(); P.shake = .15; if (res.stuck) showPrompt('Dardo cravado no escudo — R para arrancar', 1.4); return; }
+    hurtPlayer(res.damage, from); return;
+  }
+  hurtPlayer(dmg * DIFF[diff].dmg, from);
+}
+function hurtPlayer(dmg, from) {
+  if (state !== 'play') return;
+  SFX.hurt(); P.hurtT = .35; P.hp -= dmg;
   const d = V(from.x - P.pos.x, 0, from.z - P.pos.z).normalize();
-  const f = V(-Math.sin(P.yaw), 0, -Math.cos(P.yaw)), r = V(Math.cos(P.yaw), 0, -Math.sin(P.yaw));
-  if (P.block && d.dot(f) > .5) {
-    dmg *= .12; P.st -= ranged ? 10 : 20; SFX.clank();
-    burst('spark', eyePos().addScaledVector(f, .6), 8);
-    if (P.st <= 0) { P.st = 0; P.blockBroken = 1.4; P.block = false; showPrompt('Escudo quebrado — sem fôlego!', 1.2); }
-  } else { SFX.hurt(); P.hurtT = .35; }
-  P.hp -= dmg;
-  const ang = Math.atan2(d.dot(r), d.dot(f));
-  $('dmg').style.transform = `rotate(${ang}rad)`; $('dmg').style.opacity = 1; dmgT = .8;
+  const f = flatFwd(), r = V(Math.cos(P.yaw), 0, -Math.sin(P.yaw));
+  $('dmg').style.transform = `rotate(${Math.atan2(d.dot(r), d.dot(f))}rad)`; $('dmg').style.opacity = 1; dmgT = .8;
   if (P.hp <= 0) { P.hp = 0; die(); }
+}
+function spawnEnemyJavelin(from, target, dmg = 15) {
+  const hd = Math.hypot(target.x - from.x, target.z - from.z), t = Math.max(.15, hd / 24);
+  const vel = V((target.x - from.x) / t, (target.y - from.y) / t + .5 * 11 * t, (target.z - from.z) / t);
+  spawnProj('javelin', from.clone(), vel, 'enemy', dmg); SFX.jav(spatial(from));
 }
 
 /* =========================================================
@@ -721,9 +789,10 @@ function canSee(e) {
   const range = (e.kind === 'velite' ? 40 : 34) * (P.crouch > .5 ? .55 : 1) * (keys.ShiftLeft || keys.ShiftRight ? 1.2 : 1);
   if (d > range) return 0;
   const fa = Math.abs(wrapA(Math.atan2(dx, dz) - e.yaw));
-  if (fa > 1.25 && d > (P.crouch > .5 ? 3 : 7)) return 0;
+  const behind = fa > 1.25;
+  if (behind && d > (P.crouch > .5 ? 1.5 : 3)) return 0;
   if (!losTerrain(e.pos.x, e.pos.y + 1.7, e.pos.z, P.pos.x, P.pos.y + 1.4 - P.crouch * .5, P.pos.z)) return 0;
-  return 1 - d / range;
+  return (1 - d / range) * (behind ? .25 : 1);
 }
 function moveEnemy(e, tx, tz, speed, dt) {
   const dx = tx - e.pos.x, dz = tz - e.pos.z, d = Math.hypot(dx, dz);
@@ -735,6 +804,19 @@ function moveEnemy(e, tx, tz, speed, dt) {
 function faceTo(e, tx, tz, dt, rate = 6) {
   const target = Math.atan2(tx - e.pos.x, tz - e.pos.z);
   e.yaw += clamp(wrapA(target - e.yaw), -rate * dt, rate * dt);
+}
+// Readable, direction-specific poses: the raised gladius shows where the blow will come from (player's view).
+const WINDUP_POSE = { up: { x: -2.8, z: 0 }, left: { x: -1.5, z: 1.3 }, right: { x: -1.5, z: -1.1 }, thrust: { x: .7, z: .2 } };
+const STRIKE_POSE = { up: { x: .5, z: 0 }, left: { x: -1.2, z: -.7 }, right: { x: -1.2, z: .9 }, thrust: { x: -1.6, z: 0 } };
+function setPose(e, w, dt) {
+  const arm = e.m.arms[1], f = e.f, k = Math.min(1, dt * 12);
+  let tx = w * .5 - (e.state === 'chase' ? .5 : 0), tz = 0;
+  if (f.phase === 'windup') { const p = WINDUP_POSE[f.dir], q = Math.min(1, f.t / (C.WINDUP[f.dir] * .7)); tx = p.x * q; tz = p.z * q; }
+  else if (f.phase === 'recovery' && f.dir) { const p = STRIKE_POSE[f.dir]; tx = p.x; tz = p.z; }
+  arm.rotation.x = lerp(arm.rotation.x, tx, f.phase === 'recovery' ? Math.min(1, dt * 30) : k);
+  arm.rotation.z = lerp(arm.rotation.z, tz, f.phase === 'recovery' ? Math.min(1, dt * 30) : k);
+  const sc = e.m.root.userData.scutum;
+  if (sc) { const b = f.blocking === 'shield'; sc.position.x = lerp(sc.position.x, b ? -.04 : -.3, k); sc.position.y = lerp(sc.position.y, b ? 1.28 : 1.12, k); sc.position.z = lerp(sc.position.z, b ? .4 : .3, k); }
 }
 function updateEnemies(dt) {
   const dm = DIFF[diff];
@@ -770,21 +852,38 @@ function updateEnemies(dt) {
       }
     } else if (e.state === 'chase') {
       if (e.alarmT != null && e.alarmT > 0) { e.alarmT -= dt; if (e.alarmT <= 0) raiseAlarm(); }
-      faceTo(e, P.pos.x, P.pos.z, dt, 7);
-      if (e.atkT > 0) {
-        const prev = e.atkT; e.atkT -= dt;
-        if (prev > .18 && e.atkT <= .18) { // strike moment
-          const ef = V(Math.sin(e.yaw), 0, Math.cos(e.yaw)), dd = V(P.pos.x - e.pos.x, 0, P.pos.z - e.pos.z).normalize();
-          if (pd < 2.7 && ef.dot(dd) > .4 && Math.abs(P.pos.y - e.pos.y) < 1.8) { damagePlayer(e.dmg * rr(.85, 1.15), e.pos, false); burst('blood', eyePos().add(V(0, -.4, 0)), 3); }
-          else SFX.swing();
-        }
-      } else if (pd > 1.75) {
-        // slight flank offset so groups surround the player
-        const off = (e.strafe * .9) * clamp((pd - 2) / 6, 0, 1);
-        const ang = Math.atan2(P.pos.x - e.pos.x, P.pos.z - e.pos.z) + off * .5;
-        speed = moveEnemy(e, e.pos.x + Math.sin(ang) * 3, e.pos.z + Math.cos(ang) * 3, e.sp * (pd > 25 ? 1.15 : 1), dt);
+      faceTo(e, P.pos.x, P.pos.z, dt, e.f.phase === 'windup' ? 3.5 : 7);
+      const slow = e.slowT > 0 ? LEG_SLOW.factor : 1; e.slowT -= dt;
+      e.blockLeft -= dt; e.aiT -= dt;
+      // raise the scutum against missiles while closing in, or when the AI chose to block
+      if (e.f.phase === 'idle') {
+        const want = e.blockLeft > 0 || (pd > 3.5 && P.w !== 0);
+        if (want && !e.f.blocking) C.beginBlock(e.f, 'shield'); else if (!want && e.f.blocking) C.endBlock(e.f);
       }
-      if (pd < 2.2 && e.cd <= 0 && e.atkT <= 0 && state === 'play' && enemies.filter(o => !o.dead && o.atkT > 0 && o.kind !== 'velite').length < (diff === 2 ? 3 : 2)) { e.atkT = e.kind === 'centurion' ? .62 : .7; e.cd = (e.kind === 'centurion' ? 1.05 : 1.35) + rr(0, .6); }
+      if (e.aiT <= 0 && state === 'play' && e.f.phase === 'idle') {
+        e.aiT = e.kind === 'centurion' ? .18 : .26;
+        const attackersNow = enemies.filter(o => o !== e && !o.dead && o.kind !== 'velite' && o.f.phase === 'windup').length;
+        e.act = decide({ kind: e.kind, fighter: e.f }, { dist: pd, playerFighter: P.f, difficulty: diff, attackersNow, rng: rand });
+        if (e.act.startsWith('attack:')) { const dir = e.act.slice(7); C.endBlock(e.f); if (C.beginAttack(e.f, dir)) { e.releaseAt = C.WINDUP[dir] + rr(0, .25) * (e.kind === 'centurion' ? .4 : 1); e.feintAt = 0; } }
+        else if (e.act === 'block') e.blockLeft = rr(.5, .9);
+        else if (e.act === 'feint') { C.endBlock(e.f); if (C.beginAttack(e.f, C.DIRS[Math.floor(rand() * 4)])) { e.feintAt = rr(.15, .3); e.releaseAt = 99; } }
+      }
+      if (e.f.phase === 'windup') {
+        if (e.feintAt && e.f.t >= e.feintAt) { C.feint(e.f); e.feintAt = 0; }
+        else if (!e.f.released && e.f.t >= e.releaseAt) C.releaseAttack(e.f);
+      }
+      if (e.f.phase === 'idle' || e.f.phase === 'recovery') {
+        const sp = e.sp * slow * (e.f.blocking ? .6 : 1);
+        if (pd > REACH - .3) {
+          const off = (e.strafe * .9) * clamp((pd - 2) / 6, 0, 1);
+          const ang = Math.atan2(P.pos.x - e.pos.x, P.pos.z - e.pos.z) + off * .5;
+          speed = moveEnemy(e, e.pos.x + Math.sin(ang) * 3, e.pos.z + Math.cos(ang) * 3, sp * (pd > 25 ? 1.15 : 1), dt);
+        } else if (e.act === 'circle') {
+          const a = Math.atan2(e.pos.x - P.pos.x, e.pos.z - P.pos.z) + e.strafe * .9 * dt;
+          speed = moveEnemy(e, P.pos.x + Math.sin(a) * 2.6, P.pos.z + Math.cos(a) * 2.6, 1.8 * slow, dt);
+        }
+      }
+      for (const ev of C.tickFighter(e.f, dt)) if (ev.type === 'strike') enemyStrike(e, ev);
       if (e.kind === 'centurion' && e.barkT <= 0) { e.barkT = 6; SFX.grunt(spatial(e.pos)); for (const o of enemies) if (!o.dead && o.pos.distanceTo(e.pos) < 30) alert(o); }
     } else if (e.state === 'skirmish') {
       if (e.alarmT != null && e.alarmT > 0) { e.alarmT -= dt; if (e.alarmT <= 0) raiseAlarm(); }
@@ -819,12 +918,12 @@ function updateEnemies(dt) {
     const w = Math.sin(e.ph * (speed > 2.5 ? 10 : 6.5)) * .6 * e.moving;
     e.m.legs[0].rotation.x = w; e.m.legs[1].rotation.x = -w;
     e.m.arms[0].rotation.x = -w * .5;
-    if (e.atkT > 0) {
-      const k = e.kind === 'velite' ? 1 - e.atkT / .55 : 1 - e.atkT / .7;
+    if (e.kind === 'velite' && e.atkT > 0) {
+      const k = 1 - e.atkT / .55;
       e.m.arms[1].rotation.x = k < .7 ? lerp(0, -2.5, k / .7) : lerp(-2.5, .4, (k - .7) / .3);
-    } else e.m.arms[1].rotation.x = lerp(e.m.arms[1].rotation.x, w * .5 - (e.state === 'chase' ? .5 : 0), Math.min(1, dt * 8));
-    if (e.m.root.userData.scutum) e.m.root.userData.scutum.position.x = e.state === 'chase' && e.atkT <= 0 ? -.12 : -.3;
+    } else setPose(e, w, dt);
     r.position.set(e.pos.x, e.pos.y + Math.abs(w) * .04, e.pos.z); r.rotation.y = e.yaw;
+    r.rotation.x = e.f.phase === 'staggered' ? lerp(r.rotation.x, -.22, Math.min(1, dt * 10)) : lerp(r.rotation.x, 0, Math.min(1, dt * 6));
   }
 }
 
@@ -855,7 +954,7 @@ function updatePlayer(dt) {
     resolve(P.pos, .38);
     if (P.ground) { P.bob += dt * speed * 1.6; P.stepT -= dt * speed; if (P.stepT <= 0) { P.stepT = 2.4; SFX.step(); } }
   }
-  if (sprint && ml > 0) P.st = Math.max(0, P.st - dt * 22); else P.st = Math.min(100, P.st + dt * (P.block ? 6 : 16));
+  if (sprint && ml > 0) P.st = Math.max(0, P.st - dt * 36);
   if (keys.Space && P.ground && P.st > 10) { P.vy = 6.4; P.ground = false; P.st -= 8; }
   P.vy -= 19 * dt; P.pos.y += P.vy * dt;
   const gh = heightAt(P.pos.x, P.pos.z);
@@ -863,10 +962,30 @@ function updatePlayer(dt) {
   else if (P.pos.y - gh > .25) P.ground = false;
 
   // combat
-  if (P.meleeT > 0) { P.meleeT -= dt; if (P.meleeT <= 0) meleeHit(); }
-  P.cd = Math.max(0, P.cd - dt); P.blockBroken = Math.max(0, P.blockBroken - dt);
-  P.block = mouseR && P.w !== 2 && P.blockBroken <= 0 && P.st > 0;
-  if (mouseL) { attack(); if (P.w !== 0) mouseL = false; }
+  P.cd = Math.max(0, P.cd - dt); P.bashCd = Math.max(0, P.bashCd - dt); P.bashT = Math.max(0, P.bashT - dt);
+  if (P.cleanT > 0) { P.cleanT -= dt; if (P.cleanT <= 0) { P.f.stuckJavelins = 0; feed('Escudo limpo'); } }
+  // press / release edges of the left button
+  if (mouseL && !P.prevL) {
+    if (P.w === 0) { P.charging = true; P.chargeT = 0; P.acc.x = 0; P.acc.y = 0; }
+    else attack();
+  }
+  const released = !mouseL && P.prevL; P.prevL = mouseL;
+  if (P.charging) {
+    P.chargeT += dt;
+    if (P.f.phase !== 'windup' && (P.chargeT >= .12 || released)) {
+      if (!C.beginAttack(P.f, C.dirFromMouse(P.acc.x, P.acc.y))) P.charging = false;
+    }
+    if (released && P.f.phase === 'windup') { C.releaseAttack(P.f); P.charging = false; }
+    if (P.w !== 0) P.charging = false;
+  }
+  // defence: Q = falcata (direction is automatic), right button = caetra
+  const wantBlock = keys.KeyQ && P.w === 0 ? 'sword' : (mouseR && P.w !== 2 && P.f.shieldHP > 0 && P.cleanT <= 0 ? 'shield' : null);
+  if (wantBlock !== P.f.blocking) { if (wantBlock) { if (C.beginBlock(P.f, wantBlock)) P.charging = false; } else C.endBlock(P.f); }
+  // auto-aim the sword guard at the nearest enemy winding up
+  let inc = null, incD = 4;
+  for (const e of enemies) if (!e.dead && e.f.phase === 'windup') { const d = e.pos.distanceTo(P.pos); if (d < incD) { incD = d; inc = e.f.dir; } }
+  P.incomingDir = inc;
+  for (const ev of C.tickFighter(P.f, dt)) if (ev.type === 'strike') meleeStrike(ev.dir, ev.power);
   P.swing = Math.max(0, P.swing - dt / .45); P.throwT = Math.max(0, P.throwT - dt / .6); P.hurtT = Math.max(0, P.hurtT - dt);
 
   // pickups
@@ -900,16 +1019,19 @@ function updateCamera(dt) {
   camera.rotation.set(P.pitch + shake, P.yaw, shake * .5);
   // viewmodel
   FAL.visible = P.w === 0; JAV.visible = P.w === 1 && (P.dardos > 0 || P.throwT > 0); SLG.visible = P.w === 2;
-  SHD.visible = P.w !== 2;
+  SHD.visible = P.w !== 2 && P.f.shieldHP > 0;
+  STUCK.forEach((m, i) => { m.visible = i < P.f.stuckJavelins; });
   const sx = Math.cos(P.bob) * .012, sy = Math.abs(Math.sin(P.bob)) * .014;
   if (P.w === 0) {
-    const b = FAL.userData.base, s = P.swing; // 1 → 0
-    const k = 1 - s;
-    const ph = s > 0 ? Math.sin(k * Math.PI) : 0;
-    FAL.position.set(b.x + sx - ph * .38 + (s > 0 && k < .25 ? .08 : 0), b.y - sy + ph * .12, b.z - ph * .18);
-    FAL.rotation.set(b.rx - ph * 1.2, b.ry + ph * .3, b.rz + (s > 0 ? lerp(.9, -1.6, k) - b.rz * 0 : 0) * (s > 0 ? 1 : 0));
-    if (s <= 0) FAL.rotation.z = b.rz;
-    if (P.block) FAL.position.y -= .12;
+    const b = FAL.userData.base, f = P.f;
+    let t = FAL_POSE.idle;
+    if (f.blocking === 'sword') t = FAL_POSE['block_' + (P.incomingDir || 'up')];
+    else if (f.phase === 'windup') t = FAL_POSE['wind_' + f.dir];
+    else if (f.phase === 'recovery' && f.dir) t = FAL_POSE['hit_' + f.dir];
+    else if (f.phase === 'staggered') t = FAL_POSE.stagger;
+    const k = Math.min(1, dt * (f.phase === 'recovery' ? 26 : 12));
+    FAL.position.set(lerp(FAL.position.x, t.p[0] + sx, k), lerp(FAL.position.y, t.p[1] - sy, k), lerp(FAL.position.z, t.p[2], k));
+    FAL.rotation.set(lerp(FAL.rotation.x, t.r[0], k), lerp(FAL.rotation.y, t.r[1], k), lerp(FAL.rotation.z, t.r[2], k));
   }
   if (P.w === 1) {
     const b = JAV.userData.base, t = P.throwT, k = 1 - t;
@@ -923,7 +1045,8 @@ function updateCamera(dt) {
     SLG.position.set(b.x + sx, b.y - sy, b.z);
     if (P.throwT > 0) { SLGpouch.rotation.x -= dt * 28; } else SLGpouch.rotation.x = lerp(SLGpouch.rotation.x % TAU, 0, Math.min(1, dt * 6));
   }
-  const si = P.block ? SHD.userData.block : SHD.userData.idle, cur = SHD.position;
+  const si = P.f.blocking === 'shield' ? SHD.userData.block : P.bashT > 0 ? SHD.userData.bash : SHD.userData.idle, cur = SHD.position;
+  if (P.shake > 0) { P.shake -= dt; SHD.position.x += (Math.random() - .5) * .03; }
   const kk = Math.min(1, dt * 14);
   SHD.position.set(lerp(cur.x, si.x + sx * .5, kk), lerp(cur.y, si.y - sy * .5, kk), lerp(cur.z, si.z, kk));
   SHD.rotation.y = lerp(SHD.rotation.y, si.ry, kk);
@@ -990,6 +1113,11 @@ function updateHUDWeapon() {
 function updateHUD(dt) {
   $('hpb').firstElementChild.style.width = P.hp + '%';
   $('stb').firstElementChild.style.width = P.st + '%';
+  $('shb').firstElementChild.style.width = Math.max(0, P.f.shieldHP) + '%';
+  const ARW = { up: '▲', left: '◀', right: '▶', thrust: '●' };
+  $('chg').textContent = P.w === 0 && P.f.phase === 'windup' ? ARW[P.f.dir] : '';
+  $('chg').style.opacity = P.f.phase === 'windup' ? .4 + .6 * Math.min(1, P.f.t / C.FULL_CHARGE) : 0;
+  $('incoming').textContent = P.incomingDir ? ARW[P.incomingDir] : '';
   $('vign').style.opacity = P.hp < 35 ? (.35 + Math.sin(P.time * 5) * .12) * (1 - P.hp / 35) + .2 : (P.hurtT > 0 ? P.hurtT * 1.6 : 0);
   if (hitmT > 0) { hitmT -= dt; if (hitmT <= 0) $('hitm').style.opacity = 0; }
   if (dmgT > 0) { dmgT -= dt; if (dmgT <= 0) $('dmg').style.opacity = 0; }
@@ -1066,7 +1194,8 @@ return {
   P, supplyTents, heightAt, CAMP, scene, camera,
   get enemies() { return enemies; }, get mission() { return mission; }, get state() { return state; },
   get projectiles() { return projectiles; }, get pickups() { return pickups; },
-  input: { mouse: (l, r) => { mouseL = l; mouseR = r; } },
+  input: { mouse: (l, r) => { mouseL = l; mouseR = r; }, mouseMove: (dx, dy) => { if (P.charging) { P.acc.x += dx; P.acc.y += dy; } } },
+  spawnEnemyJavelin, vm: { stuckVisible: () => STUCK.filter(m => m.visible).length },
 };
 }
 

@@ -30,7 +30,9 @@ try {
   for (const w of [0, 1, 2]) { key('Digit' + (w + 1)); key('Digit' + (w + 1), false); for (let k = 0; k < 6; k++) { G.input.mouse(true, false); st(70); G.input.mouse(false, false); st(5); } }
   G.start(1); forcePlay(); god = true;
   for (const e of G.enemies.filter(e => e.group === 'patrol')) {
-    if (e.dead) continue; e.hp = 1;
+    if (e.dead) continue;
+    for (const o of G.enemies) if (o !== e && !o.dead) { o.state = 'guard'; o.aware = 0; o.f.phase = 'idle'; o.pos.x += 60; }
+    e.hp = 1; e.aware = 0; e.f.phase = 'idle'; e.f.blocking = null; e.state = 'guard'; e.yaw = Math.PI; e.wT = 99; e.wander = e.pos.clone();
     G.P.pos.set(e.pos.x, e.pos.y, e.pos.z + 2); G.P.yaw = 0; key('Digit1');
     G.input.mouse(true, false); st(40); G.input.mouse(false, false); st(30);
   }
@@ -39,7 +41,7 @@ try {
   check('mission 3 reached', G.mission === 2);
   st(600);
   const c = G.enemies.find(e => e.kind === 'centurion');
-  for (let k = 0; k < 60 && !c.dead; k++) { G.P.pos.set(c.pos.x, c.pos.y, c.pos.z + 2); G.P.yaw = 0; c.state = 'guard'; G.input.mouse(true, false); st(40); G.input.mouse(false, false); st(30); }
+  for (let k = 0; k < 60 && !c.dead; k++) { for (const o of G.enemies) if (o !== c && !o.dead) { o.state = 'guard'; o.aware = 0; o.f.phase = 'idle'; o.pos.x += 60; } c.aware = 0; c.f.phase = 'idle'; c.f.blocking = null; G.P.pos.set(c.pos.x, c.pos.y, c.pos.z + 2); G.P.yaw = 0; c.state = 'guard'; c.yaw = Math.PI; c.wT = 99; c.wander = c.pos.clone(); G.input.mouse(true, false); st(40); G.input.mouse(false, false); st(30); }
   st(200);
   check('won', G.state === 'won');
   check('end screen shown', !doc.getElementById('end').classList.contains('hidden'));
@@ -47,8 +49,8 @@ try {
   G.damagePlayer(500, G.P.pos.clone().add(new THREE.Vector3(1, 0, 0)), false); st(200);
   check('death', G.state === 'dead' && doc.getElementById('endt').textContent.length > 0);
   // extra scenario hooks for later tasks
-  const extra = process.env.SMOKE_EXTRA ? await import(process.env.SMOKE_EXTRA) : null;
-  if (extra) await extra.default({ G, THREE, win, doc, st, key, check, forcePlay, setGod: v => { god = v; } });
+  for (const mod of ['./smoke-combat.mjs']) { const extra = await import(mod);
+  await extra.default({ G, THREE, win, doc, st, key, check, forcePlay, setGod: v => { god = v; } }); }
 } catch (e) { console.log('EXCEPTION', e.stack); checks.push(['no exception', false]); }
 
 const failed = checks.filter(c => !c[1]);

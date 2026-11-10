@@ -36,6 +36,10 @@
   .bar i{display:block;height:100%;width:100%}
   #hpb i{background:linear-gradient(#b8432f,#7e2418)}
   #stb{height:6px}#stb i{background:#d8c27a}
+  #shb{height:6px}#shb i{background:#9a7a4a}
+  #chg,#incoming{position:absolute;left:50%;transform:translateX(-50%);font-size:26px;text-shadow:0 1px 3px #000}
+  #chg{top:calc(50% + 22px);color:var(--gold)}
+  #incoming{top:calc(50% - 60px);color:#e0503a}
   #weapons{position:absolute;right:22px;bottom:22px;text-align:right;text-shadow:0 1px 3px #000}
   #wname{font-family:'Cinzel',serif;font-size:24px;color:var(--ink)}
   #wammo{font-size:30px;color:var(--gold);font-weight:600}
@@ -87,7 +91,9 @@
   <div id="vitals">
     <div class="lbl">VIDA</div><div class="bar" id="hpb"><i></i></div>
     <div class="lbl">FÔLEGO</div><div class="bar" id="stb"><i></i></div>
+    <div class="lbl">ESCUDO</div><div class="bar" id="shb"><i></i></div>
   </div>
+  <div id="chg"></div><div id="incoming"></div>
   <div id="weapons">
     <div id="wname"></div><div id="wammo"></div>
     <div id="wlist"><span data-w="0">1 FALCATA</span><span data-w="1">2 DARDOS</span><span data-w="2">3 FUNDA</span></div>
@@ -108,7 +114,9 @@
     <div class="row"><label class="lbl" for="sens">RATO</label><input id="sens" type="range" min="1" max="10" value="5"></div>
     <div class="keys">
       <b>W A S D</b><span>mover</span><b>RATO</b><span>olhar</span>
-      <b>CLIQUE</b><span>atacar / lançar</span><b>CLIQUE DIR.</b><span>escudo</span>
+      <b>CLIQUE</b><span>atacar (segura para carregar)</span><b>CLIQUE DIR.</b><span>escudo</span>
+      <b>RATO AO CARREGAR</b><span>direção do golpe: ↑ ← → ou parado = estocada</span><b>Q</b><span>aparar com a falcata</span>
+      <b>F</b><span>empurrão com escudo</span><b>R</b><span>arrancar dardos do escudo</span>
       <b>1 2 3 / RODA</b><span>armas</span><b>SHIFT</b><span>correr</span>
       <b>ESPAÇO</b><span>saltar</span><b>C</b><span>agachar</span>
       <b>E</b><span>usar</span><b>ESC</b><span>pausa</span>
