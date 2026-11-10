@@ -3,6 +3,7 @@ import { initAudio, SFX, spatial, setListener } from './audio.js';
 import * as C from './combat.js';
 import { zoneFromHeight, ZONE_MULT, LEG_SLOW } from './damage.js';
 import { decide, REACH } from './ai.js';
+import { steer, footwork } from './locomotion.js';
 import { loadMaterials, terrainMaterial } from './materials.js';
 import { createPhysics } from './physics.js';
 import { createRender } from './render.js';
@@ -495,7 +496,7 @@ function spawn(kind, x, z, group) {
   const stats = { legio: { hp: 100, sp: 3.9, dmg: 13 }, velite: { hp: 65, sp: 3.7, dmg: 15 }, centurion: { hp: 460, sp: 4.4, dmg: 24 } }[kind];
   const e = { kind, m, pos: new THREE.Vector3(x, heightAt(x, z), z), hp: stats.hp, maxhp: stats.hp, sp: stats.sp, dmg: stats.dmg,
     state: group === 'patrol' ? 'march' : group === 'boss' ? 'chase' : 'guard', group, yaw: Math.PI, home: new THREE.Vector3(x, 0, z),
-    dir: -1, aware: 0, atkT: 0, f: C.createFighter({ shieldHP: kind === 'velite' ? 0 : 220, stamina: kind === 'centurion' ? 140 : 100 }), aiT: rr(0, .3), act: 'approach', releaseAt: 0, feintAt: 0, blockLeft: 0, slowT: 0, cd: rr(.5, 1.5), ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, wander: null, wT: 0, strafe: rand() < .5 ? 1 : -1, moving: 0, barkT: 0 };
+    dir: -1, aware: 0, atkT: 0, f: C.createFighter({ shieldHP: kind === 'velite' ? 0 : 220, stamina: kind === 'centurion' ? 140 : 100 }), aiT: rr(0, .3), act: 'approach', vel: { x: 0, z: 0 }, dodgeRoll: 1, mv: { x: 0, z: 0 }, releaseAt: 0, feintAt: 0, blockLeft: 0, slowT: 0, cd: rr(.5, 1.5), ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, wander: null, wT: 0, strafe: rand() < .5 ? 1 : -1, moving: 0, barkT: 0 };
   if (group === 'patrol') { e.yaw = 0; e.dir = 1; } // marching south (+z)
   enemies.push(e); return e;
 }
@@ -930,7 +931,7 @@ function updateEnemies(dt) {
         if (want && !e.f.blocking) C.beginBlock(e.f, 'shield'); else if (!want && e.f.blocking) C.endBlock(e.f);
       }
       if (e.aiT <= 0 && state === 'play' && e.f.phase === 'idle') {
-        e.aiT = e.kind === 'centurion' ? .18 : .26;
+        e.aiT = e.kind === 'centurion' ? .18 : .26; e.dodgeRoll = rand(); if (rand() < .12) e.strafe *= -1;
         const attackersNow = enemies.filter(o => o !== e && !o.dead && o.kind !== 'velite' && o.f.phase === 'windup').length;
         e.act = decide({ kind: e.kind, fighter: e.f }, { dist: pd, playerFighter: P.f, difficulty: diff, attackersNow, rng: rand });
         if (e.act.startsWith('attack:')) { const dir = e.act.slice(7); C.endBlock(e.f); if (C.beginAttack(e.f, dir)) { e.releaseAt = C.WINDUP[dir] + rr(0, .25) * (e.kind === 'centurion' ? .4 : 1); e.feintAt = 0; } }
@@ -941,16 +942,13 @@ function updateEnemies(dt) {
         if (e.feintAt && e.f.t >= e.feintAt) { C.feint(e.f); e.feintAt = 0; }
         else if (!e.f.released && e.f.t >= e.releaseAt) C.releaseAttack(e.f);
       }
-      if (e.f.phase === 'idle' || e.f.phase === 'recovery') {
-        const sp = e.sp * slow * (e.f.blocking ? .6 : 1);
-        if (pd > REACH - .3) {
-          const off = (e.strafe * .9) * clamp((pd - 2) / 6, 0, 1);
-          const ang = Math.atan2(P.pos.x - e.pos.x, P.pos.z - e.pos.z) + off * .5;
-          speed = moveEnemy(e, e.pos.x + Math.sin(ang) * 3, e.pos.z + Math.cos(ang) * 3, sp * (pd > 25 ? 1.15 : 1), dt);
-        } else if (e.act === 'circle') {
-          const a = Math.atan2(e.pos.x - P.pos.x, e.pos.z - P.pos.z) + e.strafe * .9 * dt;
-          speed = moveEnemy(e, P.pos.x + Math.sin(a) * 2.6, P.pos.z + Math.cos(a) * 2.6, 1.8 * slow, dt);
-        }
+      { // duel footwork with acceleration-limited steering (no instant starts, stops or sliding)
+        const fw = footwork({ dist: pd, sp: e.sp * slow * (e.f.blocking ? .6 : 1) * (pd > 25 ? 1.15 : 1), act: e.act, strafe: e.strafe,
+          difficulty: diff, rng: () => e.dodgeRoll, self: e.f, player: P.f });
+        const fx = (P.pos.x - e.pos.x) / (pd || 1), fz = (P.pos.z - e.pos.z) / (pd || 1);
+        e.vel = steer(e.vel, { x: fx * fw.forward + fz * fw.strafe, z: fz * fw.forward - fx * fw.strafe }, 9, dt);
+        e.pos.x += e.vel.x * dt; e.pos.z += e.vel.z * dt;
+        speed = Math.hypot(e.vel.x, e.vel.z);
       }
       for (const ev of C.tickFighter(e.f, dt)) if (ev.type === 'swing') enemySwing(e, ev);
       if (e.kind === 'centurion' && e.barkT <= 0) { e.barkT = 6; SFX.grunt(spatial(e.pos)); for (const o of enemies) if (!o.dead && o.pos.distanceTo(e.pos) < 30) alert(o); }
