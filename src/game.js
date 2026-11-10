@@ -4,12 +4,13 @@ import * as C from './combat.js';
 import { zoneFromHeight, ZONE_MULT, LEG_SLOW } from './damage.js';
 import { decide, REACH } from './ai.js';
 import { loadMaterials, terrainMaterial } from './materials.js';
+import { createPhysics } from './physics.js';
 
 /**
  * Builds the whole game. Rendering, DOM and window are injected so the game can run headless in tests.
  * @returns game API used by boot() and by tools/smoke.mjs
  */
-export async function createGame({ THREE, renderer, canvas, document, window, physics, loader = null, quality = 'medium' }) {
+export async function createGame({ THREE, renderer, canvas, document, window, rapier = null, loader = null, quality = 'medium' }) {
 clearColliders();
 const $ = id => document.getElementById(id);
 
@@ -69,6 +70,7 @@ function makeDotTex() {
 }
 const DOT = makeDotTex();
 
+const phys = await createPhysics({ RAPIER: rapier, heightAt, half: WORLD });
 const MATS = await loadMaterials({ THREE, loader, quality, anisotropy: renderer.capabilities ? renderer.capabilities.getMaxAnisotropy() : 4 });
 /** A private copy of a shared PBR material (textures stay shared). */
 const MAT = (name, extra) => { const m = MATS[name].clone(); if (extra) Object.assign(m, extra); return m; };
@@ -670,7 +672,7 @@ function spawnProj(type, pos, vel, owner, dmg) {
   if (type === 'javelin') { mesh = new THREE.Group(); const a = new THREE.Mesh(javGeo, M(0x6e5032)); const b = new THREE.Mesh(javTip, M(0xcfc9bb)); a.castShadow = b.castShadow = true; mesh.add(a, b); }
   else { mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(.06), M(0x8a857c)); }
   mesh.position.copy(pos); scene.add(mesh);
-  projectiles.push({ type, mesh, pos: pos.clone(), prev: pos.clone(), vel, owner, dmg: dmg || 0, life: 7, stuck: false, stuckT: 0 });
+  projectiles.push({ type, mesh, pid: phys.addProjectile(pos, vel, type), pos: pos.clone(), prev: pos.clone(), vel, owner, dmg: dmg || 0, life: 7, stuck: false, stuckT: 0 });
 }
 function segSphere(a, b, c, r) { // closest-point distance from segment ab to c < r
   const ab = tmpV.copy(b).sub(a); const t = clamp(V(c.x - a.x, c.y - a.y, c.z - a.z).dot(ab) / (ab.lengthSq() || 1), 0, 1);
@@ -678,13 +680,15 @@ function segSphere(a, b, c, r) { // closest-point distance from segment ab to c 
   return (px - c.x) ** 2 + (py - c.y) ** 2 + (pz - c.z) ** 2 < r * r;
 }
 function updateProjectiles(dt) {
+  const groundHits = new Map(phys.step(dt).map(h => [h.id, h]));
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const p = projectiles[i];
     if (p.stuck) { p.stuckT -= dt; if (p.stuckT <= 0) { scene.remove(p.mesh); projectiles.splice(i, 1); } continue; }
     p.life -= dt;
     p.prev.copy(p.pos);
-    p.vel.y -= (p.type === 'javelin' ? 11 : 9.8) * dt;
-    p.pos.addScaledVector(p.vel, dt);
+    const landed = groundHits.get(p.pid);
+    const np = landed ? landed.pos : phys.getPos(p.pid), nv = landed ? landed.vel : phys.getVel(p.pid);
+    if (np) { p.pos.set(np.x, np.y, np.z); p.vel.set(nv.x, nv.y, nv.z); }
     p.mesh.position.copy(p.pos);
     if (p.type === 'javelin') p.mesh.lookAt(p.pos.x + p.vel.x, p.pos.y + p.vel.y, p.pos.z + p.vel.z);
     else p.mesh.rotation.x += dt * 20;
@@ -718,9 +722,8 @@ function updateProjectiles(dt) {
       if (segSphere(p.prev, p.pos, c, .55)) { damagePlayer(p.dmg, p.prev, true); done = true; }
     }
     if (!done) {
-      const gh = heightAt(p.pos.x, p.pos.z);
-      if (p.pos.y < gh) {
-        p.pos.y = gh + .02; p.mesh.position.copy(p.pos);
+      if (landed || p.pos.y < heightAt(p.pos.x, p.pos.z) - .5) {
+        p.pos.y = heightAt(p.pos.x, p.pos.z) + .02; p.mesh.position.copy(p.pos);
         burst('dust', p.pos, 4); SFX.thud(spatial(p.pos) * .6);
         if (p.type === 'javelin') {
           if (p.owner === 'player') { scene.remove(p.mesh); const k = addPickup('dardo1', p.pos.x, p.pos.z, p.pos.y + .1); k.mesh.rotation.y = Math.atan2(p.vel.x, p.vel.z) + Math.PI / 2; k.mesh.rotation.z = -.5; projectiles.splice(i, 1); continue; }
@@ -729,7 +732,7 @@ function updateProjectiles(dt) {
         done = true;
       }
     }
-    if (done || p.life <= 0) { scene.remove(p.mesh); projectiles.splice(i, 1); }
+    if (done || p.life <= 0) { phys.remove(p.pid); scene.remove(p.mesh); projectiles.splice(i, 1); }
   }
 }
 
@@ -744,6 +747,7 @@ function damageEnemy(e, dmg, head, where, special) {
   if (head) P.heads++;
   if (e.hp <= 0) {
     e.dead = true; e.deadT = 0; P.kills++; SFX.die(spatial(e.pos));
+    { const d = V(e.pos.x - P.pos.x, 0, e.pos.z - P.pos.z).normalize(); e.corpse = phys.addCorpse(e.pos, e.yaw, { x: d.x, y: .3, z: d.z }); }
     const name = { legio: 'Legionário', velite: 'Vélite', centurion: 'Centurião' }[e.kind];
     feed(`${name} abatido${special ? ' — ' + special : head ? ' — na cabeça' : ''}`);
     if (e.kind !== 'centurion' && rand() < .4) addPickup(rand() < .5 ? 'odre' : (rand() < .5 ? 'dardos' : 'pedras'), e.pos.x + rr(-.6, .6), e.pos.z + rr(-.6, .6));
@@ -827,7 +831,10 @@ function updateEnemies(dt) {
   for (const e of enemies) {
     const r = e.m.root;
     if (e.dead) {
-      if (e.deadT < 1) { e.deadT += dt; r.rotation.x = -Math.PI / 2 * smooth(0, .7, e.deadT); r.position.y = e.pos.y + .15 * smooth(0, .7, e.deadT); }
+      e.deadT += dt;
+      if (phys.ok && e.corpse) {
+        if (e.deadT < 6) { const t = phys.getTransform(e.corpse); r.quaternion.set(t.q.x, t.q.y, t.q.z, t.q.w); r.position.set(0, -.9, 0).applyQuaternion(r.quaternion).add(V(t.p.x, t.p.y, t.p.z)); }
+      } else if (e.deadT < 1) { r.rotation.x = -Math.PI / 2 * smooth(0, .7, e.deadT); r.position.y = e.pos.y + .15 * smooth(0, .7, e.deadT); }
       for (const m of e.m.mats) m.emissive.setRGB(0, 0, 0);
       continue;
     }
@@ -1199,7 +1206,7 @@ return {
   get enemies() { return enemies; }, get mission() { return mission; }, get state() { return state; },
   get projectiles() { return projectiles; }, get pickups() { return pickups; },
   input: { mouse: (l, r) => { mouseL = l; mouseR = r; }, mouseMove: (dx, dy) => { if (P.charging) { P.acc.x += dx; P.acc.y += dy; } } },
-  spawnEnemyJavelin, vm: { stuckVisible: () => STUCK.filter(m => m.visible).length },
+  physicsOk: phys.ok, spawnEnemyJavelin, vm: { stuckVisible: () => STUCK.filter(m => m.visible).length },
 };
 }
 
@@ -1208,8 +1215,12 @@ export async function boot() {
   const THREE = await import('three');
   const canvas = document.getElementById('gl');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+  let rapier = null;
+  try { rapier = (await import('https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.0/+esm')).default; await rapier.init(); }
+  catch (err) { console.warn('Rapier unavailable, using simple physics', err); rapier = null; }
   renderer.useLegacyLights = true;
-  const game = await createGame({ THREE, renderer, canvas, document, window, physics: null, loader: new THREE.TextureLoader(), quality: 'medium' });
+  const game = await createGame({ THREE, renderer, canvas, document, window, rapier, loader: new THREE.TextureLoader(), quality: 'medium' });
+  if (!game.physicsOk) document.getElementById('physnote').classList.remove('hidden');
   let last = 0;
   const frame = t => { const dt = Math.min(.05, (t - last) / 1000 || 0); last = t; game.step(dt); game.render(); requestAnimationFrame(frame); };
   requestAnimationFrame(frame);

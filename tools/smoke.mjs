@@ -10,7 +10,10 @@ const win = dom.window, doc = win.document;
 const renderer = { domElement: doc.getElementById('gl'), shadowMap: {}, setPixelRatio() {}, setSize() {}, render() {}, info: { render: { triangles: 0 } } };
 
 const { createGame } = await import('../src/game.js');
-const G = await createGame({ THREE, renderer, canvas: renderer.domElement, document: doc, window: win, physics: null });
+let rapier = null;
+if (process.env.SMOKE_RAPIER) { rapier = (await import('@dimforge/rapier3d-compat')).default; await rapier.init(); }
+const G = await createGame({ THREE, renderer, canvas: renderer.domElement, document: doc, window: win, rapier });
+console.log('physics:', G.physicsOk ? 'rapier' : 'simple');
 
 let god = false;
 const bad = () => G.enemies.some(e => !Number.isFinite(e.pos.x + e.pos.y + e.pos.z)) || !Number.isFinite(G.P.pos.x + G.P.pos.y + G.P.pos.z);
