@@ -63,3 +63,9 @@ test('foliage: cut-out leaf materials for oak, shrub and pine; still three mater
   const none = await loadFoliage({ THREE, loader: stubLoader(() => true), document: null });
   assert.deepEqual(['oak', 'shrub', 'pine'].map(k => !!none[k]), [true, true, true]);
 });
+
+test('grass tufts: a cut-out blade texture when a canvas exists, never an opaque square without one', async () => {
+  const { makeGrassMaterial } = await import('../src/materials.js');
+  const plain = makeGrassMaterial(THREE, null);
+  assert.equal(plain.visible, false, 'no texture → tufts hidden rather than drawn as squares');
+});

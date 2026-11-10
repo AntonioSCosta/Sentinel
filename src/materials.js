@@ -192,3 +192,20 @@ export async function loadFoliage({ THREE, loader, document, anisotropy = 4 }) {
   for (const k of ['oak', 'shrub', 'pine']) out[k + 'Depth'] = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: out[k].map, alphaTest: out[k].alphaTest });
   return out;
 }
+
+/** Grass tuft card: blades drawn on a canvas with a transparent background (cut-out). */
+export function makeGrassMaterial(THREE, document) {
+  const c = document && document.createElement('canvas'); const g = c && c.getContext && c.getContext('2d');
+  if (!g) return new THREE.MeshStandardMaterial({ visible: false });
+  const W = 256, H = 256; c.width = W; c.height = H;
+  let s = 7; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  g.clearRect(0, 0, W, H);
+  for (let i = 0; i < 90; i++) {
+    const x = W * (.1 + .8 * r()), h = H * (.35 + .6 * r()), lean = (r() - .5) * W * .25, w = 2 + r() * 3;
+    const dry = r(), cr = 95 + dry * 90, cg = 105 + dry * 55, cb = 45 + dry * 25;
+    g.fillStyle = `rgb(${cr | 0},${cg | 0},${cb | 0})`;
+    g.beginPath(); g.moveTo(x - w, H); g.quadraticCurveTo(x + lean * .3, H - h * .6, x + lean, H - h); g.quadraticCurveTo(x + lean * .3 + w * .5, H - h * .6, x + w, H); g.fill();
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.MeshStandardMaterial({ map: t, alphaTest: .5, side: THREE.DoubleSide, roughness: 1 });
+}

@@ -4,7 +4,7 @@ import * as C from './combat.js';
 import { zoneFromHeight, ZONE_MULT, LEG_SLOW } from './damage.js';
 import { decide, REACH } from './ai.js';
 import { steer, footwork } from './locomotion.js';
-import { loadMaterials, terrainMaterial, makeMailMaps, loadFoliage } from './materials.js';
+import { loadMaterials, terrainMaterial, makeMailMaps, loadFoliage, makeGrassMaterial } from './materials.js';
 import { createPhysics } from './physics.js';
 import { createRender } from './render.js';
 import { withTimeout } from './physics.js';
@@ -170,10 +170,10 @@ setSeed(777);
   leafy('oak-canopy', canopyGeo({ cards: 54, rx: 3.3, ry: 2.1, cy: 5.3, w: 1.8, h: 1.8, seed: 9 }), FOL.oak, FOL.oakDepth, oaks);
   leafy('shrubs', canopyGeo({ cards: 12, rx: .9, ry: .55, cy: .55, w: 1, h: 1, seed: 13 }), FOL.shrub, FOL.shrubDepth, shrubs);
   instanced(new THREE.DodecahedronGeometry(1, 0), MAT('terrain_rock', { flatShading: true }), rocks);
-  const gg = new THREE.PlaneGeometry(.9, .7); gg.translate(0, .35, 0);
+  const gg = new THREE.PlaneGeometry(.8, .55); gg.translate(0, .27, 0);
   const gg2 = gg.clone(); gg2.rotateY(Math.PI / 2);
   const grassGeo = mergeGeos([gg, gg2]);
-  GRASS = instanced(grassGeo, new THREE.MeshStandardMaterial({ color: 0x7c8040, roughness: 1, side: THREE.DoubleSide }), grass, false);
+  GRASS = instanced(grassGeo, makeGrassMaterial(THREE, document), grass, false); GRASS.name = 'grass';
 }
 /**
  * A crown made of crossed leaf cards scattered in an ellipsoid. Normals point outward from the crown centre,
