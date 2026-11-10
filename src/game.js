@@ -333,7 +333,8 @@ function makeSoldier(kind) {
         shieldM = mm(kind === 'velite' ? 'leather' : 'canvas_red', { side: THREE.DoubleSide }), gold = mm('bronze'),
         crestM = mm('wool_red'), fur = mm('wool_brown'), wood = mm('wood');
   // Mid-Republican (Polybian) kit: most men a bronze pectorale, the wealthier a mail shirt; centurions in mail.
-  const armour = kind === 'velite' ? 'none' : kind === 'centurion' ? 'hamata' : (rand() < .45 ? 'hamata' : 'pectorale');
+  const lus = kind === 'lusitano';
+  const armour = kind === 'velite' || lus ? 'none' : kind === 'centurion' ? 'hamata' : (rand() < .45 ? 'hamata' : 'pectorale');
   const mail = armour === 'hamata' ? mm('mail') : null, feather = mm('feather', { side: THREE.DoubleSide });
   if (kind === 'legio' && rand() < .5) tunic.color.copy(MATS.wool_white.color);
   const root = new THREE.Group(); root.rotation.order = 'YXZ';
@@ -350,7 +351,7 @@ function makeSoldier(kind) {
     add(CAP(.062, .26), skin, 0, -.17, .01, knee);
     add(new THREE.CylinderGeometry(.075, .085, .16, 12), leather, 0, -.37, .02, knee);
     add(new THREE.BoxGeometry(.12, .06, .24), leather, 0, -.44, .05, knee);
-    if (kind !== 'velite' && (sx > 0 || kind === 'centurion')) { // ocrea: one greave, on the leading left leg
+    if (kind !== 'velite' && !lus && (sx > 0 || kind === 'centurion')) { // ocrea: one greave, on the leading left leg
       const gr = add(new THREE.CylinderGeometry(.082, .07, .3, 12, 1, true, -Math.PI * .6, Math.PI * 1.2), gold, 0, -.19, .005, knee);
       gr.material = gold; gr.name = 'greave'; gr.material.side = THREE.DoubleSide;
     }
@@ -363,6 +364,7 @@ function makeSoldier(kind) {
   const spine = grp(0, .95, 0); spine.rotation.order = 'YXZ';
   const torso = new THREE.CylinderGeometry(.25, .28, .62, 20); torso.scale(1, 1, .72);
   add(torso, tunic, 0, .35, 0, spine);
+  if (lus) { const lc = new THREE.CylinderGeometry(.262, .29, .5, 20, 1, true); lc.scale(1, 1, .74); add(lc, mm('wool_white'), 0, .4, 0, spine).material.side = THREE.DoubleSide; } // linen corslet (Strabo 3.3.6)
   if (armour === 'hamata') {             // lorica hamata to the hips, with doubled shoulders (humeralia)
     const shirt = new THREE.CylinderGeometry(.272, .305, .72, 20, 1, true); shirt.scale(1, 1, .76);
     add(shirt, mail, 0, .3, 0, spine).material.side = THREE.DoubleSide;
@@ -378,7 +380,10 @@ function makeSoldier(kind) {
   add(new THREE.CylinderGeometry(.06, .07, .1, 10), skin, 0, .03, 0, head);
   const hg = new THREE.SphereGeometry(.12, 14, 10); hg.scale(.95, 1.1, 1); add(hg, skin, 0, .18, .01, head);
   add(new THREE.ConeGeometry(.025, .06, 6), skin, 0, .17, .125, head).rotation.x = Math.PI / 2;
-  if (kind === 'velite') {
+  if (lus) { // sinew/leather cap with three crests
+    add(new THREE.SphereGeometry(.142, 16, 10, 0, Math.PI * 2, 0, Math.PI * .5), leather, 0, .2, 0, head);
+    for (const z of [-.06, 0, .06]) { const c = new THREE.BoxGeometry(.02, .07, .16); add(c, crestM, z, .34, 0, head); }
+  } else if (kind === 'velite') {
     add(new THREE.SphereGeometry(.15, 16, 10, 0, Math.PI * 2, 0, Math.PI * .62), fur, 0, .2, -.02, head);
     add(new THREE.ConeGeometry(.16, .3, 12, 1, true), fur, 0, .02, -.12, head).rotation.x = .5;
   } else {
@@ -412,13 +417,30 @@ function makeSoldier(kind) {
     arms.push(sh); elbows.push(el);
   }
   const hand = grp(0, -.3, 0, elbows[1]);
-  if (kind === 'velite') {
+  if (lus) {
+    // falcata: forward-curved single-edged blade, hooked hilt; held along the forearm line (−y)
+    const fs = new THREE.Shape(); fs.moveTo(0, 0); fs.lineTo(.04, 0); fs.quadraticCurveTo(.1, .24, .072, .44); fs.quadraticCurveTo(.05, .53, -.008, .56);
+    fs.quadraticCurveTo(.0, .42, -.018, .32); fs.quadraticCurveTo(-.022, .16, 0, 0);
+    const fg = new THREE.ExtrudeGeometry(fs, { depth: .006, bevelEnabled: true, bevelThickness: .003, bevelSize: .004, bevelSegments: 2, curveSegments: 10 });
+    fg.translate(-.02, 0, -.003);
+    const fal = grp(0, 0, 0, hand); fal.name = 'falcata';
+    add(fg, metal, 0, -.06, 0, fal).rotation.x = Math.PI;
+    add(new THREE.CylinderGeometry(.016, .016, .1, 10), wood, 0, .02, 0, fal);
+    add(new THREE.TorusGeometry(.04, .01, 6, 12, Math.PI * 1.2), gold, .02, .07, 0, fal).rotation.z = Math.PI * .4;
+    root.userData.bladeLength = .56;
+    // caetra: small round concave shield (~0.6 m) with a central boss
+    const pg = grp(.34, .2, .3, spine); root.userData.parma = pg; pg.name = 'caetra';
+    const dome = new THREE.SphereGeometry(.5, 24, 6, 0, Math.PI * 2, 0, .64); dome.rotateX(Math.PI / 2); dome.translate(0, 0, -.42);
+    add(dome, leather, 0, 0, 0, pg).material.side = THREE.DoubleSide;
+    add(new THREE.SphereGeometry(.06, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), gold, 0, 0, .07, pg).rotation.x = Math.PI / 2;
+    for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; add(new THREE.SphereGeometry(.014, 6, 4), gold, Math.cos(a) * .2, Math.sin(a) * .2, .03, pg); }
+  } else if (kind === 'velite') {
     const jv = add(new THREE.CylinderGeometry(.015, .015, 1.5, 6), wood, 0, 0, .25, hand); jv.rotation.x = Math.PI / 2;
     add(new THREE.ConeGeometry(.03, .16, 8), metal, 0, 0, 1.06, hand).rotation.x = Math.PI / 2;
-    const pa = add(new THREE.CylinderGeometry(.36, .36, .04, 28), shieldM, .36, .2, .28, spine); pa.rotation.x = Math.PI / 2;
-    root.userData.parma = grp(.36, .2, .3, spine); // grip point reference for the shield-hand IK
-    add(new THREE.TorusGeometry(.36, .015, 6, 28), metal, .36, .2, .3, spine);
-    add(new THREE.SphereGeometry(.07, 12, 8), metal, .36, .2, .31, spine);
+    const pg = grp(.36, .2, .28, spine); root.userData.parma = pg; // the IK grips this group
+    add(new THREE.CylinderGeometry(.36, .36, .04, 28), shieldM, 0, 0, 0, pg).rotation.x = Math.PI / 2;
+    add(new THREE.TorusGeometry(.36, .015, 6, 28), metal, 0, 0, .02, pg);
+    add(new THREE.SphereGeometry(.07, 12, 8), metal, 0, 0, .03, pg);
   } else {
     // gladius continues the line of the forearm (−y), so the blade follows the swing arc
     // gladius hispaniensis: ~0.64 m blade, slight waist, long tapering point
@@ -530,6 +552,7 @@ let mission = 0, tentsBurnt = 0, missionMsgT = 0, alarm = false;
 Object.defineProperty(P, 'st', { get() { return P.f.stamina; }, set(v) { P.f.stamina = v; }, enumerable: false });
 Object.defineProperty(P, 'block', { get() { return P.f.blocking != null; }, enumerable: false });
 const keys = {}; let mouseL = false, mouseR = false;
+let view = 'third'; // M&B-style over-the-shoulder by default; V toggles first person
 
 function resetWorld() {
   // clear dynamic objects
@@ -644,6 +667,7 @@ window.addEventListener('keydown', e => {
   if (e.code === 'Digit1') selectW(0); if (e.code === 'Digit2') selectW(1); if (e.code === 'Digit3') selectW(2);
   if (e.code === 'KeyE') use();
   if (e.code === 'KeyF') bash();
+  if (e.code === 'KeyV') view = view === 'third' ? 'first' : 'third';
   if (e.code === 'KeyR') cleanShield();
   if (e.code === 'Space') e.preventDefault();
 });
@@ -1005,17 +1029,19 @@ function setPose(e, dt) {
   } else if (f.phase === 'staggered') {
     aim = { x: -.5, y: -.5, z: .2 }; elbow = .3; lean = -.32; twist = .25;
   }
+  if (f.blocking === 'sword') { aim = { x: -.3, y: .15, z: .95 }; elbow = 1.3; twist = -.2; }
   const ka = f.phase === 'strike' ? Math.min(1, dt * 45) : k;
   aimArm(m.arms[1], aim, ka);
   m.elbows[1].rotation.x = lerp(m.elbows[1].rotation.x, -elbow, ka);
   m.spine.rotation.y = lerp(m.spine.rotation.y, twist, ka);
   m.spine.rotation.x = lerp(m.spine.rotation.x, lean, k);
-  const sc = m.root.userData.scutum;
+  const sc = m.root.userData.scutum || m.root.userData.parma;
   if (sc) {
+    const base = m.root.userData.shieldBase || (m.root.userData.shieldBase = sc.position.clone());
     const b = f.blocking === 'shield', atk = f.phase === 'windup' || f.phase === 'strike';
-    sc.position.x = lerp(sc.position.x, b ? .02 : atk ? .38 : .3, k);
-    sc.position.y = lerp(sc.position.y, b ? .36 : .17, k);
-    sc.position.z = lerp(sc.position.z, b ? .44 : combat ? .36 : .28, k);
+    sc.position.x = lerp(sc.position.x, b ? .02 : atk ? base.x + .08 : base.x, k);
+    sc.position.y = lerp(sc.position.y, b ? .36 : base.y, k);
+    sc.position.z = lerp(sc.position.z, b ? .44 : combat ? base.z + .04 : base.z - .04, k);
     sc.rotation.y = lerp(sc.rotation.y, b ? 0 : combat ? .3 : .6, k);
   }
   // shield arm: two-bone IK so the hand grips the shield from behind; free arm swings while marching
@@ -1230,6 +1256,18 @@ function updateCamera(dt) {
   const shake = P.hurtT > 0 ? (Math.random() - .5) * P.hurtT * .08 : 0;
   P.kick = Math.max(0, P.kick - dt * 1.5);
   camera.rotation.set(P.pitch + shake + P.kick * .12, P.yaw, shake * .5 + P.kick * .05);
+  // Viriato himself, posed by the same rig and blade arcs as the Romans
+  avatar.f = P.f; avatar.yaw = P.yaw + Math.PI; avatar.mv.x = P.vel.x; avatar.mv.z = P.vel.z;
+  const bob3 = setPose(avatar, dt);
+  AV.root.position.set(P.pos.x, P.pos.y + bob3 - P.crouch * .3, P.pos.z); AV.root.rotation.y = avatar.yaw;
+  AV.root.visible = view === 'third'; AV_FAL.visible = P.w === 0;
+  if (view === 'third') {
+    const dir = fwd3(), right = V(Math.cos(P.yaw), 0, -Math.sin(P.yaw));
+    const pivot = V(P.pos.x, P.pos.y + 1.6 - P.crouch * .5, P.pos.z);
+    const cp = pivot.addScaledVector(dir, -2.8).addScaledVector(right, .55).add(V(0, .25, 0));
+    const gh = heightAt(cp.x, cp.z) + .4; if (cp.y < gh) cp.y = gh;
+    camera.position.copy(cp);
+  }
   // viewmodel
   FAL.visible = P.w === 0; JAV.visible = P.w === 1 && (P.dardos > 0 || P.throwT > 0); SLG.visible = P.w === 2;
   SHD.visible = P.w !== 2 && P.f.shieldHP > 0;
@@ -1418,9 +1456,12 @@ function step(dt) {
     sun.position.set(cx, 0, cz).addScaledVector(SUN_DIR, 150); sun.target.position.set(cx, 0, cz);
     VM.visible = false;
   }
-  if (state !== 'menu') VM.visible = state === 'play' || state === 'pause';
+  if (state !== 'menu') VM.visible = view === 'first' && (state === 'play' || state === 'pause');
   updateFires(dt); updateParticles(dt);
 }
+const AV = makeSoldier('lusitano'); scene.add(AV.root); AV.root.visible = false;
+let AV_FAL = null; AV.root.traverse(o => { if (o.name === 'falcata') AV_FAL = o; });
+const avatar = { m: AV, f: P.f, yaw: 0, mv: { x: 0, z: 0 }, state: 'chase', kind: 'lusitano', stride: 0 };
 R = await createRender({ THREE, renderer, scene, camera, sun, grass: GRASS, quality: resolveQuality(quality), devicePixelRatio: window.devicePixelRatio || 1 });
 for (const b of document.querySelectorAll('[data-q]')) {
   b.setAttribute('aria-pressed', b.dataset.q === R.state.preset ? 'true' : 'false');
@@ -1435,7 +1476,7 @@ return {
   get enemies() { return enemies; }, get mission() { return mission; }, get state() { return state; },
   get projectiles() { return projectiles; }, get pickups() { return pickups; },
   input: { mouse: (l, r) => { mouseL = l; mouseR = r; }, mouseMove: (dx, dy) => { if (P.charging) { P.acc.x += dx; P.acc.y += dy; } } },
-  physicsOk: phys.ok, physCounts: () => phys.counts(), V3: THREE.Vector3, damageEnemyForTest: (e, d) => damageEnemy(e, d, false, e.pos.clone()), spawnEnemyJavelin, vm: { stuckVisible: () => STUCK.filter(m => m.visible).length, fal: FAL },
+  avatar: AV, get view() { return view; }, physicsOk: phys.ok, physCounts: () => phys.counts(), V3: THREE.Vector3, damageEnemyForTest: (e, d) => damageEnemy(e, d, false, e.pos.clone()), spawnEnemyJavelin, vm: { stuckVisible: () => STUCK.filter(m => m.visible).length, fal: FAL },
 };
 }
 
