@@ -75,6 +75,9 @@ export async function loadMaterials({ THREE, loader, quality = 'medium', anisotr
  * Terrain: blends grass / dry ground / rock / road / camp by a per-vertex `splat` attribute (vec4 + camp in a float).
  * Uses world-space UVs so the 420 m terrain tiles cleanly. Falls back to flat colours when maps are missing.
  */
+/** Tints over the photo layers so the five ground textures sit together (the dried mud is much paler than the rest). */
+const TERRAIN_TINT = { camp_ground: 0x9a8670 };
+
 export function terrainMaterial(THREE, mats) {
   const layers = ['terrain_grass', 'terrain_dry', 'terrain_rock', 'road', 'camp_ground'];
   const m = new THREE.MeshStandardMaterial({ roughness: .95, metalness: 0, vertexColors: false });
@@ -82,7 +85,7 @@ export function terrainMaterial(THREE, mats) {
   const uniforms = {};
   layers.forEach((n, i) => {
     uniforms['uTex' + i] = { value: mats[n].map || blank };
-    uniforms['uCol' + i] = { value: mats[n].map ? new THREE.Color(0xffffff) : mats[n].color.clone() };
+    uniforms['uCol' + i] = { value: mats[n].map ? new THREE.Color(TERRAIN_TINT[n] || 0xffffff) : mats[n].color.clone() };
   });
   uniforms.uScale = { value: new THREE.Vector4(1 / 4, 1 / 5, 1 / 6, 1 / 3) }; // metres per tile (inverse)
   uniforms.uCampScale = { value: 1 / 4 };
