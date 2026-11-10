@@ -1184,8 +1184,13 @@ function startGame() {
   showMsg('I · A Emboscada', 'Agacha-te (C) e aproxima-te sem seres visto. Um golpe pelas costas é mortal.', 5);
   lock();
 }
-function pauseGame() { state = 'pause'; $('pauseobj').textContent = $('objt').textContent; $('sens2').value = $('sens').value; $('pause').classList.remove('hidden'); }
-function resume() { state = 'play'; $('pause').classList.add('hidden'); for (const k in keys) keys[k] = false; mouseL = mouseR = false; lock(); }
+/** Drop every held input and combat stance (used when the game loses focus). */
+function releaseAll() {
+  for (const k in keys) keys[k] = false; mouseL = mouseR = false;
+  P.prevL = false; P.charging = false; C.feint(P.f); C.endBlock(P.f);
+}
+function pauseGame() { releaseAll(); state = 'pause'; $('pauseobj').textContent = $('objt').textContent; $('sens2').value = $('sens').value; $('pause').classList.remove('hidden'); }
+function resume() { state = 'play'; $('pause').classList.add('hidden'); releaseAll(); lock(); }
 function endScreen(kicker, title, text) {
   try { document.exitPointerLock && document.exitPointerLock(); } catch (_) {}
   $('endk').textContent = kicker; $('endt').textContent = title; $('endp').textContent = text;
