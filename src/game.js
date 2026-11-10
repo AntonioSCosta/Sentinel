@@ -144,7 +144,7 @@ setSeed(777);
     const y = heightAt(x, z); if (y > 30) continue;
     grass.push({ x, y, z, s: rr(.7, 1.4), ry: rr(0, TAU) });
   }
-  const trunkG = new THREE.CylinderGeometry(.18, .3, 4, 6); trunkG.translate(0, 2, 0);
+  const trunkG = new THREE.CylinderGeometry(.18, .3, 4, 10); trunkG.translate(0, 2, 0);
   const pineG = new THREE.ConeGeometry(2.3, 6.5, 7); pineG.translate(0, 6.2, 0);
   const pineG2 = new THREE.ConeGeometry(1.7, 4.5, 7); pineG2.translate(0, 8.6, 0);
   const oakG = new THREE.IcosahedronGeometry(2.8, 1); oakG.translate(0, 5.2, 0); oakG.scale(1.2, .85, 1.2);
@@ -296,55 +296,83 @@ function makeSoldier(kind) {
   const mm = (name, extra) => { const m = MAT(name, extra); mats.push(m); return m; };
   const tunic = mm(kind === 'velite' ? 'wool_brown' : 'wool_red'), armor = mm('iron'), skin = mm('skin'),
         helm = mm(kind === 'centurion' ? 'bronze' : 'iron'), metal = mm('iron', { roughness: .3 }), leather = mm('leather'),
-        shieldM = mm(kind === 'velite' ? 'leather' : 'canvas_red'), gold = mm('bronze'), crestM = mm('wool_red'), fur = mm('wool_brown');
+        shieldM = mm(kind === 'velite' ? 'leather' : 'canvas_red', { side: THREE.DoubleSide }), gold = mm('bronze'),
+        crestM = mm('wool_red'), fur = mm('wool_brown'), wood = mm('wood');
   const root = new THREE.Group(); root.rotation.order = 'YXZ';
   const add = (g, m, x, y, z, p) => { const o = new THREE.Mesh(g, m); o.position.set(x, y, z); o.castShadow = true; (p || root).add(o); return o; };
+  const CAP = (r, len) => new THREE.CapsuleGeometry(r, len, 3, 8);
+  // legs: thigh, shin, caliga (sandal-boot)
   const legs = [];
   for (const sx of [-.12, .12]) {
     const hip = new THREE.Group(); hip.position.set(sx, .92, 0); root.add(hip);
-    add(BOX(.17, .55, .19), skin, 0, -.3, 0, hip);
-    add(BOX(.19, .38, .22), leather, 0, -.72, .01, hip);
+    add(CAP(.075, .3), skin, 0, -.22, 0, hip);
+    add(CAP(.062, .32), skin, 0, -.6, .01, hip);
+    add(new THREE.CylinderGeometry(.075, .085, .16, 12), leather, 0, -.82, .02, hip);
+    add(new THREE.BoxGeometry(.12, .06, .24), leather, 0, -.89, .05, hip);
     legs.push(hip);
   }
-  add(BOX(.56, .3, .34), tunic, 0, .95, 0);
-  add(BOX(.52, .58, .3), tunic, 0, 1.33, 0);
-  if (kind !== 'velite') { add(BOX(.58, .44, .36), armor, 0, 1.38, 0); add(BOX(.62, .1, .38), armor, 0, 1.58, 0); add(BOX(.6, .08, .37), leather, 0, 1.12, 0); }
-  else add(BOX(.56, .08, .33), leather, 0, 1.1, 0);
-  const head = new THREE.Group(); head.position.set(0, 1.66, 0); root.add(head);
-  add(BOX(.08, .1, .08), skin, 0, .02, 0, head);
-  add(BOX(.23, .25, .24), skin, 0, .17, 0, head);
-  if (kind === 'velite') {
-    add(BOX(.29, .2, .3), fur, 0, .3, -.02, head);
-    add(BOX(.3, .22, .1), fur, 0, .16, -.14, head);
-  } else {
-    const hg = new THREE.SphereGeometry(.17, 10, 6, 0, TAU, 0, Math.PI / 2);
-    add(hg, helm, 0, .25, 0, head);
-    add(BOX(.36, .04, .1), helm, 0, .2, -.14, head);          // neck guard
-    add(BOX(.04, .16, .1), helm, -.13, .14, .06, head); add(BOX(.04, .16, .1), helm, .13, .14, .06, head); // cheek guards
-    if (kind === 'centurion') { add(BOX(.52, .14, .06), crestM, 0, .46, 0, head); }
-    else add(BOX(.04, .06, .04), helm, 0, .43, 0, head);
+  // body
+  const torso = new THREE.CylinderGeometry(.25, .28, .62, 20); torso.scale(1, 1, .72);
+  add(torso, tunic, 0, 1.3, 0);
+  const skirt = new THREE.CylinderGeometry(.28, .33, .28, 20, 1, true); skirt.scale(1, 1, .75);
+  add(skirt, tunic, 0, .95, 0).material.side = THREE.DoubleSide;
+  if (kind !== 'velite') {
+    for (let k = 0; k < 5; k++) { const b = new THREE.CylinderGeometry(.285 - k * .004, .3 - k * .004, .075, 20, 1, true); b.scale(1, 1, .76); add(b, armor, 0, 1.12 + k * .08, 0); }
+    for (const sx of [-1, 1]) { const sp = new THREE.SphereGeometry(.15, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2); sp.scale(1, .55, 1.1); add(sp, armor, sx * .24, 1.56, 0); }
+    // pteruges: leather strips over the skirt
+    for (let k = 0; k < 8; k++) { const a = (k / 8 - .5) * 1.6; add(new THREE.BoxGeometry(.05, .22, .015), leather, Math.sin(a) * .29, .96, Math.cos(a) * .22 + .02).rotation.y = a; }
   }
+  const belt = new THREE.TorusGeometry(.27, .025, 6, 24); belt.rotateX(Math.PI / 2); belt.scale(1, 1, .76);
+  add(belt, leather, 0, 1.06, 0);
+  // head
+  const head = new THREE.Group(); head.position.set(0, 1.66, 0); root.add(head);
+  add(new THREE.CylinderGeometry(.06, .07, .1, 10), skin, 0, .03, 0, head);
+  const hg = new THREE.SphereGeometry(.12, 14, 10); hg.scale(.95, 1.1, 1); add(hg, skin, 0, .18, .01, head);
+  add(new THREE.ConeGeometry(.025, .06, 6), skin, 0, .17, .125, head).rotation.x = Math.PI / 2; // nose
+  if (kind === 'velite') {
+    const hood = new THREE.SphereGeometry(.15, 16, 10, 0, Math.PI * 2, 0, Math.PI * .62); add(hood, fur, 0, .2, -.02, head);
+    const pelt = new THREE.ConeGeometry(.16, .3, 12, 1, true); add(pelt, fur, 0, .02, -.12, head).rotation.x = .5;
+  } else {
+    const cap = new THREE.SphereGeometry(.14, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2); add(cap, helm, 0, .22, 0, head);
+    const ng = new THREE.CylinderGeometry(.15, .19, .07, 18, 1, true, Math.PI * .65, Math.PI * .7); add(ng, helm, 0, .2, 0, head).material.side = THREE.DoubleSide;
+    add(new THREE.BoxGeometry(.02, .015, .2), helm, 0, .24, .07, head); // brow ridge
+    for (const sx of [-1, 1]) { const cg = new THREE.BoxGeometry(.015, .15, .09); add(cg, helm, sx * .125, .13, .05, head).rotation.z = sx * .08; }
+    if (kind === 'centurion') { const crest = new THREE.TorusGeometry(.17, .035, 8, 28, Math.PI); add(crest, crestM, 0, .3, 0, head); }
+    else add(new THREE.CylinderGeometry(.015, .025, .06, 8), helm, 0, .37, 0, head);
+  }
+  // arms: upper arm, forearm, hand
   const arms = [];
   for (const sx of [-.34, .34]) {
     const sh = new THREE.Group(); sh.position.set(sx, 1.56, 0); root.add(sh);
-    add(BOX(.14, .32, .16), kind === 'velite' ? skin : armor, 0, -.12, 0, sh);
-    add(BOX(.12, .34, .14), skin, 0, -.42, 0, sh);
+    add(CAP(.058, .2), kind === 'velite' ? skin : armor, 0, -.15, 0, sh);
+    add(CAP(.05, .2), skin, 0, -.42, 0, sh);
+    add(new THREE.CylinderGeometry(.055, .055, .08, 10), leather, 0, -.48, 0, sh); // bracer
+    add(new THREE.SphereGeometry(.05, 10, 8), skin, 0, -.58, 0, sh);
     arms.push(sh);
   }
   const hand = new THREE.Group(); hand.position.set(0, -.6, 0); arms[1].add(hand);
   if (kind === 'velite') {
-    const jv = add(new THREE.CylinderGeometry(.015, .015, 1.5, 5), M(0x6b4b2e), 0, 0, .25, hand); jv.rotation.x = Math.PI / 2;
-    add(new THREE.ConeGeometry(.03, .14, 5), metal, 0, 0, 1.03, hand).rotation.x = Math.PI / 2;
-    const pa = add(new THREE.CylinderGeometry(.36, .36, .04, 16), shieldM, -.36, 1.15, .28); pa.rotation.x = Math.PI / 2;
-    add(new THREE.SphereGeometry(.07, 8, 6), metal, -.36, 1.15, .31);
+    const jv = add(new THREE.CylinderGeometry(.015, .015, 1.5, 6), wood, 0, 0, .25, hand); jv.rotation.x = Math.PI / 2;
+    add(new THREE.ConeGeometry(.03, .16, 8), metal, 0, 0, 1.06, hand).rotation.x = Math.PI / 2;
+    const pa = add(new THREE.CylinderGeometry(.36, .36, .04, 28), shieldM, -.36, 1.15, .28); pa.rotation.x = Math.PI / 2;
+    const rim = new THREE.TorusGeometry(.36, .015, 6, 28); add(rim, metal, -.36, 1.15, .3);
+    add(new THREE.SphereGeometry(.07, 12, 8), metal, -.36, 1.15, .31);
   } else {
-    const sw = add(BOX(.05, .03, .6), metal, 0, -.02, .32, hand);
-    add(BOX(.16, .05, .05), gold, 0, -.02, .03, hand);
+    // gladius: leaf blade, guard, grip, pommel — blade points forward (+z)
+    const bs = new THREE.Shape(); bs.moveTo(-.025, 0); bs.lineTo(.025, 0); bs.lineTo(.028, .38); bs.lineTo(.0, .5); bs.lineTo(-.028, .38); bs.closePath();
+    const bg = new THREE.ExtrudeGeometry(bs, { depth: .008, bevelEnabled: true, bevelThickness: .003, bevelSize: .004, bevelSegments: 2, curveSegments: 4 });
+    const blade = add(bg, metal, 0, -.02, .1, hand); blade.rotation.x = Math.PI / 2;
+    add(new THREE.BoxGeometry(.12, .035, .045), gold, 0, -.02, .08, hand);
+    const grip = add(new THREE.CylinderGeometry(.016, .016, .1, 10), wood, 0, -.02, .02, hand); grip.rotation.x = Math.PI / 2;
+    add(new THREE.SphereGeometry(.03, 12, 8), gold, 0, -.02, -.04, hand);
+    // curved scutum
     const sc = new THREE.Group(); sc.position.set(-.3, 1.12, .3); root.add(sc);
-    add(BOX(.74, 1.08, .07), shieldM, 0, 0, 0, sc);
-    add(BOX(.76, .05, .08), gold, 0, .52, 0, sc); add(BOX(.76, .05, .08), gold, 0, -.52, 0, sc);
-    add(new THREE.SphereGeometry(.1, 10, 6), gold, 0, 0, .05, sc);
-    add(BOX(.05, .9, .02), gold, 0, 0, .045, sc);
+    const sg = new THREE.CylinderGeometry(.62, .62, 1.08, 20, 2, true, -.6, 1.2); sg.translate(0, 0, -.62);
+    add(sg, shieldM, 0, 0, 0, sc);
+    const inner = new THREE.CylinderGeometry(.6, .6, 1.06, 24, 1, true, -.59, 1.18); inner.translate(0, 0, -.62); add(inner, wood, 0, 0, 0, sc).material.side = THREE.BackSide;
+    for (const y of [-.53, .53]) { const e = new THREE.TorusGeometry(.62, .012, 4, 16, 1.2); e.rotateX(Math.PI / 2); e.rotateY(Math.PI / 2 - .6); e.translate(0, y, -.62); add(e, gold, 0, 0, 0, sc); }
+    const boss = new THREE.SphereGeometry(.1, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2); boss.rotateX(Math.PI / 2); add(boss, gold, 0, 0, .01, sc);
+    add(new THREE.BoxGeometry(.04, .9, .02), gold, 0, 0, .005, sc);
     root.userData.scutum = sc;
   }
   return { root, legs, arms, head, mats };
@@ -362,7 +390,7 @@ const FAL = new THREE.Group(); VM.add(FAL);
   const sh = new THREE.Shape();
   sh.moveTo(0, 0); sh.lineTo(.045, 0); sh.quadraticCurveTo(.12, .26, .085, .52); sh.quadraticCurveTo(.06, .62, -.01, .66);
   sh.quadraticCurveTo(.0, .5, -.02, .38); sh.quadraticCurveTo(-.025, .2, 0, 0);
-  const bg = new THREE.ExtrudeGeometry(sh, { depth: .012, bevelEnabled: false });
+  const bg = new THREE.ExtrudeGeometry(sh, { depth: .006, bevelEnabled: true, bevelThickness: .004, bevelSize: .005, bevelSegments: 2, curveSegments: 14 });
   const blade = vmMesh(bg, 0xd9d4c8, -.03, .07, -.006, FAL);
   vmMesh(BOX(.05, .15, .045), 0x4a2f1c, 0, -.02, 0, FAL);
   const hook = vmMesh(new THREE.TorusGeometry(.05, .012, 6, 10, Math.PI * 1.2), 0x9a8a6a, .02, -.08, 0, FAL); hook.rotation.z = Math.PI * .6;
