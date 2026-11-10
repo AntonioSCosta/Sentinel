@@ -166,7 +166,7 @@ setSeed(777);
   instanced(pineTrunk, MAT('bark_pine'), pines);
   instanced(oakTrunk, MAT('bark_oak'), oaks);
   const leafy = (name, geo, mat, depth, list) => { const im = instanced(geo, mat, list); im.name = name; im.customDepthMaterial = depth; return im; };
-  leafy('pine-canopy', canopyGeo({ cards: 44, rx: 2.6, ry: 1.2, cy: 8.4, w: 1.7, h: 1.4, seed: 5, flat: .6 }), FOL.pine, FOL.pineDepth, pines);
+  leafy('pine-canopy', canopyGeo({ cards: 72, rx: 2.5, ry: 1.3, cy: 8.3, w: 1.15, h: 1, seed: 5, flat: .5 }), FOL.pine, FOL.pineDepth, pines);
   leafy('oak-canopy', canopyGeo({ cards: 54, rx: 3.3, ry: 2.1, cy: 5.3, w: 1.8, h: 1.8, seed: 9 }), FOL.oak, FOL.oakDepth, oaks);
   leafy('shrubs', canopyGeo({ cards: 12, rx: .9, ry: .55, cy: .55, w: 1, h: 1, seed: 13 }), FOL.shrub, FOL.shrubDepth, shrubs);
   instanced(new THREE.DodecahedronGeometry(1, 0), MAT('terrain_rock', { flatShading: true }), rocks);
@@ -364,7 +364,7 @@ function makeSoldier(kind) {
   const spine = grp(0, .95, 0); spine.rotation.order = 'YXZ';
   const torso = new THREE.CylinderGeometry(.25, .28, .62, 20); torso.scale(1, 1, .72);
   add(torso, tunic, 0, .35, 0, spine);
-  if (lus) { const lc = new THREE.CylinderGeometry(.262, .29, .5, 20, 1, true); lc.scale(1, 1, .74); add(lc, mm('wool_white'), 0, .4, 0, spine).material.side = THREE.DoubleSide; } // linen corslet (Strabo 3.3.6)
+  if (lus) { const lc = new THREE.CylinderGeometry(.262, .29, .5, 20, 1, true); lc.scale(1, 1, .74); add(lc, mm('wool_white', { color: new THREE.Color(0xa8977a) }), 0, .4, 0, spine).material.side = THREE.DoubleSide; } // linen corslet (Strabo 3.3.6)
   if (armour === 'hamata') {             // lorica hamata to the hips, with doubled shoulders (humeralia)
     const shirt = new THREE.CylinderGeometry(.272, .305, .72, 20, 1, true); shirt.scale(1, 1, .76);
     add(shirt, mail, 0, .3, 0, spine).material.side = THREE.DoubleSide;
@@ -566,7 +566,7 @@ function resetWorld() {
   for (const t of supplyTents) { t.burnt = false; t.t = 0; t.mat.color.setHex(0xc9b68c); t.light.intensity = 0; t.flag.visible = true; }
   setSeed(4242);
   endT = 0; endArgs = null;
-  Object.assign(P, { f: C.createFighter(), charging: false, chargeT: 0, acc: { x: 0, y: 0 }, prevL: false, swingDir: null, bashCd: 0, bashT: 0, cleanT: 0,
+  Object.assign(P, { throwPending: 0, throwKind: null, f: C.createFighter(), charging: false, chargeT: 0, acc: { x: 0, y: 0 }, prevL: false, swingDir: null, bashCd: 0, bashT: 0, cleanT: 0,
     lastDefense: null, incomingDir: null, vel: { x: 0, z: 0 }, push: null, kick: 0, swingHits: new Set(), vy: 0, hp: 100, ground: true, crouch: 0, w: 0, dardos: 5, pedras: 12, atk: 0, cd: 0,
     kills: 0, shots: 0, hits: 0, heads: 0, time: 0, swing: 0, throwT: 0, hurtT: 0 });
   P.pos.set(CASTRO.x - 9, 0, CASTRO.z - 5); P.pos.y = heightAt(P.pos.x, P.pos.z);
@@ -705,22 +705,31 @@ function makeNoise(r) { for (const e of enemies) if (!e.dead && e.state !== 'cha
 function attack() {
   if (P.cd > 0 || P.block) return;
   if (P.w === 0) return;
+  if (P.throwPending) return;
   if (P.w === 1) {
     if (P.dardos <= 0) { showPrompt('Sem dardos — apanha-os do chão', 1.2); return; }
-    P.dardos--; P.cd = .85; P.throwT = 1; P.shots++; SFX.throwJ();
-    const f = fwd3(), e = eyePos();
-    const right = V(Math.cos(P.yaw), 0, -Math.sin(P.yaw));
-    const start = e.clone().addScaledVector(right, .22).add(V(0, -.08, 0)).addScaledVector(f, .5);
-    spawnProj('javelin', start, f.multiplyScalar(36).add(V(0, 1.4, 0)), 'player');
-    makeNoise(16);
+    P.dardos--; P.cd = .85; P.throwT = 1; P.throwKind = 'javelin'; P.throwPending = .32; SFX.throwJ();
   } else {
     if (P.pedras <= 0) { showPrompt('Sem pedras para a funda', 1.2); return; }
-    P.pedras--; P.cd = .75; P.throwT = 1; P.shots++; SFX.sling();
-    const f = fwd3(), e = eyePos();
-    spawnProj('stone', e.clone().addScaledVector(f, .4).add(V(0, -.05, 0)), f.multiplyScalar(50).add(V(0, .8, 0)), 'player');
-    makeNoise(11);
+    P.pedras--; P.cd = .75; P.throwT = 1; P.throwKind = 'sling'; P.throwPending = .5; SFX.sling();
   }
   updateHUDWeapon();
+}
+/** World position of Viriato's throwing hand (third person) or a point beside the eye (first person). */
+function throwOrigin() {
+  if (view === 'third') { AV.root.updateMatrixWorld(true); return AV_HAND.getWorldPosition(V(0, 0, 0)); }
+  const f = fwd3(), right = V(Math.cos(P.yaw), 0, -Math.sin(P.yaw));
+  return eyePos().addScaledVector(right, .22).add(V(0, -.08, 0)).addScaledVector(f, .5);
+}
+/** Release at the end of the wind-up: from the hand, aimed at what the crosshair points at. */
+function releaseThrow() {
+  const kind = P.throwKind, from = throwOrigin();
+  const camFwd = V(0, 0, -1).applyQuaternion(camera.quaternion);
+  const aim = camera.position.clone().addScaledVector(camFwd, 70);
+  const dir = aim.sub(from).normalize();
+  const vel = kind === 'javelin' ? dir.multiplyScalar(36).add(V(0, 1.4, 0)) : dir.multiplyScalar(50).add(V(0, .8, 0));
+  spawnProj(kind === 'javelin' ? 'javelin' : 'stone', from, vel, 'player');
+  P.shots++; makeNoise(kind === 'javelin' ? 16 : 11);
 }
 const deg = r => r * 180 / Math.PI;
 const flatFwd = () => V(-Math.sin(P.yaw), 0, -Math.cos(P.yaw));
@@ -830,7 +839,7 @@ function spawnProj(type, pos, vel, owner, dmg) {
   if (type === 'javelin') { mesh = new THREE.Group(); const a = new THREE.Mesh(javGeo, M(0x6e5032)); const b = new THREE.Mesh(javTip, M(0xcfc9bb)); a.castShadow = b.castShadow = true; mesh.add(a, b); }
   else { mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(.06), M(0x8a857c)); }
   mesh.position.copy(pos); scene.add(mesh);
-  projectiles.push({ type, mesh, pid: phys.addProjectile(pos, vel, type), pos: pos.clone(), prev: pos.clone(), vel, owner, dmg: dmg || 0, life: 7, stuck: false, stuckT: 0 });
+  projectiles.push({ type, mesh, pid: phys.addProjectile(pos, vel, type), spawn: pos.clone(), vel0: vel.clone(), pos: pos.clone(), prev: pos.clone(), vel, owner, dmg: dmg || 0, life: 7, stuck: false, stuckT: 0 });
 }
 function segSphere(a, b, c, r) { // closest-point distance from segment ab to c < r
   const ab = tmpV.copy(b).sub(a); const t = clamp(V(c.x - a.x, c.y - a.y, c.z - a.z).dot(ab) / (ab.lengthSq() || 1), 0, 1);
@@ -1031,7 +1040,12 @@ function setPose(e, dt) {
     aim = { x: -.5, y: -.5, z: .2 }; elbow = .3; lean = -.32; twist = .25;
   }
   if (f.blocking === 'sword') { aim = { x: -.3, y: .15, z: .95 }; elbow = 1.3; twist = -.2; }
-  const ka = f.phase === 'strike' ? Math.min(1, dt * 45) : k;
+  if (e.throwT > 0) {                    // javelin: arm back, then a hard forward release; sling: whirl overhead
+    const k = 1 - e.throwT;
+    if (e.throwKind === 'sling') { const a = k * 26; aim = k < .8 ? { x: -Math.cos(a) * .5, y: .8, z: Math.sin(a) * .5 } : { x: -.1, y: .1, z: 1 }; elbow = .2; twist = -.2; }
+    else { aim = k < .5 ? { x: -.35, y: .55, z: -.75 } : { x: -.1, y: -.15, z: 1 }; elbow = k < .5 ? 1 : .1; twist = k < .5 ? -.6 : .35; lean += k < .5 ? -.1 : .2; }
+  }
+  const ka = f.phase === 'strike' || e.throwT > 0 ? Math.min(1, dt * 40) : k;
   aimArm(m.arms[1], aim, ka);
   m.elbows[1].rotation.x = lerp(m.elbows[1].rotation.x, -elbow, ka);
   m.spine.rotation.y = lerp(m.spine.rotation.y, twist, ka);
@@ -1052,7 +1066,55 @@ function setPose(e, dt) {
   }
   return bob;
 }
+// Blade trails: a fading ribbon along the arc (hand → tip) so every blow reads clearly.
+const TRAIL_LIFE = .16, trails = new Map();
+const trailMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+function trailFor(key) {
+  let t = trails.get(key);
+  if (!t) {
+    const g = new THREE.BufferGeometry(), N = 24;
+    g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(N * 6), 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(N * 6), 3));
+    const idx = []; for (let i = 0; i < N - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    g.setIndex(idx);
+    const mesh = new THREE.Mesh(g, trailMat); mesh.frustumCulled = false; scene.add(mesh);
+    t = { mesh, samples: [], N }; trails.set(key, t);
+  }
+  return t;
+}
+function sampleTrail(key, pos, facing, f) {
+  const t = trailFor(key);
+  if (f.phase === 'strike' && f.dir) {
+    const p = Math.min(1, f.t / C.STRIKE_TIME[f.dir]), seg = bladeSegment(f.dir, p);
+    t.samples.push({ a: toWorld(seg.hand, pos, facing), b: toWorld(seg.tip, pos, facing), age: 0 });
+    if (t.samples.length > t.N) t.samples.shift();
+  }
+}
+function updateTrails(dt) {
+  for (const t of trails.values()) {
+    for (const s of t.samples) s.age += dt;
+    while (t.samples.length && t.samples[0].age > TRAIL_LIFE) t.samples.shift();
+    const pa = t.mesh.geometry.attributes.position, ca = t.mesh.geometry.attributes.color, n = t.samples.length;
+    for (let i = 0; i < t.N; i++) {
+      const s = t.samples[Math.min(i, n - 1)];
+      if (!s) { pa.setXYZ(i * 2, 0, -999, 0); pa.setXYZ(i * 2 + 1, 0, -999, 0); continue; }
+      const a = i < n ? (1 - s.age / TRAIL_LIFE) * .55 : 0;
+      pa.setXYZ(i * 2, lerp(s.a.x, s.b.x, .45), lerp(s.a.y, s.b.y, .45), lerp(s.a.z, s.b.z, .45)); pa.setXYZ(i * 2 + 1, s.b.x, s.b.y, s.b.z);
+      ca.setXYZ(i * 2, 0, 0, 0); ca.setXYZ(i * 2 + 1, a, a * .97, a * .9);
+    }
+    pa.needsUpdate = true; ca.needsUpdate = true; t.mesh.visible = n > 1;
+  }
+}
+const engaged = new Set();
+/** Only the 2 (3 on Hard) nearest alerted swordsmen may close in; the rest wait in a ring. */
+function updateEngaged() {
+  engaged.clear();
+  const melee = enemies.filter(e => !e.dead && e.state === 'chase' && e.kind !== 'velite');
+  melee.sort((a, b) => a.pos.distanceToSquared(P.pos) - b.pos.distanceToSquared(P.pos));
+  for (const e of melee.slice(0, diff === 2 ? 3 : 2)) engaged.add(e);
+}
 function updateEnemies(dt) {
+  updateEngaged();
   const dm = DIFF[diff];
   for (const e of enemies) {
     const r = e.m.root;
@@ -1102,7 +1164,7 @@ function updateEnemies(dt) {
       if (e.aiT <= 0 && state === 'play' && e.f.phase === 'idle') {
         e.aiT = e.kind === 'centurion' ? .18 : .26; e.dodgeRoll = rand(); if (rand() < .12) e.strafe *= -1;
         const attackersNow = enemies.filter(o => o !== e && !o.dead && o.kind !== 'velite' && o.f.phase === 'windup').length;
-        e.act = decide({ kind: e.kind, fighter: e.f }, { dist: pd, playerFighter: P.f, difficulty: diff, attackersNow, rng: rand });
+        e.act = decide({ kind: e.kind, fighter: e.f }, { dist: pd, playerFighter: P.f, difficulty: diff, attackersNow, rng: rand, engaged: engaged.has(e) });
         if (e.act.startsWith('attack:')) { const dir = e.act.slice(7); C.endBlock(e.f); if (C.beginAttack(e.f, dir)) { e.releaseAt = C.WINDUP[dir] + rr(0, .25) * (e.kind === 'centurion' ? .4 : 1); e.feintAt = 0; } }
         else if (e.act === 'block') e.blockLeft = rr(.5, .9);
         else if (e.act === 'feint') { C.endBlock(e.f); if (C.beginAttack(e.f, C.DIRS[Math.floor(rand() * 4)])) { e.feintAt = rr(.15, .3); e.releaseAt = 99; } }
@@ -1120,6 +1182,7 @@ function updateEnemies(dt) {
         speed = Math.hypot(e.vel.x, e.vel.z);
       }
       for (const ev of C.tickFighter(e.f, dt)) if (ev.type === 'swing') enemySwing(e, ev);
+      sampleTrail(e, e.pos, e.yaw, e.f);
       if (e.kind === 'centurion' && e.barkT <= 0) { e.barkT = 6; SFX.grunt(spatial(e.pos)); for (const o of enemies) if (!o.dead && o.pos.distanceTo(e.pos) < 30) alert(o); }
     } else if (e.state === 'skirmish') {
       if (e.alarmT != null && e.alarmT > 0) { e.alarmT -= dt; if (e.alarmT <= 0) raiseAlarm(); }
@@ -1225,6 +1288,8 @@ function updatePlayer(dt) {
   for (const e of enemies) if (!e.dead && e.f.phase === 'windup') { const d = e.pos.distanceTo(P.pos); if (d < incD) { incD = d; inc = e.f.dir; } }
   P.incomingDir = inc;
   for (const ev of C.tickFighter(P.f, dt)) if (ev.type === 'swing') playerSwing(ev);
+  sampleTrail('player', P.pos, playerFacing(), P.f);
+  if (P.throwPending) { P.throwPending -= dt; if (P.throwPending <= 0) { P.throwPending = 0; releaseThrow(); } }
   P.swing = Math.max(0, P.swing - dt / .45); P.throwT = Math.max(0, P.throwT - dt / .6); P.hurtT = Math.max(0, P.hurtT - dt);
 
   // pickups
@@ -1258,14 +1323,15 @@ function updateCamera(dt) {
   P.kick = Math.max(0, P.kick - dt * 1.5);
   camera.rotation.set(P.pitch + shake + P.kick * .12, P.yaw, shake * .5 + P.kick * .05);
   // Viriato himself, posed by the same rig and blade arcs as the Romans
-  avatar.f = P.f; avatar.yaw = P.yaw + Math.PI; avatar.mv.x = P.vel.x; avatar.mv.z = P.vel.z;
+  avatar.f = P.f; avatar.yaw = P.yaw + Math.PI; avatar.mv.x = P.vel.x; avatar.mv.z = P.vel.z; avatar.throwT = P.throwT; avatar.throwKind = P.throwKind;
   const bob3 = setPose(avatar, dt);
   AV.root.position.set(P.pos.x, P.pos.y + bob3 - P.crouch * .3, P.pos.z); AV.root.rotation.y = avatar.yaw;
   AV.root.visible = view === 'third'; AV_FAL.visible = P.w === 0;
   if (view === 'third') {
     const dir = fwd3(), right = V(Math.cos(P.yaw), 0, -Math.sin(P.yaw));
     const pivot = V(P.pos.x, P.pos.y + 1.6 - P.crouch * .5, P.pos.z);
-    const cp = pivot.addScaledVector(dir, -2.8).addScaledVector(right, .55).add(V(0, .25, 0));
+    // over the right shoulder, Viriato left of centre so his sword arm and the foe are both in view
+    const cp = pivot.addScaledVector(dir, -3).addScaledVector(right, .95).add(V(0, .3, 0));
     const gh = heightAt(cp.x, cp.z) + .4; if (cp.y < gh) cp.y = gh;
     camera.position.copy(cp);
   }
@@ -1458,10 +1524,11 @@ function step(dt) {
     VM.visible = false;
   }
   if (state !== 'menu') VM.visible = view === 'first' && (state === 'play' || state === 'pause');
-  updateFires(dt); updateParticles(dt);
+  updateFires(dt); updateParticles(dt); updateTrails(dt);
 }
 const AV = makeSoldier('lusitano'); scene.add(AV.root); AV.root.visible = false;
 let AV_FAL = null; AV.root.traverse(o => { if (o.name === 'falcata') AV_FAL = o; });
+const AV_HAND = AV.elbows[1].children.at(-1);
 const avatar = { m: AV, f: P.f, yaw: 0, mv: { x: 0, z: 0 }, state: 'chase', kind: 'lusitano', stride: 0 };
 R = await createRender({ THREE, renderer, scene, camera, sun, grass: GRASS, quality: resolveQuality(quality), devicePixelRatio: window.devicePixelRatio || 1 });
 for (const b of document.querySelectorAll('[data-q]')) {
@@ -1477,7 +1544,7 @@ return {
   get enemies() { return enemies; }, get mission() { return mission; }, get state() { return state; },
   get projectiles() { return projectiles; }, get pickups() { return pickups; },
   input: { mouse: (l, r) => { mouseL = l; mouseR = r; }, mouseMove: (dx, dy) => { if (P.charging) { P.acc.x += dx; P.acc.y += dy; } } },
-  avatar: AV, get view() { return view; }, physicsOk: phys.ok, physCounts: () => phys.counts(), V3: THREE.Vector3, damageEnemyForTest: (e, d) => damageEnemy(e, d, false, e.pos.clone()), spawnEnemyJavelin, vm: { stuckVisible: () => STUCK.filter(m => m.visible).length, fal: FAL },
+  avatar: AV, get view() { return view; }, avatarHand: () => throwOrigin(), trailCount: () => { let n = 0; for (const t of trails.values()) n += t.samples.length; return n; }, physicsOk: phys.ok, physCounts: () => phys.counts(), V3: THREE.Vector3, damageEnemyForTest: (e, d) => damageEnemy(e, d, false, e.pos.clone()), spawnEnemyJavelin, vm: { stuckVisible: () => STUCK.filter(m => m.visible).length, fal: FAL },
 };
 }
 

@@ -47,7 +47,7 @@ try {
   G.damagePlayer(500, G.P.pos.clone().add(new THREE.Vector3(1, 0, 0)), false); st(200);
   check('death', G.state === 'dead' && doc.getElementById('endt').textContent.length > 0);
   // extra scenario hooks for later tasks
-  for (const mod of ['./smoke-combat.mjs', './smoke-models.mjs', './smoke-pause.mjs', './smoke-review.mjs', './smoke-anim.mjs', './smoke-armour.mjs', './smoke-foliage.mjs', './smoke-shieldhand.mjs', './smoke-thirdperson.mjs']) { const extra = await import(mod);
+  for (const mod of ['./smoke-combat.mjs', './smoke-models.mjs', './smoke-pause.mjs', './smoke-review.mjs', './smoke-anim.mjs', './smoke-armour.mjs', './smoke-foliage.mjs', './smoke-shieldhand.mjs', './smoke-thirdperson.mjs', './smoke-throw.mjs']) { const extra = await import(mod);
   const ctx = { G, THREE, win, doc, st, key, check, forcePlay, setGod: v => { god = v; } };
   await extra.default(ctx); if (extra.chargeOnly) await extra.chargeOnly(ctx); }
 } catch (e) { console.log('EXCEPTION', e.stack); checks.push(['no exception', false]); }

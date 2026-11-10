@@ -21,7 +21,7 @@ export function footwork({ dist, sp, act, strafe, difficulty, rng, self, player 
   if (self.phase === 'staggered') return { forward: -.6, strafe: 0 };
   if (dist < 1.0) return { forward: -1.5, strafe: strafe * .5 };                                  // crowded
   if (player.phase === 'windup' && dist < 1.8 && rng() < DODGE_CHANCE[difficulty]) return { forward: -2.2, strafe: strafe * .8 };
-  if (act === 'circle') return { forward: (dist - 2.4) * 1.5, strafe: strafe * 1.5 }; // wait your turn in a ring, not in a heap
+  if (act === 'circle') return { forward: (dist - 3) * 1.5, strafe: strafe * 1.5 }; // wait your turn in a ring, not in a heap
   if (dist > REACH) {
     const arrive = Math.min(1, (dist - REACH) / 1.5);                                             // ease in near reach
     return { forward: Math.max(.6, sp * arrive), strafe: dist < 6 ? strafe * .5 : 0 };

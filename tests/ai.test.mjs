@@ -28,3 +28,10 @@ test('approaches when out of reach and waits while busy', () => {
   const e = legio(); beginAttack(e.fighter, 'up');
   assert.equal(decide(e, ctx()), 'idle');
 });
+
+test('only engaged soldiers close in; the rest wait their turn in the ring', () => {
+  assert.equal(decide(legio(), ctx({ dist: 3.5, engaged: false })), 'circle');
+  assert.equal(decide(legio(), ctx({ dist: 1.5, engaged: false })), 'circle');
+  assert.equal(decide(legio(), ctx({ dist: 3.5, engaged: true })), 'approach');
+  assert.equal(decide(legio(), ctx({ dist: 9, engaged: false })), 'approach', 'far away: still come closer to the ring');
+});

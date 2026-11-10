@@ -182,6 +182,7 @@ export async function loadFoliage({ THREE, loader, document, anisotropy = 4 }) {
   const make = (color, tex) => {
     const m = new THREE.MeshStandardMaterial({ color, roughness: .85, side: THREE.DoubleSide, alphaTest: .5, map: tex || null });
     if (!tex) m.alphaTest = 0; // no cut-out mask available: plain leaves
+    else m.emissive.setHex(0x1c2410); // light passing through leaves: keeps shaded crowns from going black
     return m;
   };
   const prep = t => { if (!t) return null; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = anisotropy; return t; };
