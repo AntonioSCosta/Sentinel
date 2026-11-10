@@ -4,7 +4,7 @@ import * as C from './combat.js';
 import { zoneFromHeight, ZONE_MULT, LEG_SLOW } from './damage.js';
 import { decide, REACH } from './ai.js';
 import { steer, footwork } from './locomotion.js';
-import { loadMaterials, terrainMaterial } from './materials.js';
+import { loadMaterials, terrainMaterial, makeMailMaps } from './materials.js';
 import { createPhysics } from './physics.js';
 import { createRender } from './render.js';
 import { withTimeout } from './physics.js';
@@ -77,6 +77,7 @@ const DOT = makeDotTex();
 
 const phys = await createPhysics({ RAPIER: rapier, heightAt, half: WORLD });
 const MATS = await loadMaterials({ THREE, loader, quality, anisotropy: renderer.capabilities ? renderer.capabilities.getMaxAnisotropy() : 4 });
+{ const mm = makeMailMaps(THREE, document); if (mm) { MATS.mail.map = mm.map; MATS.mail.normalMap = mm.normal; MATS.mail.color.setHex(0xffffff); } }
 /** A private copy of a shared PBR material (textures stay shared). */
 const MAT = (name, extra) => { const m = MATS[name].clone(); if (extra) Object.assign(m, extra); return m; };
 
@@ -301,7 +302,12 @@ function makeSoldier(kind) {
         helm = mm(kind === 'centurion' ? 'bronze' : 'iron'), metal = mm('iron', { roughness: .3 }), leather = mm('leather'),
         shieldM = mm(kind === 'velite' ? 'leather' : 'canvas_red', { side: THREE.DoubleSide }), gold = mm('bronze'),
         crestM = mm('wool_red'), fur = mm('wool_brown'), wood = mm('wood');
+  // Mid-Republican (Polybian) kit: most men a bronze pectorale, the wealthier a mail shirt; centurions in mail.
+  const armour = kind === 'velite' ? 'none' : kind === 'centurion' ? 'hamata' : (rand() < .45 ? 'hamata' : 'pectorale');
+  const mail = armour === 'hamata' ? mm('mail') : null, feather = mm('feather', { side: THREE.DoubleSide });
+  if (kind === 'legio' && rand() < .5) tunic.color.copy(MATS.wool_white.color);
   const root = new THREE.Group(); root.rotation.order = 'YXZ';
+  root.userData.armour = armour;
   const add = (g, m, x, y, z, p) => { const o = new THREE.Mesh(g, m); o.position.set(x, y, z); o.castShadow = true; (p || root).add(o); return o; };
   const grp = (x, y, z, p) => { const g = new THREE.Group(); g.position.set(x, y, z); (p || root).add(g); return g; };
   const CAP = (r, len) => new THREE.CapsuleGeometry(r, len, 3, 8);
@@ -314,18 +320,27 @@ function makeSoldier(kind) {
     add(CAP(.062, .26), skin, 0, -.17, .01, knee);
     add(new THREE.CylinderGeometry(.075, .085, .16, 12), leather, 0, -.37, .02, knee);
     add(new THREE.BoxGeometry(.12, .06, .24), leather, 0, -.44, .05, knee);
+    if (kind !== 'velite' && (sx > 0 || kind === 'centurion')) { // ocrea: one greave, on the leading left leg
+      const gr = add(new THREE.CylinderGeometry(.082, .07, .3, 12, 1, true, -Math.PI * .6, Math.PI * 1.2), gold, 0, -.19, .005, knee);
+      gr.material = gold; gr.name = 'greave'; gr.material.side = THREE.DoubleSide;
+    }
     legs.push(hip); knees.push(knee);
   }
   const skirt = new THREE.CylinderGeometry(.28, .33, .28, 20, 1, true); skirt.scale(1, 1, .75);
   add(skirt, tunic, 0, .95, 0).material.side = THREE.DoubleSide;
-  if (kind !== 'velite') for (let k = 0; k < 8; k++) { const a = (k / 8 - .5) * 1.6; add(new THREE.BoxGeometry(.05, .22, .015), leather, Math.sin(a) * .29, .96, Math.cos(a) * .22 + .02).rotation.y = a; }
+  if (armour === 'hamata') { const ms = new THREE.CylinderGeometry(.31, .345, .24, 20, 1, true); ms.scale(1, 1, .76); add(ms, mail, 0, .87, 0).material.side = THREE.DoubleSide; }
   // spine: everything above the hips twists and leans with the blow
   const spine = grp(0, .95, 0); spine.rotation.order = 'YXZ';
   const torso = new THREE.CylinderGeometry(.25, .28, .62, 20); torso.scale(1, 1, .72);
   add(torso, tunic, 0, .35, 0, spine);
-  if (kind !== 'velite') {
-    for (let k = 0; k < 5; k++) { const b = new THREE.CylinderGeometry(.285 - k * .004, .3 - k * .004, .075, 20, 1, true); b.scale(1, 1, .76); add(b, armor, 0, .17 + k * .08, 0, spine); }
-    for (const sx of [-1, 1]) { const sp = new THREE.SphereGeometry(.15, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2); sp.scale(1, .55, 1.1); add(sp, armor, sx * .24, .61, 0, spine); }
+  if (armour === 'hamata') {             // lorica hamata to the hips, with doubled shoulders (humeralia)
+    const shirt = new THREE.CylinderGeometry(.272, .305, .72, 20, 1, true); shirt.scale(1, 1, .76);
+    add(shirt, mail, 0, .3, 0, spine).material.side = THREE.DoubleSide;
+    for (const sx of [-1, 1]) { const h = new THREE.CylinderGeometry(.1, .16, .12, 12, 1, true); const o = add(h, mail, sx * .2, .63, 0, spine); o.rotation.z = sx * .55; o.material.side = THREE.DoubleSide; }
+  } else if (armour === 'pectorale') {    // square bronze chest and back plates on leather straps
+    add(new THREE.BoxGeometry(.21, .21, .014), gold, 0, .44, .2, spine).name = 'pectorale';
+    add(new THREE.BoxGeometry(.21, .21, .014), gold, 0, .44, -.2, spine);
+    for (const sx of [-1, 1]) add(new THREE.BoxGeometry(.035, .02, .42), leather, sx * .12, .64, 0, spine);
   }
   const belt = new THREE.TorusGeometry(.27, .025, 6, 24); belt.rotateX(Math.PI / 2); belt.scale(1, 1, .76);
   add(belt, leather, 0, .11, 0, spine);
@@ -337,12 +352,23 @@ function makeSoldier(kind) {
     add(new THREE.SphereGeometry(.15, 16, 10, 0, Math.PI * 2, 0, Math.PI * .62), fur, 0, .2, -.02, head);
     add(new THREE.ConeGeometry(.16, .3, 12, 1, true), fur, 0, .02, -.12, head).rotation.x = .5;
   } else {
-    add(new THREE.SphereGeometry(.14, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), helm, 0, .22, 0, head);
-    add(new THREE.CylinderGeometry(.15, .19, .07, 18, 1, true, Math.PI * .65, Math.PI * .7), helm, 0, .2, 0, head).material.side = THREE.DoubleSide;
-    add(new THREE.BoxGeometry(.02, .015, .2), helm, 0, .24, .07, head);
-    for (const sx of [-1, 1]) add(new THREE.BoxGeometry(.015, .15, .09), helm, sx * .125, .13, .05, head).rotation.z = sx * .08;
-    if (kind === 'centurion') add(new THREE.TorusGeometry(.17, .035, 8, 28, Math.PI), crestM, 0, .3, 0, head);
-    else add(new THREE.CylinderGeometry(.015, .025, .06, 8), helm, 0, .37, 0, head);
+    // Montefortino: bronze bowl, crest knob, small flared brim (wider at the neck), three-disc cheek pieces, plumes
+    const bowl = new THREE.SphereGeometry(.142, 16, 10, 0, Math.PI * 2, 0, Math.PI * .55); bowl.scale(1, 1.18, 1.06);
+    add(bowl, gold, 0, .19, 0, head).name = 'montefortino';
+    const brim = new THREE.CylinderGeometry(.15, .175, .03, 18, 1, true); brim.translate(0, 0, -.012); add(brim, gold, 0, .2, 0, head).material.side = THREE.DoubleSide;
+    add(new THREE.CylinderGeometry(.012, .022, .05, 8), gold, 0, .37, 0, head).name = 'knob';
+    add(new THREE.SphereGeometry(.018, 8, 6), gold, 0, .4, 0, head);
+    const plume = grp(0, .41, 0, head); plume.name = 'feathers';
+    const n = kind === 'centurion' ? 7 : 3;
+    for (let i = 0; i < n; i++) {
+      const f = new THREE.PlaneGeometry(.04, kind === 'centurion' ? .22 : .3); f.translate(0, kind === 'centurion' ? .11 : .15, 0);
+      const o = add(f, feather, 0, 0, 0, plume);
+      if (kind === 'centurion') { o.rotation.x = (i / (n - 1) - .5) * 1.6; o.rotation.y = Math.PI / 2; } else { o.rotation.z = (i - 1) * .2; o.rotation.y = (i - 1) * .4; }
+    }
+    for (const sx of [-1, 1]) {
+      const cheek = grp(sx * .128, 0, 0, head); cheek.name = 'cheek';
+      for (const [y, z] of [[.17, .075], [.17, .015], [.11, .045]]) add(new THREE.CylinderGeometry(.032, .032, .008, 10), gold, 0, y, z, cheek).rotation.z = Math.PI / 2;
+    }
   }
   // arms: shoulder → upper arm, elbow → forearm, hand
   const arms = [], elbows = [];
@@ -364,7 +390,9 @@ function makeSoldier(kind) {
     add(new THREE.SphereGeometry(.07, 12, 8), metal, .36, .2, .31, spine);
   } else {
     // gladius continues the line of the forearm (−y), so the blade follows the swing arc
-    const bs = new THREE.Shape(); bs.moveTo(-.025, 0); bs.lineTo(.025, 0); bs.lineTo(.028, .38); bs.lineTo(.0, .5); bs.lineTo(-.028, .38); bs.closePath();
+    // gladius hispaniensis: ~0.64 m blade, slight waist, long tapering point
+    const bs = new THREE.Shape(); bs.moveTo(-.026, 0); bs.lineTo(.026, 0); bs.lineTo(.022, .3); bs.lineTo(.026, .44); bs.lineTo(0, .64); bs.lineTo(-.026, .44); bs.lineTo(-.022, .3); bs.closePath();
+    root.userData.bladeLength = .64;
     const bg = new THREE.ExtrudeGeometry(bs, { depth: .008, bevelEnabled: true, bevelThickness: .003, bevelSize: .004, bevelSegments: 2, curveSegments: 4 });
     bg.translate(0, 0, -.004);
     add(bg, metal, 0, -.06, 0, hand).rotation.x = Math.PI;
@@ -372,12 +400,22 @@ function makeSoldier(kind) {
     add(new THREE.CylinderGeometry(.016, .016, .1, 10), wood, 0, .02, 0, hand);
     add(new THREE.SphereGeometry(.03, 12, 8), gold, 0, .08, 0, hand);
     const sc = grp(.3, .17, .32, spine);
-    const sg = new THREE.CylinderGeometry(.62, .62, 1.08, 20, 2, true, -.6, 1.2); sg.translate(0, 0, -.62);
-    add(sg, shieldM, 0, 0, 0, sc);
-    const inner = new THREE.CylinderGeometry(.6, .6, 1.06, 24, 1, true, -.59, 1.18); inner.translate(0, 0, -.62); add(inner, wood, 0, 0, 0, sc).material.side = THREE.BackSide;
-    for (const y of [-.53, .53]) { const e = new THREE.TorusGeometry(.62, .012, 4, 16, 1.2); e.rotateX(Math.PI / 2); e.rotateY(Math.PI / 2 - .6); e.translate(0, y, -.62); add(e, gold, 0, 0, 0, sc); }
-    const boss = new THREE.SphereGeometry(.1, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2); boss.rotateX(Math.PI / 2); add(boss, gold, 0, 0, .01, sc);
-    add(new THREE.BoxGeometry(.04, .9, .02), gold, 0, 0, .005, sc);
+    // oval, curved scutum (≈1.15 × 0.68 m) with a vertical wooden spina and an iron umbo
+    const W = .68, HH = 1.15, R = .62, bend = x => -(R - Math.sqrt(R * R - x * x));
+    const pg = new THREE.PlaneGeometry(W, HH, 12, 20), pa = pg.attributes.position;
+    for (let v = 0; v < pa.count; v++) {
+      let x = pa.getX(v), y = pa.getY(v); const e = (x / (W / 2)) ** 2 + (y / (HH / 2)) ** 2;
+      if (e > 1) { const k = 1 / Math.sqrt(e); x *= k; y *= k; }
+      pa.setXYZ(v, x, y, bend(x));
+    }
+    pg.computeVertexNormals();
+    add(pg, shieldM, 0, 0, 0, sc).name = 'scutum-oval';
+    const back = pg.clone(); back.translate(0, 0, -.012); add(back, wood, 0, 0, 0, sc).material.side = THREE.BackSide;
+    const rimPts = []; for (let t = 0; t < 40; t++) { const a = t / 40 * Math.PI * 2, x = Math.cos(a) * W / 2; rimPts.push(new THREE.Vector3(x, Math.sin(a) * HH / 2, bend(x))); }
+    add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rimPts, true), 40, .01, 4, true), gold, 0, 0, 0, sc);
+    add(new THREE.BoxGeometry(.05, HH * .9, .025), wood, 0, 0, .012, sc).name = 'spina';
+    const umbo = new THREE.SphereGeometry(.085, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2); umbo.rotateX(Math.PI / 2); umbo.scale(1, 1.4, 1);
+    add(umbo, metal, 0, 0, .025, sc).name = 'umbo';
     root.userData.scutum = sc;
   }
   return { root, legs, knees, arms, elbows, spine, head, mats };

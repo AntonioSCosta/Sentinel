@@ -40,6 +40,9 @@ export const MATERIALS = {
   wool_brown:    { color: 0x7d5b38, rough: 1, repeat: 1 },
   bronze:        { color: 0xb08a3c, rough: .35, metal: .9, repeat: 1 },
   skin:          { color: 0xc2906c, rough: .75, repeat: 1 },
+  mail:          { color: 0x8a8e93, rough: .4, metal: .9, repeat: 1 },   // lorica hamata (procedural rings)
+  wool_white:    { color: 0xcdbfa3, rough: 1, repeat: 1 },               // undyed tunic
+  feather:       { color: 0x2b1f33, rough: .9, repeat: 1 },              // black/purple plumes (Polybius 6.23)
 };
 
 async function tryLoad(loader, url) {
@@ -113,4 +116,38 @@ export function terrainMaterial(THREE, mats) {
   };
   m.customProgramCacheKey = () => 'terrain-splat-v1';
   return m;
+}
+
+/**
+ * Procedural mail (interlocking rings) colour + normal map, drawn on a canvas.
+ * Returns null where no canvas is available (headless tests).
+ */
+export function makeMailMaps(THREE, document, size = 256) {
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const g = c.getContext && c.getContext('2d'); if (!g) return null;
+  const n = 16, r = size / n / 2;
+  g.fillStyle = '#000'; g.fillRect(0, 0, size, size);
+  g.strokeStyle = '#fff'; g.lineWidth = r * .55;
+  for (let j = -1; j <= n * 2 + 1; j++) for (let i = -1; i <= n + 1; i++) {
+    const x = (i + (j % 2 ? .5 : 0)) * 2 * r, y = j * r;
+    g.beginPath(); g.arc(x, y, r * .82, 0, Math.PI * 2); g.stroke();
+  }
+  const h = g.getImageData(0, 0, size, size).data;
+  const colour = document.createElement('canvas'); colour.width = colour.height = size;
+  const cg = colour.getContext('2d'), cd = cg.createImageData(size, size);
+  const normal = document.createElement('canvas'); normal.width = normal.height = size;
+  const ng = normal.getContext('2d'), nd = ng.createImageData(size, size);
+  const H = (x, y) => h[(((y + size) % size) * size + ((x + size) % size)) * 4] / 255;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const k = (y * size + x) * 4, v = H(x, y);
+    const dx = (H(x + 1, y) - H(x - 1, y)) * 2, dy = (H(x, y + 1) - H(x, y - 1)) * 2;
+    const l = Math.hypot(dx, dy, 1);
+    nd.data[k] = (-dx / l * .5 + .5) * 255; nd.data[k + 1] = (dy / l * .5 + .5) * 255; nd.data[k + 2] = (1 / l * .5 + .5) * 255; nd.data[k + 3] = 255;
+    const b = 40 + v * 170; cd.data[k] = b; cd.data[k + 1] = b * 1.02; cd.data[k + 2] = b * 1.06; cd.data[k + 3] = 255;
+  }
+  cg.putImageData(cd, 0, 0); ng.putImageData(nd, 0, 0);
+  const map = new THREE.CanvasTexture(colour), nmap = new THREE.CanvasTexture(normal);
+  for (const t of [map, nmap]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(5, 5); }
+  map.colorSpace = THREE.SRGBColorSpace;
+  return { map, normal: nmap };
 }
