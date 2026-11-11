@@ -1618,8 +1618,13 @@ export async function boot() {
 /** Load the CC0 Quaternius body, hair and animation clips (≈3 MB). */
 export async function loadChars(THREE, base = 'assets/chars/') {
   const [{ GLTFLoader }, SkeletonUtils] = await Promise.all([import('three/addons/loaders/GLTFLoader.js'), import('three/addons/utils/SkeletonUtils.js')]);
-  const gl = new GLTFLoader(), get = f => gl.loadAsync(base + f);
-  const [body, a1, a2, hl, hb] = await Promise.all(['body.bin', 'anim_ual1.bin', 'anim_ual2.bin', 'hair_long.bin', 'hair_beard.bin'].map(get));
+  // models ship as base64 ES modules (the host serves no other binary files); GLTFLoader parses them in memory
+  const gl = new GLTFLoader(), get = async f => {
+    const b64 = (await import(new URL(base + f + '.glb.js', document.baseURI).href)).default;
+    const u8 = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    return gl.parseAsync(u8.buffer, '');
+  };
+  const [body, a1, a2, hl, hb] = await Promise.all(['body', 'anim_ual1', 'anim_ual2', 'hair_long', 'hair_beard'].map(get));
   const tl = new THREE.TextureLoader(), textures = {};
   await Promise.all(['roman_red', 'roman_white', 'roman_mail', 'velite', 'lusitano', 'lusitano_b'].map(async k => {
     const t = await tl.loadAsync(base + 'body_' + k + '.jpg'); t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; textures[k] = t;
