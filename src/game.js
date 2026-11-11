@@ -513,7 +513,7 @@ function rigSoldier(kind, look = null) {
   const outfit = look ? look.outfit : lus ? (rand() < .5 ? 'lusitano' : 'lusitano_b') : kind === 'velite' ? 'velite' : ud.armour === 'hamata' ? 'roman_mail' : white ? 'roman_white' : 'roman_red';
   let hair = look ? look.hair : lus ? ['hair_long', 'hair_beard'] : kind === 'velite' ? ['hair_long', 'hair_beard'] : [];
   if (hair.includes('hair_long') && !hair.includes('hair_buzzed')) hair = ['hair_buzzed', ...hair];   // the long cut leaves the crown bare: a close-cropped layer underneath covers it
-  const rig = makeRig(THREE, chars.clone, chars, { outfit, hair, shielded: !!shield, tint: rr(.86, 1.05), hairColor: look ? look.hairColor : [0x2a1d14, 0x3b2a1e, 0x1c1410, 0x4a3524][Math.floor(rand() * 4)] });
+  const rig = makeRig(THREE, chars.clone, chars, { female: !!(look && look.female), palette: look && look.palette, outfit, hair, shielded: !!shield, tint: rr(.86, 1.05), hairColor: look ? look.hairColor : [0x2a1d14, 0x3b2a1e, 0x1c1410, 0x4a3524][Math.floor(rand() * 4)] });
   // helmet / cap: everything on the old head except the skin
   const hk = new THREE.Group();
   for (const o of [...p.head.children]) if (!(o.isMesh && o.material === p.skin)) hk.add(o);
@@ -597,7 +597,7 @@ function rigSoldier(kind, look = null) {
     mesh.quaternion.premultiply(rig.root.getWorldQuaternion(new THREE.Quaternion()).invert());
     rig.attach('upperarm_' + side, mesh);
   };
-  if (lus) skirt({ lusitano: 0x46341f, lusitano_b: 0x5c4630, lusitano_c: 0x96682c, lusitano_d: 0x605440 }[outfit] || 0x46341f, look && look.dress ? { rTop: .19, rBot: .33, y1: .2, amp: .07, folds: 16 } : {});   // wool saia to mid-thigh
+  if (lus) skirt((look && look.palette && look.palette.dress) || { lusitano: 0x46341f, lusitano_b: 0x5c4630, lusitano_c: 0x96682c, lusitano_d: 0x605440 }[outfit] || 0x46341f, look && look.dress ? { rTop: .19, rBot: .33, y1: .2, amp: .07, folds: 16 } : {});   // wool saia to mid-thigh
   else if (kind !== 'velite') {   // Roman tunic to the knee, a short mail skirt over it for the hamata
     const col = outfit === 'roman_white' ? 0xd8d0bc : 0x9a2a20;
     skirt(col, { rTop: .2, rBot: .3, y0: 1.04, y1: .6, amp: .06 });
@@ -716,7 +716,7 @@ function updateFlag() {
   if (g) { FLAG.position.set(g.x, g.y, g.z); FLAG.rotation.y = Math.atan2(g.x - P.pos.x, g.z - P.pos.z); }
 }
 let mission = 0, tentsBurnt = 0, missionMsgT = 0, alarm = false;
-let chapter = 'prologo', civs = [], betrayed = false, betrayT = 0;   // 'prologo' = Galba's massacre (150 BC), 'emboscada' = the ambush campaign
+let chapter = 'prologo', civs = [], betrayed = false, betrayT = 0, envoy = null, elder = null;   // 'prologo' = Galba's massacre (150 BC), 'emboscada' = the ambush campaign
 Object.defineProperty(P, 'st', { get() { return P.f.stamina; }, set(v) { P.f.stamina = v; }, enumerable: false });
 Object.defineProperty(P, 'block', { get() { return P.f.blocking != null; }, enumerable: false });
 const keys = {}; let mouseL = false, mouseR = false;
@@ -777,9 +777,9 @@ function spawn(kind, x, z, group) {
 /* =========================================================
    Prologue: the betrayal of Galba (150 BC)
    ========================================================= */
-const RING_N = 36, RING_R0 = 36, RING_R1 = 11.5, RING_R2 = 7;
+const RING_N = 36, RING_R0 = 30, RING_R1 = 11.5, RING_R2 = 7;
 function ringRadius(t) { return lerp(RING_R0, RING_R1, t); }
-function setRing(R) { for (const e of enemies) if (e.group === 'cordon' && e.state === 'cordon') e.home.set(MEADOW.x + Math.cos(e.ang) * R, 0, MEADOW.z + Math.sin(e.ang) * R); }
+function setRing(R) { for (const e of enemies) if (e.group === 'cordon' && e.state === 'cordon' && !(e === envoy && !e.envoyDone)) e.home.set(MEADOW.x + Math.cos(e.ang) * R, 0, MEADOW.z + Math.sin(e.ang) * R); }
 function resetPrologue() {
   setSeed(150);
   const dx = ESCAPE.x - MEADOW.x, dz = ESCAPE.z - MEADOW.z, dl = Math.hypot(dx, dz), ux = dx / dl, uz = dz / dl;
@@ -792,13 +792,22 @@ function resetPrologue() {
     const ga = Math.atan2(uz, ux) + 2.1 * gI + 1.05, gx = MEADOW.x + Math.cos(ga) * 4.5, gz = MEADOW.z + Math.sin(ga) * 4.5;
     for (let k = 0; k < 8; k++) {
       const r = rand(), child = r < .25, woman = !child && r < .62;
-      const look = { unarmed: true, cap: false, outfit: pick(OUT), hairColor: pick(HC),
+      const DRESS = [0x6b4a2e, 0x8a5a2b, 0x4f5a3a, 0x7a3b2a, 0x5c4f45, 0x9a7a4a];
+      const look = { unarmed: true, cap: false, outfit: pick(OUT), hairColor: pick(HC), female: woman || child,
+        palette: { dress: pick(DRESS), skin: pick([0xc99a78, 0xb8876a, 0xd2a688, 0xa97b5c]), long: woman || (child && rand() < .5) },
         scale: child ? rr(.56, .68) : woman ? rr(.9, .96) : rr(.95, 1.06),
         dress: woman || (child && rand() < .5), hair: woman ? ['hair_long'] : child ? [rand() < .5 ? 'hair_long' : 'hair_buzzed'] : [rand() < .6 ? 'hair_long' : 'hair_buzzed', 'hair_beard'] };
       const a = rr(0, TAU), d = rr(.6, 2.6); spawnCiv(look, gx + Math.cos(a) * d, gz + Math.sin(a) * d, child);
     }
   }
-  // the legions, closing a ring round the field
+  // the parley: a Roman envoy and a Lusitanian elder in the open ground between the people and the legions
+  const na = Math.atan2(uz, ux) + Math.PI;
+  const lx = MEADOW.x + Math.cos(na) * 7.6, lz = MEADOW.z + Math.sin(na) * 7.6;
+  elder = spawnCiv({ unarmed: true, cap: false, outfit: 'lusitano_b', hairColor: 0x8f8a82, scale: 1.0, hair: ['hair_long', 'hair_beard'] }, lx, lz, false); elder.elder = true;
+  const ex = MEADOW.x + Math.cos(na) * 9.4, ez = MEADOW.z + Math.sin(na) * 9.4;
+  envoy = spawn('legio', ex, ez, 'cordon'); envoy.state = 'cordon'; envoy.ang = na; envoy.envoyDone = false; envoy.home.set(ex, 0, ez);
+  envoy.yaw = Math.atan2(lx - ex, lz - ez); elder.yaw = Math.atan2(ex - lx, ez - lz);
+  // the legions, standing in a wide ring round the field
   for (let i = 0; i < RING_N; i++) {
     const ang = i / RING_N * TAU; if (Math.abs(wrapA(ang - Math.atan2(uz, ux))) < .36) continue;   // a breach on the forest side
     const e = spawn('legio', MEADOW.x + Math.cos(ang) * RING_R0, MEADOW.z + Math.sin(ang) * RING_R0, 'cordon');
@@ -808,7 +817,7 @@ function resetPrologue() {
 function spawnCiv(look, x, z, child) {
   const m = soldier('lusitano', look); scene.add(m.root);
   const c = { kind: 'lusitano', civ: true, m, pos: new THREE.Vector3(x, heightAt(x, z), z), yaw: Math.atan2(x - MEADOW.x, z - MEADOW.z), f: C.createFighter(), state: 'idle',
-    vel: { x: 0, z: 0 }, mv: { x: 0, z: 0 }, stride: 0, ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, hits: 0, crouch: child && rand() < .3,
+    vel: { x: 0, z: 0 }, mv: { x: 0, z: 0 }, stride: 0, ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, hits: 0, crouch: false,
     sp: child ? 3.4 : rr(3.6, 4.3), child: !!child, home: V(x, 0, z), flee: null, gone: false, delay: rr(0, .7) };
   m.root.position.copy(c.pos); m.root.rotation.y = c.yaw; civs.push(c); return c;
 }
@@ -840,7 +849,7 @@ function updateCivs(dt) {
     const dx = tx - c.pos.x, dz = tz - c.pos.z, d = Math.hypot(dx, dz);
     let want;
     if (sp > 0 && d > .3) { const v = Math.min(sp, d / Math.max(dt, 1e-3)); c.mv.x = dx / d * v; c.mv.z = dz / d * v; c.pos.x += c.mv.x * dt; c.pos.z += c.mv.z * dt; want = Math.atan2(dx, dz); }
-    else { c.mv.x = c.mv.z = 0; c.ph += dt; want = Math.atan2(c.pos.x - MEADOW.x, c.pos.z - MEADOW.z) + Math.sin(c.ph * .7) * .6; }   // restless, watching the soldiers
+    else { c.mv.x = c.mv.z = 0; c.ph += dt; want = c.elder && envoy && !betrayed ? Math.atan2(envoy.pos.x - c.pos.x, envoy.pos.z - c.pos.z) : Math.atan2(c.pos.x - MEADOW.x, c.pos.z - MEADOW.z) + Math.sin(c.ph * .7) * .6; }   // restless, watching the soldiers
     c.yaw += wrapA(want - c.yaw) * Math.min(1, dt * 6);
     c.pos.y = heightAt(c.pos.x, c.pos.z);
     if (Math.hypot(c.pos.x - MEADOW.x, c.pos.z - MEADOW.z) > 50) { c.gone = true; c.m.root.visible = false; continue; }   // out among the trees
@@ -1532,7 +1541,7 @@ function updateEnemies(dt) {
     if (state === 'dead') { e.state = e.state === 'march' ? 'march' : 'guard'; }
 
     if (e.state === 'cordon') {   // the ring: hold the line; after the signal, cut down whoever runs within reach
-      if (betrayed && state === 'play' && (!e.victim || e.victim.dead || e.victim.gone)) e.victim = Math.hypot(e.pos.x - MEADOW.x, e.pos.z - MEADOW.z) < 48 ? nearestAdultCiv(e.pos, 20) : null;
+      if (betrayed && state === 'play' && (!e.victim || e.victim.dead || e.victim.gone)) e.victim = Math.hypot(e.pos.x - MEADOW.x, e.pos.z - MEADOW.z) < 48 ? nearestAdultCiv(e.pos, 28) : null;
       if (e.huntIn > 0) e.huntIn -= dt;
       const v = betrayed && state === 'play' && !(e.huntIn > 0) ? e.victim : null;
       if (v) {
@@ -1543,8 +1552,8 @@ function updateEnemies(dt) {
         if (e.f.phase === 'strike' && dv < 2.4) killCiv(v);
       } else {
         const dh = Math.hypot(e.home.x - e.pos.x, e.home.z - e.pos.z);
-        if (dh > .25) speed = moveEnemy(e, e.home.x, e.home.z, Math.min(2.4, dh * 2), dt);
-        faceTo(e, MEADOW.x, MEADOW.z, dt, 3);
+        if (dh > .25) speed = moveEnemy(e, e.home.x, e.home.z, Math.min(betrayed ? 4.4 : 1.6, dh * 2), dt);
+        const ft = e === envoy && !e.envoyDone && elder ? elder.pos : MEADOW; if (dh <= .25 || e !== envoy || !e.envoyDone) faceTo(e, ft.x, ft.z, dt, 3);
       }
       if (e.pilaT != null && state === 'play' && (e.pilaT -= dt) <= 0) {
         const tg = e.pilaAt === 'P' ? V(P.pos.x + P.vel.x * .35, P.pos.y + 1.1, P.pos.z + P.vel.z * .35)
@@ -1911,7 +1920,7 @@ function startGame(intro = false) {
   updateHUDWeapon();
   if (intro) {
     if (chapter === 'prologo') setRing(RING_R0);
-    $('hud').classList.add('hidden'); introTitled = introHorn = false; $('msg').style.opacity = 0;
+    $('hud').classList.remove('hidden'); $('hud').classList.add('intro'); introTitled = introHorn = false; $('msg').style.opacity = 0;
     if (!introVeil) { introVeil = document.createElement('div'); introVeil.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:5;background:radial-gradient(ellipse at 50% 45%,rgba(4,6,10,.15) 20%,rgba(2,3,6,.92) 100%);transition:none'; document.body.appendChild(introVeil); }
     introVeil.style.display = 'block'; introVeil.style.opacity = 1;
   }
@@ -1920,35 +1929,43 @@ function startGame(intro = false) {
   lock();
 }
 const INTRO_P = 15;
-/** Prologue opening: a slow high circle over the field while the legions close their ring, then down to Viriato among his people. */
+/**
+ * Prologue opening: a parley. A Roman envoy promises land to an elder in front of the disarmed people, the legions standing
+ * quietly round the field; the envoy turns away, and at the horn the massacre breaks out all at once.
+ */
 function updateIntroPrologue(dt) {
-  const L = INTRO_P, t = clamp(introT / L, 0, 1), y0 = heightAt(MEADOW.x, MEADOW.z), R = ringRadius(smooth(.03, .8, t));
-  setRing(R);
+  const L = INTRO_P, T = introT, y0 = heightAt(MEADOW.x, MEADOW.z);
   view = 'third'; updateCamera(dt); view = introView; AV.root.visible = true;
   introP1.copy(camera.position); introQ1.copy(camera.quaternion);
-  const ea = Math.atan2(ESCAPE.z - MEADOW.z, ESCAPE.x - MEADOW.x), at = (a, r, h) => V(MEADOW.x + Math.cos(a) * r, 0, MEADOW.z + Math.sin(a) * r).setY(h);
-  const T = introT, look = (p, q) => { introP0.copy(p); introQ0.setFromRotationMatrix(new THREE.Matrix4().lookAt(p, q, V(0, 1, 0))); };
-  if (T < 4) {            // 1 · among the people, eye level, the first legionaries appear on the far rise
-    const a = ea + Math.PI; look(at(a, 1.5 + T * .25, y0 + 1.55), at(a, 34, y0 + 1.2));
-  } else if (T < 8.2) {   // 2 · behind the shields, low, the line steps forward
-    const a = ea + 2.2, r = R + 3.2 - (T - 4) * .15; look(at(a + .05, r, y0 + 1.05), at(a - .25, 0, y0 + 1.1));
-  } else if (T < 12) {    // 3 · from high above: the ring is shut
-    const a = ea + (T - 8.2) * .12; look(at(a, 6, y0 + 30 - (T - 8.2) * 1.5), at(a, 0, y0));
-  } else {                // 4 · down to Viriato as the trap closes
-    const k = smooth(12, L, T), a = ea + .46; look(at(a, 6, y0 + 24.3), at(a, 0, y0));
+  const look = (p, q) => { introP0.copy(p); introQ0.setFromRotationMatrix(new THREE.Matrix4().lookAt(p, q, V(0, 1, 0))); };
+  const E = envoy.pos, D = elder.pos, ux = (D.x - E.x), uz = (D.z - E.z), ul = Math.hypot(ux, uz) || 1, u = V(ux / ul, 0, uz / ul), n = V(-u.z, 0, u.x);
+  const head = (p, h = 1.6) => V(p.x, p.y + h, p.z), mid = V((E.x + D.x) / 2, (E.y + D.y) / 2, (E.z + D.z) / 2);
+  if (T < 5) {             // 1 · the two men face to face, the people behind
+    look(head(mid, 1.5).addScaledVector(n, 3.4).addScaledVector(u, -.6 + T * .08), head(mid, 1.4));
+  } else if (T < 9.4) {    // 2 · over the envoy's shoulder: the elder answers
+    look(head(E, 1.75).addScaledVector(u, -1.5).addScaledVector(n, .55), head(D, 1.5));
+  } else if (T < 12.4) {   // 3 · over the elder's shoulder: the envoy turns his back and walks to his lines
+    if (T > 10.6 && !envoy.envoyDone) { envoy.envoyDone = true; envoy.home.set(MEADOW.x + Math.cos(envoy.ang) * RING_R0, 0, MEADOW.z + Math.sin(envoy.ang) * RING_R0); }
+    look(head(D, 1.7).addScaledVector(u, 1.4).addScaledVector(n, -.5), head(E, 1.4));
+  } else {                 // 4 · high over the field, the ring stands still… then down to Viriato
+    const k = smooth(13.4, L, T), a = envoy.ang + Math.PI / 2;
+    look(V(MEADOW.x + Math.cos(a) * 26, y0 + 15, MEADOW.z + Math.sin(a) * 26), V(MEADOW.x, y0 + 1, MEADOW.z));
     introP0.lerp(introP1, k); introQ0.slerp(introQ1, k);
   }
   camera.position.copy(introP0); camera.quaternion.copy(introQ0);
-  const cut = [0, 4, 8.2, 12].reduce((m, c) => Math.min(m, Math.abs(T - c)), 9);
-  if (introVeil) introVeil.style.opacity = String(Math.max(clamp(1 - (T - .2) / 2.2, 0, 1), clamp(1 - cut / .35, 0, 1) * (T > 1 ? .9 : 0)));   // fade in, and a dip to black at each cut
-  if (!introTitled && T > 1) { introTitled = true; showMsg('LUSITÂNIA · 150 A.C.', 'O pretor Sérvio Galba prometeu terras aos lusitanos que depusessem as armas.', 3); }
-  if (!introHorn && T > 4.6) { introHorn = true; showMsg('O CERCO', 'Entregaram as armas e foram divididos em três grupos. As legiões avançaram.', 5); }
+  const cut = [0, 5, 9.4, 12.4].reduce((m, c) => Math.min(m, Math.abs(T - c)), 9);
+  if (introVeil) introVeil.style.opacity = String(Math.max(clamp(1 - (T - .2) / 1.6, 0, 1), clamp(1 - cut / .3, 0, 1) * (T > 1 ? .85 : 0)));
+  if (!introTitled && T > .6) { introTitled = true; showMsg('LEGADO ROMANO', '«O pretor Galba oferece-vos a paz. Entregai as armas e Roma dar-vos-á terras férteis.»', 4.2); }
+  if (!introHorn && T > 5.3) { introHorn = true; showMsg('ANCIÃO LUSITANO', '«Entregámos as armas. Confiamos na palavra de Roma.»', 3.8); }
+  if (!elder.said && T > 9.7) { elder.said = true; showMsg('LEGADO ROMANO', '«Então Roma dar-vos-á a terra que mereceis.»', 3); }
+  if (!envoy.saidTitle && T > 12.6) { envoy.saidTitle = true; showMsg('LUSITÂNIA · 150 A.C.', '', 2); }
   if (T >= L) endIntro();
 }
 /** Opening shot: the camera drops from above the castro and settles behind Viriato, who stands at the gate looking out over the valley. */
 const introQ0 = new THREE.Quaternion(), introQ1 = new THREE.Quaternion(), introP0 = new THREE.Vector3(), introP1 = new THREE.Vector3();
 function updateIntro(dt) {
   introT += dt;
+  if (missionMsgT > 0) { missionMsgT -= dt; if (missionMsgT <= 0) $('msg').style.opacity = 0; }
   if (chapter === 'prologo') return updateIntroPrologue(dt);
   view = 'third'; updateCamera(dt); view = introView;        // avatar posed, camera at its final third-person spot
   AV.root.visible = true;
@@ -1971,7 +1988,7 @@ function updateIntro(dt) {
   if (introT >= INTRO_LEN) endIntro();
 }
 function endIntro() {
-  scene.fog.density = FOG_BASE; if (introVeil) introVeil.style.display = 'none';
+  scene.fog.density = FOG_BASE; if (introVeil) introVeil.style.display = 'none'; $('hud').classList.remove('intro');
   state = 'play';
   if (chapter === 'prologo') { $('hud').classList.remove('hidden'); updateHUDWeapon(); setRing(RING_R1); betray(); return; } view = introView; $('hud').classList.remove('hidden'); updateHUDWeapon();
   showMsg('I · A Emboscada', 'Agacha-te (C) e aproxima-te sem seres visto. Um golpe pelas costas é mortal.', 5);
@@ -2115,10 +2132,10 @@ export async function loadChars(THREE, base = 'assets/chars/') {
     const u8 = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
     return gl.parseAsync(u8.buffer, '');
   };
-  const [body, a1, a2, hl, hb, hz] = await Promise.all(['body', 'anim_ual1', 'anim_ual2', 'hair_long', 'hair_beard', 'hair_buzzed'].map(get));
+  const [body, a1, a2, hl, hb, hz, bf] = await Promise.all(['body', 'anim_ual1', 'anim_ual2', 'hair_long', 'hair_beard', 'hair_buzzed', 'body_f'].map(get));
   const tl = new THREE.TextureLoader(), textures = {};
   await Promise.all(['roman_red', 'roman_white', 'roman_mail', 'velite', 'lusitano', 'lusitano_b', 'lusitano_c', 'lusitano_d'].map(async k => {
     const t = await tl.loadAsync(base + 'body_' + k + '.jpg'); t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; textures[k] = t;
   }));
-  return { body: body.scene, clips: [...a1.animations, ...a2.animations], hair: { hair_long: hl.scene, hair_beard: hb.scene, hair_buzzed: hz.scene }, textures, split: [null, null], clone: SkeletonUtils.clone };
+  return { body: body.scene, bodyF: bf.scene, clips: [...a1.animations, ...a2.animations], hair: { hair_long: hl.scene, hair_beard: hb.scene, hair_buzzed: hz.scene }, textures, split: [null, null], clone: SkeletonUtils.clone };
 }

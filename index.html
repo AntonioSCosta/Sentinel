@@ -29,6 +29,9 @@
   #prompt{position:absolute;left:50%;top:60%;transform:translateX(-50%);font-size:22px;text-shadow:0 1px 3px #000;color:var(--ink)}
   #prompt b{font-family:'Cinzel',serif;color:var(--gold)}
   #msg{position:absolute;left:50%;top:30%;transform:translateX(-50%);font-family:'Cinzel',serif;font-size:26px;letter-spacing:.08em;text-align:center;text-shadow:0 2px 6px #000;opacity:0;transition:opacity .4s;max-width:80vw}
+  #hud.intro{z-index:6}
+  #hud.intro > :not(#msg){visibility:hidden}
+  #hud.intro #msg{top:auto;bottom:11%}
   #msg small{display:block;font-family:'EB Garamond',serif;font-style:italic;font-size:19px;letter-spacing:0;color:var(--dim);margin-top:6px}
   #vitals{position:absolute;left:22px;bottom:22px;width:260px}
   .lbl{font-family:'Cinzel',serif;font-size:12px;letter-spacing:.2em;color:var(--dim);text-shadow:0 1px 2px #000}

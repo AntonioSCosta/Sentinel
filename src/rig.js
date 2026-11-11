@@ -58,9 +58,35 @@ export function splitClips(THREE, clips, shielded) {
  * Build one character. `assets` = { body (glTF scene), hair: {long, beard, buzzed}, clips: AnimationClip[], textures: {outfit: Texture} }.
  * `cloneSkinned` = SkeletonUtils.clone. Returns { root, mixer, bones, mats, attach(...) }.
  */
-export function makeRig(THREE, cloneSkinned, assets, { outfit = 'roman_red', hair = [], shielded = false, tint = 1, hairColor = 0x3b2a1e } = {}) {
+/**
+ * Clothes painted straight onto the slender (female) mannequin as vertex colours, by where each vertex sits in the bind pose:
+ * skin on head, hands, forearms and (for short tunics) shins; a dress or tunic over the body; a darker girdle; leather on the feet.
+ */
+export function paintBody(THREE, body, { dress = 0x6b4a2e, skin = 0xc99a78, long = true }) {
+  const D = new THREE.Color(dress), S = new THREE.Color(skin), B = new THREE.Color(dress).multiplyScalar(.45), F = new THREE.Color(0x3a2818), c = new THREE.Color();
+  body.traverse(o => {
+    if (!o.isMesh) return;
+    o.geometry = o.geometry.clone(); const P = o.geometry.attributes.position, col = new Float32Array(P.count * 3);
+    for (let i = 0; i < P.count; i++) {
+      const x = Math.abs(P.getX(i)), y = P.getY(i), z = P.getZ(i);
+      if (x > .21 && y > .95) c.copy(x < .43 ? D : S);                 // arm: sleeve to the elbow, then bare forearm and hand
+      else if (y > 1.56 || (y > 1.49 && x < .1)) c.copy(S);              // head and neck (a high neckline, covered shoulders)
+      else if (y < .1) c.copy(F);                                        // feet
+      else if (y > .96 && y < 1.02) c.copy(B);                           // girdle
+      else if (!long && y < .55) c.copy(S);                              // short tunic: bare shins
+      else c.copy(D);
+      const n = .9 + .2 * ((Math.sin(i * 12.9898 + y * 78.233) * 43758.5453) % 1 + 1) % 1;   // a little unevenness in dye and skin
+      col[i * 3] = c.r * n; col[i * 3 + 1] = c.g * n; col[i * 3 + 2] = c.b * n;
+    }
+    o.geometry.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    o.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, name: 'painted' });
+  });
+}
+export function makeRig(THREE, cloneSkinned, assets, { outfit = 'roman_red', hair = [], shielded = false, tint = 1, hairColor = 0x3b2a1e, female = false, palette = null } = {}) {
   const root = new THREE.Group(); root.rotation.order = 'YXZ';
-  const body = cloneSkinned(assets.body); root.add(body);
+  female = female && !!assets.bodyF;
+  const body = cloneSkinned(female ? assets.bodyF : assets.body); root.add(body);
+  if (female) paintBody(THREE, body, palette || {});
   const bones = {}, mats = [];
   body.traverse(o => {
     if (o.isBone || o.type === 'Object3D' || o.isGroup) bones[o.name] = bones[o.name] || o;
@@ -75,7 +101,9 @@ export function makeRig(THREE, cloneSkinned, assets, { outfit = 'roman_red', hai
   root.updateMatrixWorld(true);
   for (const h of hair) {           // hair is modelled in place on the bind-pose head: attach keeps that
     const src = assets.hair?.[h]; if (!src) continue;
-    const g = src.clone(true); g.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.setHex(hairColor); o.castShadow = true; mats.push(o.material); } });
+    const g = src.clone(true);
+    if (female) { g.scale.setScalar(1.1); g.position.set(0, 1.65 * (1 - 1.1) + .035, -.012); }   // the mannequin's head is a little larger: grow the hair round the head's centre
+    g.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.setHex(hairColor); o.castShadow = true; mats.push(o.material); } });
     bones.Head.attach(g);
   }
   const mixer = new THREE.AnimationMixer(body);

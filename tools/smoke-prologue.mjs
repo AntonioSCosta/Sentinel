@@ -1,7 +1,7 @@
 // Prologue (Galba's massacre): crowd, ring, betrayal, escape to the forest ends the chapter with a way on to the ambush.
 export default async ({ G, doc, st, check, forcePlay, setGod }) => {
   setGod(true); G.start(1, 'prologo'); forcePlay(); st(30);
-  check('prologue: 24 disarmed people in three groups', G.civs.length === 24 && G.chapter === 'prologo');
+  check('prologue: 24 disarmed people in three groups and their elder', G.civs.length === 25 && G.chapter === 'prologo');
   check('prologue: the ring has closed in', G.enemies.filter(e => e.group === 'cordon').every(e => Math.hypot(e.pos.x - G.MEADOW.x, e.pos.z - G.MEADOW.z) < 20));
   st(600);
   check('prologue: soldiers hunt Viriato after the betrayal', G.enemies.some(e => e.state === 'chase'));

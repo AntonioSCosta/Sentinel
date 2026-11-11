@@ -82,3 +82,14 @@ test('the waist never wrings: the counter-twist is shared by all three spine bon
   assert.ok(tot > .1, 'there is a counter-twist to share (' + tot.toFixed(2) + ')');
   assert.ok(Math.max(...a) < tot * .45, 'no single bone takes the whole twist: ' + a.map(x => x.toFixed(2)));
 });
+
+import { paintBody } from '../src/rig.js';
+test('paintBody: a dress over the body, skin on the head and hands, short tunics leave the shins bare', () => {
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([0, 1.7, 0, 0, 1.2, 0, .7, 1.3, 0, 0, .3, 0], 3));
+  const root = new THREE.Group(), m = new THREE.Mesh(g, new THREE.MeshStandardMaterial()); root.add(m);
+  paintBody(THREE, root, { dress: 0x0000ff, skin: 0xff0000, long: false });
+  const c = i => [0, 1, 2].map(k => m.geometry.attributes.color.array[i * 3 + k]);
+  assert.ok(c(0)[0] > c(0)[2], 'head is skin'); assert.ok(c(1)[2] > c(1)[0], 'torso is dress');
+  assert.ok(c(2)[0] > c(2)[2], 'hand is skin'); assert.ok(c(3)[0] > c(3)[2], 'short tunic: bare shin');
+  assert.ok(m.material.vertexColors); assert.notEqual(m.geometry, g, 'the shared geometry is not repainted');
+});
