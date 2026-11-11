@@ -522,11 +522,11 @@ function rigSoldier(kind, look = null) {
   rig.attach('spine_01', bg);
   let skirtMat = null;
   if (lus) {   // Lusitanian kilt-like skirt (saia) of wool, hanging from the hips to mid-thigh; follows the pelvis
-    skirtMat = new THREE.MeshStandardMaterial({ color: { lusitano: 0x46341f, lusitano_b: 0x46341f, lusitano_c: 0x96682c, lusitano_d: 0x605440 }[outfit] || 0x46341f, roughness: .95, side: THREE.DoubleSide });
+    skirtMat = new THREE.MeshStandardMaterial({ color: { lusitano: 0x46341f, lusitano_b: 0x5c4630, lusitano_c: 0x96682c, lusitano_d: 0x605440 }[outfit] || 0x46341f, roughness: .95, side: THREE.DoubleSide });
     const sk = new THREE.Group();
-    sk.add(new THREE.Mesh(new THREE.CylinderGeometry(.185, .275, .36, 28, 1, true).translate(0, .82, 0), skirtMat));
-    const hem = new THREE.Mesh(new THREE.TorusGeometry(.275, .012, 5, 28).rotateX(Math.PI / 2).translate(0, .64, 0), skirtMat.clone()); hem.material.color.multiplyScalar(.6); sk.add(hem);
-    sk.scale.set(1, 1, .86); sk.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    sk.add(new THREE.Mesh(new THREE.CylinderGeometry(.19, .27, .4, 28, 1, true).translate(0, .84, 0), skirtMat));
+    const hem = new THREE.Mesh(new THREE.TorusGeometry(.27, .012, 5, 28).rotateX(Math.PI / 2).translate(0, .64, 0), skirtMat.clone()); hem.material.color.multiplyScalar(.6); sk.add(hem);
+    sk.scale.set(1, 1, .9); sk.traverse(o => { if (o.isMesh) o.castShadow = true; });
     rig.attach('pelvis', sk);
   }
   Object.assign(rig.root.userData, ud);
@@ -767,6 +767,7 @@ function raiseAlarm() {
    ========================================================= */
 const cv = canvas;
 window.addEventListener('keydown', e => {
+  if (state === 'intro' && e.code !== 'Escape') { introT = INTRO_LEN; return; }
   keys[e.code] = true;
   if (state !== 'play') return;
   if (e.code === 'Digit1') selectW(0); if (e.code === 'Digit2') selectW(1); if (e.code === 'Digit3') selectW(2);
@@ -786,6 +787,7 @@ window.addEventListener('mousemove', e => {
   if (P.f.phase === 'windup' && !P.f.released) { P.post.x += e.movementX; P.post.y += e.movementY; }
 });
 window.addEventListener('mousedown', e => {
+  if (state === 'intro') { introT = INTRO_LEN; return; }
   if (state !== 'play') return;
   if (document.pointerLockElement !== cv) { lock(); return; }
   if (e.button === 0) mouseL = true; if (e.button === 2) mouseR = true;
@@ -1682,15 +1684,39 @@ function updateHUD(dt) {
 /* =========================================================
    Flow: menu, pause, end
    ========================================================= */
-function startGame() {
+let introT = 0, introView = 'third';
+const INTRO_LEN = 6.5;
+function startGame(intro = false) {
   initAudio();
   resetWorld();
-  state = 'play';
+  state = intro ? 'intro' : 'play'; introT = 0; introView = view;
   for (const k in keys) keys[k] = false; mouseL = mouseR = false;
   $('menu').classList.add('hidden'); $('end').classList.add('hidden'); $('pause').classList.add('hidden'); $('hud').classList.remove('hidden');
   updateHUDWeapon();
-  showMsg('I · A Emboscada', 'Agacha-te (C) e aproxima-te sem seres visto. Um golpe pelas costas é mortal.', 5);
+  if (intro) { $('hud').classList.add('hidden'); showMsg('VIRIATO', 'Montes Hermínios, Lusitânia · 147 a.C.', 4.2); }
+  else showMsg('I · A Emboscada', 'Agacha-te (C) e aproxima-te sem seres visto. Um golpe pelas costas é mortal.', 5);
   lock();
+}
+/** Opening shot: the camera drops from above the castro and settles behind Viriato, who stands at the gate looking out over the valley. */
+const introQ0 = new THREE.Quaternion(), introQ1 = new THREE.Quaternion(), introP0 = new THREE.Vector3(), introP1 = new THREE.Vector3();
+function updateIntro(dt) {
+  introT += dt;
+  view = 'third'; updateCamera(dt); view = introView;        // avatar posed, camera at its final third-person spot
+  AV.root.visible = true;
+  introP1.copy(camera.position); introQ1.copy(camera.quaternion);
+  const t = clamp(introT / INTRO_LEN, 0, 1), e = t * t * (3 - 2 * t), k = 1 - e;
+  const head = V(P.pos.x, P.pos.y + 1.55, P.pos.z);
+  // orbit: start wide, high and round the front of him, sweep past his shoulder to the over-the-shoulder spot
+  const off = introP1.clone().sub(head); off.y = 0; off.multiplyScalar(1 + k * 1.5).applyAxisAngle(V(0, 1, 0), k * 2.9);
+  introP0.copy(head).add(off); introP0.y = introP1.y + k * 2.4;
+  const gh = heightAt(introP0.x, introP0.z) + 1; if (introP0.y < gh) introP0.y = gh;
+  introQ0.setFromRotationMatrix(new THREE.Matrix4().lookAt(introP0, head, V(0, 1, 0)));
+  camera.position.copy(introP0); camera.quaternion.slerpQuaternions(introQ0, introQ1, e * e);
+  if (introT >= INTRO_LEN) endIntro();
+}
+function endIntro() {
+  state = 'play'; view = introView; $('hud').classList.remove('hidden'); updateHUDWeapon();
+  showMsg('I · A Emboscada', 'Agacha-te (C) e aproxima-te sem seres visto. Um golpe pelas costas é mortal.', 5);
 }
 /** Drop every held input and combat stance (used when the game loses focus). */
 function releaseAll() {
@@ -1720,10 +1746,10 @@ let endT = 0, endArgs = null;
 function die() { state = 'dead'; SFX.die(); endT = 1.4; endArgs = ['CAÍDO EM COMBATE', 'Viriato tombou', 'Roma não vencerá à primeira. Volta aos montes e tenta de novo.']; }
 function win() { state = 'won'; SFX.horn(); endT = 1.8; endArgs = ['VITÓRIA', 'Os montes são lusitanos', 'A patrulha caiu, os mantimentos arderam e o centurião jaz no seu próprio acampamento. Esta noite, nos castros, contar-se-á o teu nome.']; }
 
-$('start').addEventListener('click', startGame);
+$('start').addEventListener('click', () => startGame(!navigator.webdriver));
 $('again').addEventListener('click', startGame);
 $('resume').addEventListener('click', resume);
-$('restart').addEventListener('click', startGame);
+$('restart').addEventListener('click', () => startGame(false));
 for (const b of document.querySelectorAll('[data-diff]')) b.addEventListener('click', () => { diff = +b.dataset.diff; for (const o of document.querySelectorAll('[data-diff]')) o.setAttribute('aria-pressed', o === b ? 'true' : 'false'); });
 const setSens = v => { sens = .0006 * v; };
 $('sens').addEventListener('input', e => setSens(+e.target.value));
@@ -1735,7 +1761,8 @@ $('sens2').addEventListener('input', e => { setSens(+e.target.value); $('sens').
 let menuT = 0;
 function step(dt) {
   if (hitStopT > 0) { hitStopT -= dt; dt *= .15; } // brief impact freeze
-  if (state === 'play') { updatePlayer(dt); updateEnemies(dt); updateAllies(dt); updateProjectiles(dt); updateCamera(dt); updateFlag(); updateHUD(dt); }
+  if (state === 'intro') { updateAllies(dt); updateEnemies(dt); updateProjectiles(dt); updateIntro(dt); updateFires(dt); }
+  else if (state === 'play') { updatePlayer(dt); updateEnemies(dt); updateAllies(dt); updateProjectiles(dt); updateCamera(dt); updateFlag(); updateHUD(dt); }
   else if (state === 'dead' || state === 'won') {
     if (endT > 0) { endT -= dt; if (endT <= 0 && endArgs) { endScreen(...endArgs); endArgs = null; } }
     updateEnemies(dt); updateAllies(dt); updateProjectiles(dt);
@@ -1751,7 +1778,7 @@ function step(dt) {
   if (state !== 'menu') VM.visible = view === 'first' && (state === 'play' || state === 'pause');
   updateFires(dt); updateParticles(dt); updateTrails(dt);
 }
-const AV = soldier('lusitano'); scene.add(AV.root); AV.root.visible = false;
+const AV = soldier('lusitano', { scale: 1.04, outfit: 'lusitano_b', hair: ['hair_long', 'hair_beard'], hairColor: 0x2a1d14, cap: false }); scene.add(AV.root); AV.root.visible = false;
 let AV_FAL = null; AV.root.traverse(o => { if (o.name === 'falcata') AV_FAL = o; });
 const AV_HAND = AV.rig ? AV.weapon : AV.elbows[1].children.at(-1);
 // what Viriato holds for the ranged weapons: a dardo along the forearm line (hand +z, point forward) and a sling stone
@@ -1774,7 +1801,7 @@ setListener(camera);
 resetWorld();
 $('start').disabled = false; $('start').textContent = 'COMEÇAR';
 return {
-  start: d => { if (d != null) diff = d; startGame(); }, step, render: () => R.render(), setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
+  start: d => { if (d != null) diff = d; startGame(false); }, startIntro: () => startGame(true), get introT() { return introT; }, step, render: () => R.render(), setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
   P, supplyTents, heightAt, CAMP, scene, camera,
   get enemies() { return enemies; }, get allies() { return allies; }, setCompanions: n => { companions = n; }, forceDir: d => { forcedDir = d; }, get order() { return order; }, get placing() { return placing; }, flag: FLAG, flagAt, hurtAllyForTest: (a, d) => hurtAlly(a, d, a.pos.clone()), get mission() { return mission; }, get state() { return state; },
   get projectiles() { return projectiles; }, get pickups() { return pickups; },
