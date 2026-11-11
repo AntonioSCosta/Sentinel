@@ -142,3 +142,19 @@ test('random blow: any of the four directions, never the same twice in a row', (
   for (let i = 0; i < 200; i++) { const d = C.randomDir(prev, rng); assert.ok(C.DIRS.includes(d)); assert.notEqual(d, prev); seen.add(d); prev = d; }
   assert.equal(seen.size, 4);
 });
+
+test('passive shield: an idle fighter holding a shield stops frontal melee blows (narrower arc, dearer) without a button', () => {
+  const d = C.createFighter({ passiveShield: true });
+  const r = C.resolveHit(d, { dir: 'left', power: 1, fromAngle: 20, baseDamage: 20 });
+  assert.equal(r.result, 'blocked'); assert.equal(r.damage, 0);
+  assert.ok(r.staminaCost > C.SHIELD_COST, 'passive guard costs more than a raised shield');
+  assert.equal(C.resolveHit(d, { dir: 'left', power: 1, fromAngle: 70, baseDamage: 20 }).result, 'hit', 'wide angles are not covered');
+});
+test('passive shield does not apply while winding up, striking or without a shield', () => {
+  const w = C.createFighter({ passiveShield: true }); C.beginAttack(w, 'up');
+  assert.equal(C.resolveHit(w, { dir: 'left', power: 1, fromAngle: 0, baseDamage: 20 }).result, 'hit');
+  const n = C.createFighter({ passiveShield: true, shieldHP: 0 });
+  assert.equal(C.resolveHit(n, { dir: 'left', power: 1, fromAngle: 0, baseDamage: 20 }).result, 'hit');
+  const none = C.createFighter();
+  assert.equal(C.resolveHit(none, { dir: 'left', power: 1, fromAngle: 0, baseDamage: 20 }).result, 'hit');
+});

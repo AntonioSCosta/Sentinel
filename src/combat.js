@@ -11,6 +11,8 @@ export const FULL_CHARGE = .8;        // s of holding for full power
 export const PARRY_WINDOW = .15;      // sword block started this recently → perfect parry
 export const PARRY_COOLDOWN = .45;    // a guard re-raised sooner than this after the last one gets no parry (anti-mashing)
 export const SHIELD_ARC = 75;         // degrees each side covered by the caetra / scutum
+export const PASSIVE_ARC = 45;        // degrees each side an idle shield-bearer covers without raising it
+export const PASSIVE_COST = 1.6;      // passive guard is this much dearer in stamina than a raised shield
 export const SWORD_ARC = 60;          // degrees each side covered by a sword block
 export const ATTACK_COST = 11;        // stamina per swing
 export const MIN_ATTACK_STAMINA = 8;
@@ -124,6 +126,13 @@ export function resolveHit(def, { dir, power, fromAngle, baseDamage, kind = 'mel
     def.shieldHP = Math.max(0, def.shieldHP - 6 * (DMG[dir] ?? 1) * power);
     if (def.shieldHP <= 0) endBlock(def);
     return { result: 'blocked', damage: 0, staminaCost: cost, attackerStagger: 0 };
+  }
+  if (def.passiveShield && !def.blocking && def.phase === 'idle' && def.shieldHP > 0 && ang <= PASSIVE_ARC && kind === 'melee') {
+    const cost = SHIELD_COST * PASSIVE_COST * power;
+    if (def.stamina >= cost) {
+      def.stamina -= cost; def.shieldHP = Math.max(0, def.shieldHP - 5 * (DMG[dir] ?? 1) * power);
+      return { result: 'blocked', damage: 0, staminaCost: cost, attackerStagger: 0 };
+    }
   }
   interrupt();
   return out;

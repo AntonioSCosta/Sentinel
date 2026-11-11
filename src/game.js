@@ -213,7 +213,7 @@ function mesh(geo, mat, x, y, z, parent) { const m = new THREE.Mesh(geo, mat); m
 // Lusitanian castro (start area)
 {
   const stone = MAT('castro_stone'), thatch = MAT('thatch', { flatShading: true });
-  const huts = [[-6, -4], [5, -7], [8, 5], [-5, 7]];
+  const huts = [[-2.5, -3.5], [5, -7], [8, 5], [-5, 7]];
   for (const [ox, oz] of huts) {
     const x = CASTRO.x + ox, z = CASTRO.z + oz, y = CASTRO.h;
     mesh(new THREE.CylinderGeometry(2.4, 2.5, 2.1, 14), stone, x, y + 1.05, z);
@@ -334,6 +334,7 @@ function makeSoldier(kind) {
         helm = mm(kind === 'centurion' ? 'bronze' : 'iron'), metal = mm('iron', { roughness: .3 }), leather = mm('leather'),
         shieldM = mm(kind === 'velite' ? 'leather' : 'canvas_red', { side: THREE.DoubleSide }), gold = mm('bronze'),
         crestM = mm('wool_red'), fur = mm('wool_brown'), wood = mm('wood');
+  fur.color.setHex(0x4a4036);   // wolf pelt, clearly darker than the skin so the vélite does not read as bald
   // Mid-Republican (Polybian) kit: most men a bronze pectorale, the wealthier a mail shirt; centurions in mail.
   const lus = kind === 'lusitano';
   const armour = kind === 'velite' || lus ? 'none' : kind === 'centurion' ? 'hamata' : (rand() < .45 ? 'hamata' : 'pectorale');
@@ -483,7 +484,7 @@ function rigSoldier(kind, look = null) {
   const shield = ud.scutum || ud.parma;
   const white = p.mats[0].color.equals(MATS.wool_white.color);
   const outfit = look ? look.outfit : lus ? (rand() < .5 ? 'lusitano' : 'lusitano_b') : kind === 'velite' ? 'velite' : ud.armour === 'hamata' ? 'roman_mail' : white ? 'roman_white' : 'roman_red';
-  const hair = look ? look.hair : lus ? ['hair_long', 'hair_beard'] : kind === 'velite' ? ['hair_beard'] : [];
+  const hair = look ? look.hair : lus ? ['hair_long', 'hair_beard'] : kind === 'velite' ? ['hair_long', 'hair_beard'] : [];
   const rig = makeRig(THREE, chars.clone, chars, { outfit, hair, shielded: !!shield, tint: rr(.86, 1.05), hairColor: look ? look.hairColor : [0x2a1d14, 0x3b2a1e, 0x1c1410, 0x4a3524][Math.floor(rand() * 4)] });
   // helmet / cap: everything on the old head except the skin
   const hk = new THREE.Group();
@@ -659,7 +660,7 @@ function resetWorld() {
   for (const t of supplyTents) { t.burnt = false; t.t = 0; t.mat.color.setHex(0xc9b68c); t.light.intensity = 0; t.flag.visible = true; }
   setSeed(4242);
   endT = 0; endArgs = null;
-  Object.assign(P, { throwPending: 0, throwKind: null, f: C.createFighter(), charging: false, chargeT: 0, acc: { x: 0, y: 0 }, intent: C.createIntent(), post: { x: 0, y: 0 }, prevL: false, swingDir: null, bashCd: 0, bashT: 0, cleanT: 0,
+  Object.assign(P, { throwPending: 0, throwKind: null, f: C.createFighter({ passiveShield: true }), charging: false, chargeT: 0, acc: { x: 0, y: 0 }, intent: C.createIntent(), post: { x: 0, y: 0 }, prevL: false, swingDir: null, bashCd: 0, bashT: 0, cleanT: 0,
     lastDefense: null, incomingDir: null, vel: { x: 0, z: 0 }, push: null, kick: 0, swingHits: new Set(), vy: 0, hp: 100, ground: true, crouch: 0, w: 0, dardos: 5, pedras: 12, atk: 0, cd: 0,
     kills: 0, shots: 0, hits: 0, heads: 0, time: 0, swing: 0, throwT: 0, hurtT: 0 });
   P.pos.set(CASTRO.x - 8, 0, CASTRO.z - 8); P.pos.y = heightAt(P.pos.x, P.pos.z);
@@ -1505,6 +1506,7 @@ function updatePlayer(dt) {
     if (P.w !== 0) P.charging = false;
   }
   // defence: Q = falcata (direction is automatic), right button = caetra
+  P.f.passiveShield = P.w !== 2 && P.cleanT <= 0;
   const wantBlock = keys.KeyQ && P.w === 0 ? 'sword' : (mouseR && P.w !== 2 && P.f.shieldHP > 0 && P.cleanT <= 0 ? 'shield' : null);
   if (wantBlock !== P.f.blocking) { if (wantBlock) { if (C.beginBlock(P.f, wantBlock)) P.charging = false; } else C.endBlock(P.f); }
   // auto-aim the sword guard at the nearest enemy winding up
