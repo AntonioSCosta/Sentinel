@@ -158,3 +158,11 @@ test('passive shield does not apply while winding up, striking or without a shie
   const none = C.createFighter();
   assert.equal(C.resolveHit(none, { dir: 'left', power: 1, fromAngle: 0, baseDamage: 20 }).result, 'hit');
 });
+
+test('the shield can be raised out of an attack recovery (no helpless gap after swinging)', () => {
+  const f = C.createFighter(); C.beginAttack(f, 'left'); C.releaseAttack(f);
+  for (let i = 0; i < 400 && f.phase !== 'recovery'; i++) C.tickFighter(f, 1 / 120);
+  assert.equal(f.phase, 'recovery');
+  assert.equal(C.beginBlock(f, 'shield'), true);
+  assert.equal(f.phase, 'idle'); assert.equal(f.blocking, 'shield');
+});

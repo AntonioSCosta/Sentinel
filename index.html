@@ -42,7 +42,8 @@
   #shb{height:6px}#shb i{background:#9a7a4a}
   #chg,#incoming{position:absolute;left:50%;transform:translateX(-50%);font-size:26px;text-shadow:0 1px 3px #000}
   #chg{top:calc(50% + 22px);color:var(--gold)}
-  #incoming{top:calc(50% - 60px);color:#e0503a}
+  #incoming{top:calc(50% - 74px);color:#ff4a30;font-size:44px;animation:inc .35s ease-in-out infinite alternate}
+  @keyframes inc{from{opacity:.55;transform:translateX(-50%) scale(.9)}to{opacity:1;transform:translateX(-50%) scale(1.1)}}
   #weapons{position:absolute;right:22px;bottom:22px;text-align:right;text-shadow:0 1px 3px #000}
   #wname{font-family:'Cinzel',serif;font-size:24px;color:var(--ink)}
   #wammo{font-size:30px;color:var(--gold);font-weight:600}

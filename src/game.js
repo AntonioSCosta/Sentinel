@@ -29,7 +29,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 const FOG = 0xb7c2bf;   // the damp blue-grey haze of the Beira hills
-scene.fog = new THREE.FogExp2(FOG, .0042);
+scene.fog = new THREE.FogExp2(FOG, .005);
 scene.background = new THREE.Color(FOG);
 const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, .05, 900);
 camera.rotation.order = 'YXZ';
@@ -76,6 +76,16 @@ function makeDotTex() {
   return new THREE.CanvasTexture(c);
 }
 const DOT = makeDotTex();
+// low cloud lying on the hilltops all round the valley: the summits stay hidden
+{
+  const mist = new THREE.SpriteMaterial({ map: DOT, color: 0xd3d9d8, transparent: true, opacity: .62, depthWrite: false, fog: false });
+  setSeed(424);
+  for (let i = 0; i < 110; i++) {
+    const a = rand() * TAU, r = 160 + rand() * 80, sp = new THREE.Sprite(mist);
+    sp.position.set(Math.cos(a) * r, 46 + rand() * 34, Math.sin(a) * r); sp.scale.set(70 + rand() * 70, 18 + rand() * 22, 1); sp.renderOrder = 1;
+    scene.add(sp);
+  }
+}
 
 const phys = await createPhysics({ RAPIER: rapier, heightAt, half: WORLD });
 const MATS = await loadMaterials({ THREE, loader, quality, anisotropy: renderer.capabilities ? renderer.capabilities.getMaxAnisotropy() : 4 });
@@ -915,7 +925,7 @@ function updateCivs(dt) {
 }
 function checkPrologue() {
   setObjective();
-  if (state === 'play' && Math.hypot(P.pos.x - ESCAPE.x, P.pos.z - ESCAPE.z) < 9) startOutro();
+  if (state === 'play' && (Math.hypot(P.pos.x - ESCAPE.x, P.pos.z - ESCAPE.z) < 9 || Math.hypot(P.pos.x - MEADOW.x, P.pos.z - MEADOW.z) > 50)) startOutro();   // into the wood, wherever he broke through
 }
 /* Escape: Viriato runs on into the trees, then stops, turns and looks back at the field. */
 const OUTRO_LEN = 15;
@@ -925,7 +935,7 @@ function startOutro() {
   $('hud').classList.add('intro'); $('msg').style.opacity = 0; missionMsgT = 0;
   releaseAll(); C.endBlock(P.f);
   for (const e of enemies) if (!e.dead && e.group === 'cordon') { e.alertIn = null; if (e.state === 'chase') { e.state = 'cordon'; e.victim = null; } }   // the hunters give him up
-  const dx = ESCAPE.x - MEADOW.x, dz = ESCAPE.z - MEADOW.z, dl = Math.hypot(dx, dz), u = V(dx / dl, 0, dz / dl), n = V(-u.z, 0, u.x);
+  const dx = P.pos.x - MEADOW.x, dz = P.pos.z - MEADOW.z, dl = Math.hypot(dx, dz) || 1, u = V(dx / dl, 0, dz / dl), n = V(-u.z, 0, u.x);   // onward, away from the field
   outroCam = { u, n, at: V(P.pos.x, 0, P.pos.z).addScaledVector(u, 7).addScaledVector(n, 4.2) };
   outroCam.at.y = heightAt(outroCam.at.x, outroCam.at.z) + 1.5;
   // the survivors: roped in a double file and led off toward Galba's camp, between the bodies
@@ -1850,6 +1860,8 @@ function updatePlayer(dt) {
   let inc = null, incD = 4;
   for (const e of enemies) if (!e.dead && e.f.phase === 'windup') { const d = e.pos.distanceTo(P.pos); if (d < incD) { incD = d; inc = e.f.dir; } }
   P.incomingDir = inc;
+  P.hintCd = Math.max(0, (P.hintCd || 0) - dt);
+  if (inc && incD < 3.4 && !P.f.blocking && !P.unarmed && P.w !== 2 && (P.blockHints || 0) < 4 && P.hintCd <= 0) { P.blockHints = (P.blockHints || 0) + 1; P.hintCd = 6; showPrompt('Golpe a caminho: segura o BOTÃO DIREITO para levantar o escudo', 1.4); }
   for (const ev of C.tickFighter(P.f, dt)) if (ev.type === 'swing') playerSwing(ev);
   sampleTrail('player', P.pos, playerFacing(), P.f);
   if (P.throwPending) { P.throwPending -= dt; if (P.throwPending <= 0) { P.throwPending = 0; releaseThrow(); } }

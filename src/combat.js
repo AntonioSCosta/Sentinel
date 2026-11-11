@@ -64,6 +64,7 @@ export function stagger(f, time) {
 
 export function beginBlock(f, kind) {
   if (f.phase === 'windup') feint(f);
+  if (f.phase === 'recovery') { f.phase = 'idle'; f.t = 0; f.released = false; }   // the follow-through can be cut short to get the shield up
   if (f.phase !== 'idle') return false;
   if (kind === 'shield' && f.shieldHP <= 0) return false;
   f.blocking = kind; f.blockT = 0; f.parryOk = f.sinceBlock >= PARRY_COOLDOWN;
