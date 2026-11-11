@@ -550,40 +550,35 @@ function rigSoldier(kind, look = null) {
   bg.traverse(o => { if (o.isMesh) { o.castShadow = true; } });
   rig.attach('spine_01', bg);
   const extraMats = [];
-  /** Hanging cloth: an open flared tube from the waist down, with soft folds and a darker hem. */
+  /**
+   * Hanging cloth: an open flared tube from the waist down, with soft folds and a darker hem.
+   * It is skinned to the body's skeleton like game skirts are: the waist rides the pelvis, and lower down each side follows
+   * its own thigh (and, on long dresses, a little of the shin), blended across the front and back. Simple, and it never pinches.
+   */
+  let fsm = null; rig.body.traverse(o => { if (o.isSkinnedMesh && !fsm && o.skeleton.bones.some(b => b.name === 'pelvis')) fsm = o; });
   const skirt = (color, { rTop = .19, rBot = .27, y0 = 1.04, y1 = .64, folds = 14, amp = .05, mat = null, zs = .9 } = {}) => {
-    const m = mat || new THREE.MeshStandardMaterial({ color, roughness: 1, side: THREE.DoubleSide }); extraMats.push(m);
-    const g = new THREE.CylinderGeometry(rTop, rBot, y0 - y1, 36, 4, true), pos = g.attributes.position;
+    if (!fsm) return;
+    const m = mat || new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 1, side: THREE.DoubleSide }); extraMats.push(m);
+    const H = y0 - y1, g = new THREE.CylinderGeometry(rTop, rBot, H, 36, 10, true), pos = g.attributes.position;
+    const names = fsm.skeleton.bones.map(b => b.name), B = n => Math.max(0, names.indexOf(n));
+    const PEL = B('pelvis'), TL = B('thigh_l'), TR = B('thigh_r'), CL = B('calf_l'), CR = B('calf_r');
+    const HIP = .93, KNEE = .53, base = new THREE.Color(color), col = [], si = [], sw = [];
     for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i), z = pos.getZ(i), t = 1 - (pos.getY(i) + (y0 - y1) / 2) / (y0 - y1), a = Math.atan2(z, x);
+      const x = pos.getX(i), z = pos.getZ(i), t = 1 - (pos.getY(i) + H / 2) / H, y = y0 - t * H, a = Math.atan2(z, x);
       const k = 1 + amp * t * Math.sin(a * folds + t * 2) + amp * .4 * t * Math.sin(a * folds * 2.3);
-      pos.setX(i, x * k); pos.setZ(i, z * k); pos.setY(i, pos.getY(i) + (y0 + y1) / 2);
+      pos.setXYZ(i, x * k, y, z * k * zs);
+      const side = clamp(x / .12, -1, 1), wl = (1 + side) / 2, wr = 1 - wl;
+      const thigh = clamp((HIP + .06 - y) / (HIP + .06 - KNEE), 0, 1) * .66, shin = clamp((KNEE - y) / .45, 0, 1) * .3;
+      const pel = Math.max(0, 1 - thigh - shin);
+      si.push(PEL, wl >= wr ? TL : TR, wl >= wr ? TR : TL, wl >= wr ? CL : CR);
+      sw.push(pel, thigh * Math.max(wl, wr), thigh * Math.min(wl, wr), shin);
+      const d = t > .93 ? .6 : 1; col.push(base.r * d, base.g * d, base.b * d);
     }
-    g.computeVertexNormals();
-    const sk = new THREE.Group(); sk.add(new THREE.Mesh(g, m));
-    if (!mat) { const hm = new THREE.MeshStandardMaterial({ color: new THREE.Color(color).multiplyScalar(.6), roughness: 1 }); extraMats.push(hm); sk.add(new THREE.Mesh(new THREE.TorusGeometry(rBot * (1 + amp * .6), .012, 5, 36).rotateX(Math.PI / 2).translate(0, y1, 0), hm)); }
-    sk.scale.set(1, 1, zs); sk.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
-    rig.attach('pelvis', sk);
-    // the hem makes room for the legs: every ring vertex is pushed out until it clears both thighs at its height
-    const base = Float32Array.from(pos.array), ring = pos.count, hipB = [rig.bones.thigh_l, rig.bones.thigh_r], kneeB = [rig.bones.calf_l, rig.bones.calf_r];
-    if (hipB.every(Boolean) && kneeB.every(Boolean)) {
-      const A = new THREE.Vector3(), B = new THREE.Vector3(), legs = [new THREE.Vector3(), new THREE.Vector3()], H = y0 - y1;
-      (rig.dyn = rig.dyn || []).push(() => {
-        sk.updateWorldMatrix(true, false);
-        for (let l = 0; l < 2; l++) {
-          hipB[l].getWorldPosition(A); kneeB[l].getWorldPosition(B); sk.worldToLocal(A); sk.worldToLocal(B);
-          const sY = clamp((A.y - y1) / Math.max(.05, A.y - B.y), 0, 2.4); legs[l].copy(A).lerp(B, sY);
-        }
-        for (let i = 0; i < ring; i++) {
-          const bx = base[i * 3], by = base[i * 3 + 1], bz = base[i * 3 + 2], r0 = Math.hypot(bx, bz) || 1e-4, t = clamp((y0 - by) / H, 0, 1), w = t * t;
-          const ux = bx / r0, uz = bz / r0; let need = r0;
-          for (let l = 0; l < 2; l++) need = Math.max(need, (legs[l].x * ux + legs[l].z * uz) + .11);
-          const f = 1 + (need / r0 - 1) * w;
-          pos.setXYZ(i, bx * f, by, bz * f);
-        }
-        pos.needsUpdate = true;
-      });
-    }
+    g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4)); g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.computeVertexNormals();
+    rig.root.updateMatrixWorld(true); g.applyMatrix4(fsm.matrixWorld.clone().invert().multiply(rig.root.matrixWorld));   // into the body's own space
+    const sk = new THREE.SkinnedMesh(g, m); sk.castShadow = true; sk.frustumCulled = false; sk.name = 'skirt';
+    fsm.parent.add(sk); sk.bind(fsm.skeleton, fsm.bindMatrix);
   };
   /** Short loose sleeve over the upper arm so the muscle is not painted straight onto the body. */
   const sleeve = (side, color, r0 = .062, r1 = .095, from = .06, to = .6) => {
@@ -777,7 +772,7 @@ function spawn(kind, x, z, group) {
 /* =========================================================
    Prologue: the betrayal of Galba (150 BC)
    ========================================================= */
-const RING_N = 36, RING_R0 = 30, RING_R1 = 11.5, RING_R2 = 7;
+const RING_FAR = 78, RING_N = 36, RING_R0 = 30, RING_R1 = 11.5, RING_R2 = 7;
 function ringRadius(t) { return lerp(RING_R0, RING_R1, t); }
 function setRing(R) { for (const e of enemies) if (e.group === 'cordon' && e.state === 'cordon' && !(e === envoy && !e.envoyDone)) e.home.set(MEADOW.x + Math.cos(e.ang) * R, 0, MEADOW.z + Math.sin(e.ang) * R); }
 function resetPrologue() {
@@ -843,7 +838,7 @@ function nearestAdultCiv(pos, r) {
 }
 function killCiv(c) { if (c.dead) return; c.dead = true; c.deadT = 0; c.mv.x = c.mv.z = 0; SFX.die(spatial(c.pos) * .55); }
 function updateCivs(dt) {
-  if (betrayed) { betrayT += dt; setRing(lerp(RING_R1, RING_R2, smooth(0, 10, betrayT))); }
+  if (betrayed) { betrayT += dt; setRing(state === 'outro' ? 17 : lerp(RING_R1, RING_R2, smooth(0, 10, betrayT))); }   // after the killing the line opens out round the field
   for (const c of civs) {
     if (c.gone) continue;
     if (c.dead) { c.deadT += dt; const b = setPose(c, dt); c.m.root.position.set(c.pos.x, c.pos.y + b, c.pos.z); continue; }
@@ -858,7 +853,7 @@ function updateCivs(dt) {
     else { c.mv.x = c.mv.z = 0; c.ph += dt; want = c.elder && envoy && !betrayed ? Math.atan2(envoy.pos.x - c.pos.x, envoy.pos.z - c.pos.z) : Math.atan2(c.pos.x - MEADOW.x, c.pos.z - MEADOW.z) + Math.sin(c.ph * .7) * .6; }   // restless, watching the soldiers
     c.yaw += wrapA(want - c.yaw) * Math.min(1, dt * 6);
     c.pos.y = heightAt(c.pos.x, c.pos.z);
-    if (Math.hypot(c.pos.x - MEADOW.x, c.pos.z - MEADOW.z) > 50) { c.gone = true; c.m.root.visible = false; continue; }   // out among the trees
+    if (!c.prisoner && Math.hypot(c.pos.x - MEADOW.x, c.pos.z - MEADOW.z) > 50) { c.gone = true; c.m.root.visible = false; continue; }   // out among the trees
     const b = setPose(c, dt); c.m.root.position.set(c.pos.x, c.pos.y + b, c.pos.z); c.m.root.rotation.y = c.yaw;
   }
 }
@@ -867,7 +862,7 @@ function checkPrologue() {
   if (state === 'play' && Math.hypot(P.pos.x - ESCAPE.x, P.pos.z - ESCAPE.z) < 9) startOutro();
 }
 /* Escape: Viriato runs on into the trees, then stops, turns and looks back at the field. */
-const OUTRO_LEN = 10;
+const OUTRO_LEN = 14;
 let outroT = 0, outroCam = null, outroSaid = 0;
 function startOutro() {
   state = 'outro'; outroT = 0; outroSaid = 0; introView = view;
@@ -877,6 +872,22 @@ function startOutro() {
   const dx = ESCAPE.x - MEADOW.x, dz = ESCAPE.z - MEADOW.z, dl = Math.hypot(dx, dz), u = V(dx / dl, 0, dz / dl), n = V(-u.z, 0, u.x);
   outroCam = { u, n, at: V(P.pos.x, 0, P.pos.z).addScaledVector(u, 7).addScaledVector(n, 4.2) };
   outroCam.at.y = heightAt(outroCam.at.x, outroCam.at.z) + 1.5;
+  // the survivors: roped in a double file and led off toward Galba's camp, between the bodies
+  const wx = CAMP.x - MEADOW.x, wz = CAMP.z - MEADOW.z, wl = Math.hypot(wx, wz), w = V(wx / wl, 0, wz / wl), q = V(-w.z, 0, w.x);
+  const caught = civs.filter(c => !c.dead).slice(0, 10), S = V(MEADOW.x, 0, MEADOW.z).addScaledVector(w, -5);
+  caught.forEach((c, i) => {
+    const row = Math.floor(i / 2), p = S.clone().addScaledVector(w, -row * 1.5).addScaledVector(q, i % 2 ? .65 : -.65);
+    c.pos.set(p.x, heightAt(p.x, p.z), p.z); c.gone = false; c.m.root.visible = true; c.prisoner = true; c.crouch = false; c.delay = 0;
+    c.sp = 1.15; c.flee = p.clone().addScaledVector(w, 120); c.yaw = Math.atan2(w.x, w.z);
+  });
+  const guards = enemies.filter(e => !e.dead && e.group === 'cordon').sort((a, b) => a.pos.distanceTo(S) - b.pos.distanceTo(S)).slice(0, 7);
+  guards.forEach((e, k) => {
+    const c = caught[Math.min(caught.length - 1, Math.round(k * (caught.length - 1) / Math.max(1, guards.length - 1)))]; if (!c) return;
+    e.state = 'escort'; e.escortOf = c; e.victim = null; e.f.phase = 'idle';
+    e.off = k === 0 ? w.clone().multiplyScalar(1.8) : k === guards.length - 1 ? w.clone().multiplyScalar(-1.8) : q.clone().multiplyScalar(-1.9);   // ahead, behind, and along the far side
+    e.pos.set(c.pos.x + e.off.x, c.pos.y, c.pos.z + e.off.z); e.m.root.position.copy(e.pos);
+  });
+  outroCam.column = caught; outroCam.w = w; outroCam.q = q;
 }
 function updateOutro(dt) {
   outroT += dt; const T = outroT, { u, n } = outroCam;
@@ -889,18 +900,20 @@ function updateOutro(dt) {
   P.pos.y = heightAt(P.pos.x, P.pos.z); P.pitch = 0;
   view = 'third'; updateCamera(dt); view = introView; AV.root.visible = true; VM.visible = false;
   if (T < 2.6) { camera.position.copy(outroCam.at); camera.lookAt(P.pos.x, P.pos.y + 1.3, P.pos.z); }
-  else if (T > 6.4) {     // high over the edge of the wood, back across the field where the ring still stands
-    const k = smooth(6.4, OUTRO_LEN, T), y0 = heightAt(MEADOW.x, MEADOW.z);
-    camera.position.set(MEADOW.x, 0, MEADOW.z).addScaledVector(u, 34 - k * 4).addScaledVector(n, -6 + k * 3); camera.position.y = y0 + 13 - k * 2;
-    camera.lookAt(MEADOW.x, y0 + 1, MEADOW.z);
+  else if (T > 6.2) {     // the field: the captives are led away between the dead
+    const col = outroCam.column, k = smooth(6.2, OUTRO_LEN, T), C0 = V(0, 0, 0);
+    if (col.length) { for (const c of col) C0.add(c.pos); C0.multiplyScalar(1 / col.length); } else C0.set(MEADOW.x, heightAt(MEADOW.x, MEADOW.z), MEADOW.z);
+    camera.position.copy(C0).addScaledVector(outroCam.q, 7 - k * 1.5).addScaledVector(outroCam.w, 3.5 - k * 2); camera.position.y = C0.y + 4.2 - k * 1.2;
+    camera.lookAt(C0.x - outroCam.w.x * 1.5, C0.y + .9, C0.z - outroCam.w.z * 1.5);
   }
   else {                  // over his shoulder as he turns to look back
     const k = smooth(2.6, OUTRO_LEN, T), back = 3 - k * 1.2;
     camera.position.set(P.pos.x, 0, P.pos.z).addScaledVector(u, back).addScaledVector(n, .55); camera.position.y = P.pos.y + 2.3 - k * .3;
     camera.lookAt(MEADOW.x, heightAt(MEADOW.x, MEADOW.z) + .5, MEADOW.z);
   }
-  if (outroSaid < 1 && T > 3.6) { outroSaid = 1; showMsg('VIRIATO ESCAPOU', 'Galba matou ou vendeu como escravos milhares de lusitanos.', 3); }
-  if (outroSaid < 2 && T > 6.8) { outroSaid = 2; showMsg('', 'Dos que fugiram, um voltaria com um exército.', 3); }
+  if (outroSaid < 1 && T > 3.4) { outroSaid = 1; showMsg('VIRIATO ESCAPOU', '', 2.4); }
+  if (outroSaid < 2 && T > 6.8) { outroSaid = 2; showMsg('', 'Galba matou ou vendeu como escravos milhares de lusitanos.', 3.4); }
+  if (outroSaid < 3 && T > 10.6) { outroSaid = 3; showMsg('', 'Dos que fugiram, um voltaria com um exército.', 3.2); }
   if (T >= OUTRO_LEN) {
     $('hud').classList.remove('intro'); state = 'won'; endT = .05; nextChapter = 'emboscada';
     endArgs = ['PRÓLOGO · 150 A.C.', 'Viriato escapou', 'Galba voltou a Roma, foi julgado e absolvido. A guerra na Lusitânia continuou.'];
@@ -1585,7 +1598,11 @@ function updateEnemies(dt) {
     let speed = 0;
     if (state === 'dead') { e.state = e.state === 'march' ? 'march' : 'guard'; }
 
-    if (e.state === 'cordon') {   // the ring: hold the line; after the signal, cut down whoever runs within reach
+    if (e.state === 'escort') {   // leading the captives away
+      const t = e.escortOf, tx = t.pos.x + e.off.x, tz = t.pos.z + e.off.z, d = Math.hypot(tx - e.pos.x, tz - e.pos.z);
+      if (d > .2) speed = moveEnemy(e, tx, tz, Math.min(2.4, d * 1.5 + .9), dt);
+      faceTo(e, t.flee.x, t.flee.z, dt, 3);
+    } else if (e.state === 'cordon') {   // the ring: hold the line; after the signal, cut down whoever runs within reach
       if (betrayed && state === 'play' && (!e.victim || e.victim.dead || e.victim.gone)) e.victim = Math.hypot(e.pos.x - MEADOW.x, e.pos.z - MEADOW.z) < 48 ? nearestAdultCiv(e.pos, 28) : null;
       if (e.huntIn > 0) e.huntIn -= dt;
       const v = betrayed && state === 'play' && !(e.huntIn > 0) ? e.victim : null;
@@ -1597,7 +1614,7 @@ function updateEnemies(dt) {
         if (e.f.phase === 'strike' && dv < 2.4) killCiv(v);
       } else {
         const dh = Math.hypot(e.home.x - e.pos.x, e.home.z - e.pos.z);
-        if (dh > .25) speed = moveEnemy(e, e.home.x, e.home.z, Math.min(betrayed ? 4.4 : 1.6, dh * 2), dt);
+        if (dh > .25) speed = moveEnemy(e, e.home.x, e.home.z, Math.min(4.6, dh * 2), dt);
         const ft = e === envoy && !e.envoyDone && elder ? elder.pos : MEADOW; if (dh <= .25 || e !== envoy || !e.envoyDone) faceTo(e, ft.x, ft.z, dt, 3);
       }
       if (e.pilaT != null && state === 'play' && (e.pilaT -= dt) <= 0) {
@@ -1964,7 +1981,7 @@ function startGame(intro = false) {
   $('menu').classList.add('hidden'); $('end').classList.add('hidden'); $('pause').classList.add('hidden'); $('hud').classList.remove('hidden');
   updateHUDWeapon();
   if (intro) {
-    if (chapter === 'prologo') setRing(RING_R0);
+    if (chapter === 'prologo') { setRing(RING_FAR); for (const e of enemies) if (e.group === 'cordon' && e !== envoy) { e.pos.set(e.home.x, heightAt(e.home.x, e.home.z), e.home.z); e.m.root.position.copy(e.pos); } }
     $('hud').classList.remove('hidden'); $('hud').classList.add('intro'); introTitled = introHorn = false; $('msg').style.opacity = 0;
     if (!introVeil) { introVeil = document.createElement('div'); introVeil.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:5;background:radial-gradient(ellipse at 50% 45%,rgba(4,6,10,.15) 20%,rgba(2,3,6,.92) 100%);transition:none'; document.body.appendChild(introVeil); }
     introVeil.style.display = 'block'; introVeil.style.opacity = 1;
@@ -1980,6 +1997,7 @@ const INTRO_P = 15;
  */
 function updateIntroPrologue(dt) {
   const L = INTRO_P, T = introT, y0 = heightAt(MEADOW.x, MEADOW.z);
+  setRing(lerp(RING_FAR, RING_R0, smooth(0, 12.4, T)));   // the legions come down from the hills while the two men talk
   view = 'third'; updateCamera(dt); view = introView; AV.root.visible = true;
   introP1.copy(camera.position); introQ1.copy(camera.quaternion);
   const look = (p, q) => { introP0.copy(p); introQ0.setFromRotationMatrix(new THREE.Matrix4().lookAt(p, q, V(0, 1, 0))); };

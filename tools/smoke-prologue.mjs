@@ -10,7 +10,7 @@ export default async ({ G, doc, st, check, forcePlay, setGod }) => {
   check('prologue: Viriato carries no weapon', doc.getElementById('wname').textContent === 'Desarmado');
   G.P.pos.set(G.ESCAPE.x, G.P.pos.y, G.ESCAPE.z); st(5);
   check('prologue: escaping plays the closing scene', G.state === 'outro');
-  st(800);
+  st(1100);
   check('prologue: reaching the forest wins it', G.state === 'won' && !doc.getElementById('end').classList.contains('hidden'));
   check('prologue: offers the next chapter', !doc.getElementById('next').classList.contains('hidden'));
   setGod(false); G.start(1);
