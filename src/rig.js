@@ -99,10 +99,12 @@ export function makeRig(THREE, cloneSkinned, assets, { outfit = 'roman_red', hai
     }
   });
   root.updateMatrixWorld(true);
+  if (female) hair = hair.filter(h => h !== 'hair_buzzed' || hair.length === 1);   // the crop layer pokes through the larger head
   for (const h of hair) {           // hair is modelled in place on the bind-pose head: attach keeps that
     const src = assets.hair?.[h]; if (!src) continue;
     const g = src.clone(true);
-    if (female) { g.scale.setScalar(1.1); g.position.set(0, 1.65 * (1 - 1.1) + .035, -.012); }   // the mannequin's head is a little larger: grow the hair round the head's centre
+    if (female) { g.scale.setScalar(1.1); g.position.set(0, 1.65 * (1 - 1.1) + .035, -.012); }
+    if (h === 'hair_long') { g.position.y += .028; g.position.z -= .018; }   // lift the fringe off the brows (it read as huge eyebrows)   // the mannequin's head is a little larger: grow the hair round the head's centre
     g.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.setHex(hairColor); o.castShadow = true; mats.push(o.material); } });
     bones.Head.attach(g);
   }
@@ -209,7 +211,8 @@ export function driveRig(THREE, rig, s, dt) {
   if (!upper) upper = { [L0.clip]: { w: 1, rate: L0.rate } };
   Object.assign(up, upper);
   if (rig.shielded) {
-    sh.Idle_Shield_Loop = { w: 1, time: 1 };
+    if (rig.bareArm) sh[L0.clip] = { w: 1, rate: L0.rate };   // shield put away: the left arm moves with the body
+    else sh.Idle_Shield_Loop = { w: 1, time: 1 };
     if (rig.oneShot && /Shield_Break|Knockback/.test(rig.oneShot.clip)) sh[rig.oneShot.clip] = { w: 2, time: rig.oneShot.t };
   }
   blendLayer(rig, 'lo', lo, dt); blendLayer(rig, 'up', up, dt); if (rig.shielded) blendLayer(rig, 'sh', sh, dt);

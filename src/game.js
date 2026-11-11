@@ -817,7 +817,7 @@ function resetPrologue() {
 }
 function armEnvoy(on) {
   if (!envoy) return;
-  if (envoy.m.weapon) envoy.m.weapon.visible = on;
+  if (envoy.m.weapon) envoy.m.weapon.visible = on; if (envoy.m.rig) envoy.m.rig.bareArm = !on;
   const sh = envoy.m.root.userData.scutum || envoy.m.root.userData.parma; if (sh) sh.visible = on;
 }
 function spawnCiv(look, x, z, child) {
