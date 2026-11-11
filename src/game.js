@@ -535,8 +535,28 @@ function rigSoldier(kind, look = null) {
     g.computeVertexNormals();
     const sk = new THREE.Group(); sk.add(new THREE.Mesh(g, m));
     if (!mat) { const hm = new THREE.MeshStandardMaterial({ color: new THREE.Color(color).multiplyScalar(.6), roughness: 1 }); extraMats.push(hm); sk.add(new THREE.Mesh(new THREE.TorusGeometry(rBot * (1 + amp * .6), .012, 5, 36).rotateX(Math.PI / 2).translate(0, y1, 0), hm)); }
-    sk.scale.set(1, 1, zs); sk.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    sk.scale.set(1, 1, zs); sk.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
     rig.attach('pelvis', sk);
+    // the hem makes room for the legs: every ring vertex is pushed out until it clears both thighs at its height
+    const base = Float32Array.from(pos.array), ring = pos.count, hipB = [rig.bones.thigh_l, rig.bones.thigh_r], kneeB = [rig.bones.calf_l, rig.bones.calf_r];
+    if (hipB.every(Boolean) && kneeB.every(Boolean)) {
+      const A = new THREE.Vector3(), B = new THREE.Vector3(), legs = [new THREE.Vector3(), new THREE.Vector3()], H = y0 - y1;
+      (rig.dyn = rig.dyn || []).push(() => {
+        sk.updateWorldMatrix(true, false);
+        for (let l = 0; l < 2; l++) {
+          hipB[l].getWorldPosition(A); kneeB[l].getWorldPosition(B); sk.worldToLocal(A); sk.worldToLocal(B);
+          const sY = clamp((A.y - y1) / Math.max(.05, A.y - B.y), 0, 1.3); legs[l].copy(A).lerp(B, sY);
+        }
+        for (let i = 0; i < ring; i++) {
+          const bx = base[i * 3], by = base[i * 3 + 1], bz = base[i * 3 + 2], r0 = Math.hypot(bx, bz) || 1e-4, t = clamp((y0 - by) / H, 0, 1), w = t * t;
+          const ux = bx / r0, uz = bz / r0; let need = r0;
+          for (let l = 0; l < 2; l++) need = Math.max(need, (legs[l].x * ux + legs[l].z * uz) + .11);
+          const f = 1 + (need / r0 - 1) * w;
+          pos.setXYZ(i, bx * f, by, bz * f);
+        }
+        pos.needsUpdate = true;
+      });
+    }
   };
   /** Short loose sleeve over the upper arm so the muscle is not painted straight onto the body. */
   const sleeve = (side, color, r0 = .062, r1 = .095, from = .06, to = .6) => {
@@ -1499,7 +1519,7 @@ function updatePlayer(dt) {
     resolve(P.pos, .38);
     if (P.ground) { P.bob += dt * speed * 1.6; P.stepT -= dt * speed; if (P.stepT <= 0) { P.stepT = 2.4; SFX.step(); } }
   }
-  if (sprint) P.st = Math.max(0, P.st - dt * 36);
+  if (sprint) P.st = Math.max(0, P.st - dt * 16);
   if (keys.Space && P.ground && P.st > 10) { P.vy = 6.4; P.ground = false; P.st -= 8; }
   P.vy -= 19 * dt; P.pos.y += P.vy * dt;
   const gh = heightAt(P.pos.x, P.pos.z);
@@ -1714,7 +1734,9 @@ function updateHUD(dt) {
    Flow: menu, pause, end
    ========================================================= */
 let introT = 0, introView = 'third';
-const INTRO_LEN = 6.5;
+const INTRO_LEN = 9.5;
+let introVeil = null, introTitled = false, introHorn = false;
+const FOG_BASE = scene.fog.density;
 function startGame(intro = false) {
   initAudio();
   resetWorld();
@@ -1722,7 +1744,11 @@ function startGame(intro = false) {
   for (const k in keys) keys[k] = false; mouseL = mouseR = false;
   $('menu').classList.add('hidden'); $('end').classList.add('hidden'); $('pause').classList.add('hidden'); $('hud').classList.remove('hidden');
   updateHUDWeapon();
-  if (intro) { $('hud').classList.add('hidden'); showMsg('VIRIATO', 'Montes Hermínios, Lusitânia · 147 a.C.', 4.2); }
+  if (intro) {
+    $('hud').classList.add('hidden'); introTitled = introHorn = false; $('msg').style.opacity = 0;
+    if (!introVeil) { introVeil = document.createElement('div'); introVeil.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:5;background:radial-gradient(ellipse at 50% 45%,rgba(4,6,10,.15) 20%,rgba(2,3,6,.92) 100%);transition:none'; document.body.appendChild(introVeil); }
+    introVeil.style.display = 'block'; introVeil.style.opacity = 1;
+  }
   else showMsg('I · A Emboscada', 'Agacha-te (C) e aproxima-te sem seres visto. Um golpe pelas costas é mortal.', 5);
   lock();
 }
@@ -1735,15 +1761,23 @@ function updateIntro(dt) {
   introP1.copy(camera.position); introQ1.copy(camera.quaternion);
   const t = clamp(introT / INTRO_LEN, 0, 1), e = t * t * (3 - 2 * t), k = 1 - e;
   const head = V(P.pos.x, P.pos.y + 1.55, P.pos.z);
-  // orbit: start wide, high and round the front of him, sweep past his shoulder to the over-the-shoulder spot
-  const off = introP1.clone().sub(head); off.y = 0; off.multiplyScalar(1 + k * 1.5).applyAxisAngle(V(0, 1, 0), k * 2.9);
-  introP0.copy(head).add(off); introP0.y = introP1.y + k * 2.4;
-  const gh = heightAt(introP0.x, introP0.z) + 1; if (introP0.y < gh) introP0.y = gh;
+  // creeping orbit: starts low in the mist in front of him, looking up at the silhouette, then rises and slips round to his shoulder
+  const off = introP1.clone().sub(head); off.y = 0; off.multiplyScalar(1 + k * 1.9).applyAxisAngle(V(0, 1, 0), k * 2.9);
+  introP0.copy(head).add(off);
+  const lowY = heightAt(introP0.x, introP0.z) + .55; introP0.y = lowY + (introP1.y - lowY) * Math.pow(e, 1.4);
+  introP0.x += Math.sin(introT * 1.3) * .05 * k; introP0.y += Math.sin(introT * 1.9) * .03 * k;   // a breath of hand-held sway
+  const gh = heightAt(introP0.x, introP0.z) + .45; if (introP0.y < gh) introP0.y = gh;
   introQ0.setFromRotationMatrix(new THREE.Matrix4().lookAt(introP0, head, V(0, 1, 0)));
-  camera.position.copy(introP0); camera.quaternion.slerpQuaternions(introQ0, introQ1, e * e);
+  camera.position.copy(introP0); camera.quaternion.slerpQuaternions(introQ0, introQ1, Math.pow(e, 3));
+  // mist and darkness lift slowly; a carnyx sounds far off, then the title
+  scene.fog.density = FOG_BASE * (1 + 2.6 * k * k);
+  if (introVeil) introVeil.style.opacity = String(clamp(1 - (introT - .5) / 5.5, 0, 1));
+  if (!introHorn && introT > 1.3) { introHorn = true; SFX.horn(); }
+  if (!introTitled && introT > 4.2) { introTitled = true; showMsg('VIRIATO', 'Montes Hermínios, Lusitânia · 147 a.C.', 4.2); }
   if (introT >= INTRO_LEN) endIntro();
 }
 function endIntro() {
+  scene.fog.density = FOG_BASE; if (introVeil) introVeil.style.display = 'none';
   state = 'play'; view = introView; $('hud').classList.remove('hidden'); updateHUDWeapon();
   showMsg('I · A Emboscada', 'Agacha-te (C) e aproxima-te sem seres visto. Um golpe pelas costas é mortal.', 5);
 }

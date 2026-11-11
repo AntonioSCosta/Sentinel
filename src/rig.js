@@ -199,6 +199,7 @@ export function driveRig(THREE, rig, s, dt) {
       SP.forEach(b => twistWorldY(THREE, b, -rig.side / SP.length));
     }
   } else rig.body.rotation.y = 0;
+  if (rig.dyn) for (const f of rig.dyn) f();   // cloth that reacts to the pose (skirts)
 }
 
 let _tmp = null;

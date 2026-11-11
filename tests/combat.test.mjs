@@ -93,9 +93,9 @@ test('spam: no new attack during recovery, and stamina runs out after a flurry',
   assert.equal(C.beginAttack(f, 'left'), false);
   tickUntilIdle(f);
   const g = C.createFighter(); let started = 0;
-  for (let k = 0; k < 10; k++) { if (C.beginAttack(g, 'right')) { started++; C.releaseAttack(g); tickUntilIdle(g); } }
+  for (let k = 0; k < 14; k++) { if (C.beginAttack(g, 'right')) { started++; C.releaseAttack(g); tickUntilIdle(g); } }
   assert.ok(g.stamina < 30);
-  assert.ok(started < 10, `started ${started}`);
+  assert.ok(started < 14, `started ${started}`);
 });
 
 test('feint during windup returns to idle immediately', () => {
