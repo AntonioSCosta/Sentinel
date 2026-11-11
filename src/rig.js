@@ -68,7 +68,8 @@ export function makeRig(THREE, cloneSkinned, assets, { outfit = 'roman_red', hai
       o.castShadow = true; o.frustumCulled = false;
       o.material = o.material.clone();
       if (o.material.name === 'MI_Superhero_Male' && assets.textures?.[outfit]) { o.material.map = assets.textures[outfit]; o.material.color.setScalar(tint); }
-      o.material.metalness = 0; if (/Hair/.test(o.material.name)) o.material.color.setHex(hairColor); mats.push(o.material);
+      o.material.metalness = 0; if (!/Hair/.test(o.material.name)) { o.material.roughness = 1; o.material.roughnessMap = null; }   // matte wool and skin, not a glossy body-suit
+      if (/Hair/.test(o.material.name)) o.material.color.setHex(hairColor); mats.push(o.material);
     }
   });
   root.updateMatrixWorld(true);

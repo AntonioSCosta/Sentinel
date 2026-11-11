@@ -484,7 +484,8 @@ function rigSoldier(kind, look = null) {
   const shield = ud.scutum || ud.parma;
   const white = p.mats[0].color.equals(MATS.wool_white.color);
   const outfit = look ? look.outfit : lus ? (rand() < .5 ? 'lusitano' : 'lusitano_b') : kind === 'velite' ? 'velite' : ud.armour === 'hamata' ? 'roman_mail' : white ? 'roman_white' : 'roman_red';
-  const hair = look ? look.hair : lus ? ['hair_long', 'hair_beard'] : kind === 'velite' ? ['hair_long', 'hair_beard'] : [];
+  let hair = look ? look.hair : lus ? ['hair_long', 'hair_beard'] : kind === 'velite' ? ['hair_long', 'hair_beard'] : [];
+  if (hair.includes('hair_long') && !hair.includes('hair_buzzed')) hair = ['hair_buzzed', ...hair];   // the long cut leaves the crown bare: a close-cropped layer underneath covers it
   const rig = makeRig(THREE, chars.clone, chars, { outfit, hair, shielded: !!shield, tint: rr(.86, 1.05), hairColor: look ? look.hairColor : [0x2a1d14, 0x3b2a1e, 0x1c1410, 0x4a3524][Math.floor(rand() * 4)] });
   // helmet / cap: everything on the old head except the skin
   const hk = new THREE.Group();
@@ -521,17 +522,43 @@ function rigSoldier(kind, look = null) {
   }
   bg.traverse(o => { if (o.isMesh) { o.castShadow = true; } });
   rig.attach('spine_01', bg);
-  let skirtMat = null;
-  if (lus) {   // Lusitanian kilt-like skirt (saia) of wool, hanging from the hips to mid-thigh; follows the pelvis
-    skirtMat = new THREE.MeshStandardMaterial({ color: { lusitano: 0x46341f, lusitano_b: 0x5c4630, lusitano_c: 0x96682c, lusitano_d: 0x605440 }[outfit] || 0x46341f, roughness: .95, side: THREE.DoubleSide });
-    const sk = new THREE.Group();
-    sk.add(new THREE.Mesh(new THREE.CylinderGeometry(.19, .27, .4, 28, 1, true).translate(0, .84, 0), skirtMat));
-    const hem = new THREE.Mesh(new THREE.TorusGeometry(.27, .012, 5, 28).rotateX(Math.PI / 2).translate(0, .64, 0), skirtMat.clone()); hem.material.color.multiplyScalar(.6); sk.add(hem);
-    sk.scale.set(1, 1, .9); sk.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  const extraMats = [];
+  /** Hanging cloth: an open flared tube from the waist down, with soft folds and a darker hem. */
+  const skirt = (color, { rTop = .19, rBot = .27, y0 = 1.04, y1 = .64, folds = 14, amp = .05, mat = null, zs = .9 } = {}) => {
+    const m = mat || new THREE.MeshStandardMaterial({ color, roughness: 1, side: THREE.DoubleSide }); extraMats.push(m);
+    const g = new THREE.CylinderGeometry(rTop, rBot, y0 - y1, 36, 4, true), pos = g.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), z = pos.getZ(i), t = 1 - (pos.getY(i) + (y0 - y1) / 2) / (y0 - y1), a = Math.atan2(z, x);
+      const k = 1 + amp * t * Math.sin(a * folds + t * 2) + amp * .4 * t * Math.sin(a * folds * 2.3);
+      pos.setX(i, x * k); pos.setZ(i, z * k); pos.setY(i, pos.getY(i) + (y0 + y1) / 2);
+    }
+    g.computeVertexNormals();
+    const sk = new THREE.Group(); sk.add(new THREE.Mesh(g, m));
+    if (!mat) { const hm = new THREE.MeshStandardMaterial({ color: new THREE.Color(color).multiplyScalar(.6), roughness: 1 }); extraMats.push(hm); sk.add(new THREE.Mesh(new THREE.TorusGeometry(rBot * (1 + amp * .6), .012, 5, 36).rotateX(Math.PI / 2).translate(0, y1, 0), hm)); }
+    sk.scale.set(1, 1, zs); sk.traverse(o => { if (o.isMesh) o.castShadow = true; });
     rig.attach('pelvis', sk);
-  }
+  };
+  /** Short loose sleeve over the upper arm so the muscle is not painted straight onto the body. */
+  const sleeve = (side, color, r0 = .062, r1 = .095, from = .06, to = .6) => {
+    const a = rig.bones['upperarm_' + side], b = rig.bones['lowerarm_' + side]; if (!a || !b) return;
+    rig.root.updateMatrixWorld(true);
+    const pa = a.getWorldPosition(new THREE.Vector3()), pb = b.getWorldPosition(new THREE.Vector3()), d = pb.clone().sub(pa), len = d.length();
+    const m = new THREE.MeshStandardMaterial({ color, roughness: 1, side: THREE.DoubleSide }); extraMats.push(m);
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r0, r1, len * (to - from), 14, 1, true), m); mesh.castShadow = true;
+    mesh.position.copy(rig.root.worldToLocal(pa.clone().addScaledVector(d, (from + to) / 2)));
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.clone().normalize());
+    mesh.quaternion.premultiply(rig.root.getWorldQuaternion(new THREE.Quaternion()).invert());
+    rig.attach('upperarm_' + side, mesh);
+  };
+  if (lus) skirt({ lusitano: 0x46341f, lusitano_b: 0x5c4630, lusitano_c: 0x96682c, lusitano_d: 0x605440 }[outfit] || 0x46341f);   // wool saia to mid-thigh
+  else if (kind !== 'velite') {   // Roman tunic to the knee, a short mail skirt over it for the hamata
+    const col = outfit === 'roman_white' ? 0xd8d0bc : 0x9a2a20;
+    skirt(col, { rTop: .2, rBot: .3, y0: 1.04, y1: .6, amp: .06 });
+    if (outfit === 'roman_mail') { const mm = MATS.mail.clone(); if (mm.map) { mm.map = mm.map.clone(); mm.map.repeat.set(2.6, 1); mm.map.wrapS = mm.map.wrapT = THREE.RepeatWrapping; mm.map.needsUpdate = true; } mm.side = THREE.DoubleSide; mm.color.setHex(0xb4b4b4); mm.roughness = .75; skirt(0xffffff, { rTop: .205, rBot: .29, y0: 1.04, y1: .74, amp: .03, mat: mm, folds: 8 }); }
+    for (const sd of ['l', 'r']) sleeve(sd, outfit === 'roman_white' ? 0xd8d0bc : 0x9a2a20);
+  } else { skirt(0x5c4630, { rTop: .19, rBot: .27, y1: .68 }); }
   Object.assign(rig.root.userData, ud);
-  const mats = [...new Set([...rig.mats, ...p.mats, bMat, gMat, sMat, ...(skirtMat ? [skirtMat] : [])])];
+  const mats = [...new Set([...rig.mats, ...p.mats, bMat, gMat, sMat, ...extraMats])];
   return { root: rig.root, rig, mats, weapon: wpn };
 }
 const soldier = (kind, look) => { const m = chars ? rigSoldier(kind, look) : makeSoldier(kind); if (look) m.root.scale.setScalar(look.scale); return m; };
