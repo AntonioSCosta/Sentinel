@@ -14,13 +14,13 @@ export const SHIELD_ARC = 75;         // degrees each side covered by the caetra
 export const PASSIVE_ARC = 45;        // degrees each side an idle shield-bearer covers without raising it
 export const PASSIVE_COST = 1.3;      // passive guard is this much dearer in stamina than a raised shield
 export const SWORD_ARC = 60;          // degrees each side covered by a sword block
-export const ATTACK_COST = 9;        // stamina per swing
+export const ATTACK_COST = 5.5;      // stamina per swing
 export const MIN_ATTACK_STAMINA = 8;
-export const SHIELD_COST = 11;        // stamina per blocked blow at full power
-export const SWORD_BLOCK_COST = 14;
+export const SHIELD_COST = 7;         // stamina per blocked blow at full power
+export const SWORD_BLOCK_COST = 10;
 export const JAVELIN_SHIELD_PENALTY = .15; // extra shield cost per stuck javelin
 export const MAX_STUCK = 3;
-export const STAMINA_REGEN = 34;      // per s while idle or blocking-free
+export const STAMINA_REGEN = 40;      // per s while idle or blocking-free
 export const OVERHOLD = 1.5;          // holding a charge longer than this drains stamina
 
 export function dirFromMouse(dx, dy) {

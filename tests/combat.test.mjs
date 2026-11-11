@@ -93,9 +93,9 @@ test('spam: no new attack during recovery, and stamina runs out after a flurry',
   assert.equal(C.beginAttack(f, 'left'), false);
   tickUntilIdle(f);
   const g = C.createFighter(); let started = 0;
-  for (let k = 0; k < 14; k++) { if (C.beginAttack(g, 'right')) { started++; C.releaseAttack(g); tickUntilIdle(g); } }
+  for (let k = 0; k < 30; k++) { if (C.beginAttack(g, 'right')) { started++; C.releaseAttack(g); tickUntilIdle(g); } if (k === 4) assert.ok(g.stamina > 60, `after five swings ${g.stamina}`); }
   assert.ok(g.stamina < 30);
-  assert.ok(started < 14, `started ${started}`);
+  assert.ok(started >= 14 && started < 30, `started ${started}`);   // a long exchange, but not endless
 });
 
 test('feint during windup returns to idle immediately', () => {
@@ -165,4 +165,9 @@ test('the shield can be raised out of an attack recovery (no helpless gap after 
   assert.equal(f.phase, 'recovery');
   assert.equal(C.beginBlock(f, 'shield'), true);
   assert.equal(f.phase, 'idle'); assert.equal(f.blocking, 'shield');
+});
+
+test('blocking a blow costs little stamina: a dozen blocks before the arm gives out', () => {
+  const d = C.createFighter(); C.beginBlock(d, 'shield');
+  for (let i = 0; i < 12; i++) assert.notEqual(C.resolveHit(d, { dir: 'left', power: 1, fromAngle: 0, baseDamage: 20 }).result, 'hit', `block ${i}`);
 });

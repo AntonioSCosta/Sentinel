@@ -570,7 +570,7 @@ function rigSoldier(kind, look = null) {
    * its own thigh (and, on long dresses, a little of the shin), blended across the front and back. Simple, and it never pinches.
    */
   let fsm = null; rig.body.traverse(o => { if (o.isSkinnedMesh && !fsm && o.skeleton.bones.some(b => b.name === 'pelvis')) fsm = o; });
-  const skirt = (color, { rTop = .19, rBot = .27, y0 = 1.04, y1 = .64, folds = 14, amp = .05, mat = null, zs = .9 } = {}) => {
+  const skirt = (color, { rTop = .19, rBot = .28, y0 = 1.04, y1 = .56, folds = 14, amp = .05, mat = null, zs = .9 } = {}) => {
     if (!fsm) return;
     const m = mat || new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 1, side: THREE.DoubleSide }); extraMats.push(m);
     const H = y0 - y1, g = new THREE.CylinderGeometry(rTop, rBot, H, 36, 10, true), pos = g.attributes.position;
@@ -582,7 +582,7 @@ function rigSoldier(kind, look = null) {
       const k = 1 + amp * t * Math.sin(a * folds + t * 2) + amp * .4 * t * Math.sin(a * folds * 2.3);
       pos.setXYZ(i, x * k, y, z * k * zs);
       const side = clamp(x / .12, -1, 1), wl = (1 + side) / 2, wr = 1 - wl;
-      const thigh = clamp((HIP + .06 - y) / (HIP + .06 - KNEE), 0, 1) * .66, shin = clamp((KNEE - y) / .45, 0, 1) * .3;
+      const thigh = clamp((HIP + .1 - y) / (HIP + .1 - KNEE), 0, 1) * .9, shin = clamp((KNEE - y) / .45, 0, 1) * .3;
       const pel = Math.max(0, 1 - thigh - shin);
       si.push(PEL, wl >= wr ? TL : TR, wl >= wr ? TR : TL, wl >= wr ? CL : CR);
       sw.push(pel, thigh * Math.max(wl, wr), thigh * Math.min(wl, wr), shin);
@@ -609,7 +609,7 @@ function rigSoldier(kind, look = null) {
   if (lus) skirt((look && look.palette && look.palette.dress) || { lusitano: 0x46341f, lusitano_b: 0x5c4630, lusitano_c: 0x96682c, lusitano_d: 0x605440 }[outfit] || 0x46341f, look && look.dress ? { rTop: .19, rBot: .33, y1: .2, amp: .07, folds: 16 } : {});   // wool saia to mid-thigh
   else if (kind !== 'velite') {   // Roman tunic to the knee, a short mail skirt over it for the hamata
     const col = outfit === 'roman_white' ? 0xd8d0bc : 0x9a2a20;
-    skirt(col, { rTop: .2, rBot: .3, y0: 1.04, y1: .6, amp: .06 });
+    skirt(col, { rTop: .2, rBot: .3, y0: 1.04, y1: .52, amp: .06 });
     if (outfit === 'roman_mail') { const mm = MATS.mail.clone(); if (mm.map) { mm.map = mm.map.clone(); mm.map.repeat.set(2.6, 1); mm.map.wrapS = mm.map.wrapT = THREE.RepeatWrapping; mm.map.needsUpdate = true; } mm.side = THREE.DoubleSide; mm.color.setHex(0xb4b4b4); mm.roughness = .75; skirt(0xffffff, { rTop: .205, rBot: .29, y0: 1.04, y1: .74, amp: .03, mat: mm, folds: 8 }); }
     for (const sd of ['l', 'r']) sleeve(sd, outfit === 'roman_white' ? 0xd8d0bc : 0x9a2a20);
   } else { skirt(0x5c4630, { rTop: .19, rBot: .27, y1: .68 }); }
@@ -878,7 +878,8 @@ function spawnCiv(look, x, z, child) {
   const m = soldier('lusitano', look); scene.add(m.root);
   const c = { kind: 'lusitano', civ: true, m, pos: new THREE.Vector3(x, heightAt(x, z), z), yaw: Math.atan2(x - MEADOW.x, z - MEADOW.z), f: C.createFighter(), state: 'idle',
     vel: { x: 0, z: 0 }, mv: { x: 0, z: 0 }, stride: 0, ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, hits: 0, crouch: false,
-    sp: child ? 3.4 : rr(3.6, 4.3), child: !!child, female: !!look.female, home: V(x, 0, z), flee: null, gone: false, delay: rr(0, .7) };
+    sp: child ? 3.4 : rr(3.6, 4.3), child: !!child, female: !!look.female, hp: child ? 1 : look.female ? 2 : 3,
+    resist: !child && rand() < (look.female ? .12 : .5), punchCd: 0, home: V(x, 0, z), flee: null, gone: false, delay: rr(0, .7) };
   m.root.position.copy(c.pos); m.root.rotation.y = c.yaw; civs.push(c); return c;
 }
 /** The betrayal: Galba gives the signal, the ring tightens and the people break and run in every direction. */
@@ -888,7 +889,7 @@ function betray() {
   const near = enemies.filter(e => e.group === 'cordon' && !e.dead).sort((a, b) => a.pos.distanceTo(P.pos) - b.pos.distanceTo(P.pos));
   near.slice(0, 3).forEach((e, i) => { e.alertIn = 3 + i * 1.2; });
   // the signal: a volley of pila into the crowd at once, a few of them at Viriato
-  near.forEach((e, i) => { e.huntIn = rr(0, 1.2); e.style = rand() < .35 ? 'bash' : 'sword'; if (i < 3) { e.pilaAt = 'P'; e.pilaT = rr(1.6, 3.4); } else if (rand() < .33) { e.pilaAt = nearestAdultCiv(e.pos, 30); e.pilaT = rr(0, 1.5); } });   // the nearest legionaries turn on Viriato a few seconds later
+  near.forEach((e, i) => { e.huntIn = rr(.5, 8); e.style = rand() < .35 ? 'bash' : 'sword'; if (i < 3) { e.pilaAt = 'P'; e.pilaT = rr(1.6, 3.4); } else if (rand() < .2) { e.pilaAt = nearestAdultCiv(e.pos, 30); e.pilaT = rr(0, 2.5); } });   // the nearest legionaries turn on Viriato a few seconds later
   showMsg('A TRAIÇÃO', 'Há uma brecha no cerco. Corre por ela até ao fumo na orla da floresta.', 6);
 }
 function nearestAdultCiv(pos, r) {
@@ -896,21 +897,55 @@ function nearestAdultCiv(pos, r) {
   for (const c of civs) { if (c.dead || c.gone || c.child || c.spared) continue; const d = Math.hypot(c.pos.x - pos.x, c.pos.z - pos.z); if (d < bd) { bd = d; best = c; } }
   return best;
 }
+/** A blow lands on one of the people: they stagger and bleed, and fall only when it is too much. */
+function hitCiv(c, push) {
+  if (c.dead) return;
+  if (--c.hp <= 0) return killCiv(c, push);
+  c.knock = push.clone().multiplyScalar(.7); c.stun = .5; c.hits = (c.hits || 0) + 1; c.flash = .08; SFX.flesh(spatial(c.pos) * .6);
+}
 function killCiv(c, push) { if (c.dead) return; c.dead = true; c.deadT = 0; c.mv.x = c.mv.z = 0; c.knock = push || null; SFX.die(spatial(c.pos) * .55); }
 function updateCivs(dt) {
-  if (betrayed) { betrayT += dt; setRing(state === 'outro' ? 17 : lerp(RING_R1, RING_R2, smooth(0, 10, betrayT))); }   // after the killing the line opens out round the field
+  if (betrayed) { betrayT += dt; setRing(state === 'outro' ? 17 : lerp(RING_R1, RING_R2, smooth(0, 20, betrayT))); }   // after the killing the line opens out round the field
   for (const c of civs) {
     if (c.gone) continue;
     if (c.knock) { c.pos.x += c.knock.x * dt; c.pos.z += c.knock.z * dt; c.knock.multiplyScalar(Math.exp(-6 * dt)); if (c.knock.length() < .05) c.knock = null; }
     if (c.dead) { c.deadT += dt; c.pos.y = heightAt(c.pos.x, c.pos.z); const b = setPose(c, dt); c.m.root.position.set(c.pos.x, c.pos.y + b, c.pos.z); continue; }
     let tx = c.home.x, tz = c.home.z, sp = 0;
     if (c.stun > 0) { c.stun -= dt; c.crouch = true; c.mv.x = c.mv.z = 0; const b = setPose(c, dt); c.m.root.position.set(c.pos.x, heightAt(c.pos.x, c.pos.z) + b, c.pos.z); continue; }
+    if (c.resist && betrayed && !c.prisoner && !c.spared) {   // he will not die running: fists against the nearest soldier
+      let foe = null, fd = 12;
+      for (const e of enemies) if (!e.dead && !e.hidden) { const d = Math.hypot(e.pos.x - c.pos.x, e.pos.z - c.pos.z); if (d < fd) { fd = d; foe = e; } }
+      if (foe) {
+        const dx = foe.pos.x - c.pos.x, dz = foe.pos.z - c.pos.z;
+        if (fd > 1.3) { const v = Math.min(4, fd / Math.max(dt, 1e-3)); c.mv.x = dx / fd * v; c.mv.z = dz / fd * v; c.pos.x += c.mv.x * dt; c.pos.z += c.mv.z * dt; } else { c.mv.x = c.mv.z = 0; }
+        c.yaw += wrapA(Math.atan2(dx, dz) - c.yaw) * Math.min(1, dt * 8); c.crouch = false;
+        c.punchCd -= dt;
+        if (fd < 1.6 && c.f.phase === 'idle' && c.punchCd <= 0) { C.beginAttack(c.f, C.randomDir(c.f.dir)); C.releaseAttack(c.f); c.punchCd = rr(.7, 1.5); }
+        for (const ev of C.tickFighter(c.f, dt)) if (ev.type === 'swing' && !c.punched && fd < 1.9) {
+          c.punched = true; C.stagger(foe.f, .55); foe.flash = .06; knock(foe, V(dx / fd, 0, dz / fd), .5); SFX.thud(spatial(foe.pos) * .7); foe.victim = c;   // the blow lands: the soldier reels and turns on him
+        }
+        if (c.f.phase !== 'strike') c.punched = false;
+        c.pos.y = heightAt(c.pos.x, c.pos.z); const b = setPose(c, dt); c.m.root.position.set(c.pos.x, c.pos.y + b, c.pos.z); c.m.root.rotation.y = c.yaw;
+        continue;
+      }
+    }
     if (c.spared && betrayed && !c.prisoner && (c.surrenderT -= dt) <= 0) {   // he gives up: kneels where he is, hands empty
       c.crouch = true; c.mv.x = c.mv.z = 0; c.yaw += wrapA(Math.atan2(MEADOW.x - c.pos.x, MEADOW.z - c.pos.z) - c.yaw) * Math.min(1, dt * 3);
       c.pos.y = heightAt(c.pos.x, c.pos.z); const b = setPose(c, dt); c.m.root.position.set(c.pos.x, c.pos.y + b, c.pos.z); c.m.root.rotation.y = c.yaw; continue;
     }
     if (betrayed && (c.delay -= dt) <= 0) {
       if (!c.flee) { const a = Math.atan2(c.pos.z - MEADOW.z, c.pos.x - MEADOW.x) + rr(-.6, .6); c.flee = V(MEADOW.x + Math.cos(a) * 90, 0, MEADOW.z + Math.sin(a) * 90); c.crouch = false; }
+      if (!c.prisoner && (c.blockCd = (c.blockCd || 0) - dt) <= 0) {   // the shields are in the way: turn back and run another way
+        const fx = c.flee.x - c.pos.x, fz = c.flee.z - c.pos.z, fl = Math.hypot(fx, fz) || 1;
+        for (const e of enemies) {
+          if (e.dead || e.hidden || e.state === 'escort') continue;
+          const ex = e.pos.x - c.pos.x, ez = e.pos.z - c.pos.z, ed = Math.hypot(ex, ez);
+          if (ed < 2.6 && (ex * fx + ez * fz) / (ed * fl) > .35) {
+            const a = Math.atan2(c.pos.z - MEADOW.z, c.pos.x - MEADOW.x) + Math.PI + rr(-1.1, 1.1);
+            c.flee = V(MEADOW.x + Math.cos(a) * 90, 0, MEADOW.z + Math.sin(a) * 90); c.blockCd = .8; break;
+          }
+        }
+      }
       tx = c.flee.x; tz = c.flee.z; sp = c.sp;
     } else if (Math.hypot(c.pos.x - c.home.x, c.pos.z - c.home.z) > .6) sp = .9;
     const dx = tx - c.pos.x, dz = tz - c.pos.z, d = Math.hypot(dx, dz);
@@ -1673,12 +1708,14 @@ function updateEnemies(dt) {
         const dv = Math.hypot(v.pos.x - e.pos.x, v.pos.z - e.pos.z);
         if (dv > 1.3) speed = moveEnemy(e, v.pos.x, v.pos.z, 4.6, dt);
         faceTo(e, v.pos.x, v.pos.z, dt, 8);
-        if (dv < 1.9 && e.f.phase === 'idle' && !(e.bashT > 0)) {
+        e.civCd = Math.max(0, (e.civCd || 0) - dt);
+        if (dv < 1.9 && e.f.phase === 'idle' && !(e.bashT > 0) && e.civCd <= 0) {
           if (e.style === 'bash' && !v.knocked) { e.bashT = .5; if (e.m.rig) e.m.rig.oneShot = { clip: 'Shield_OneShot', t: 0 }; }   // shield in the face first
           else { C.beginAttack(e.f, C.randomDir(e.f.dir)); C.releaseAttack(e.f); }   // overhead, either side or a thrust
         }
         if (e.bashT > 0 && (e.bashT -= dt) < .25 && !v.knocked) { v.knocked = true; v.stun = 1.1; v.knock = V(v.pos.x - e.pos.x, 0, v.pos.z - e.pos.z).setLength(4.5); SFX.thud(spatial(v.pos) * .6); }
-        if (e.f.phase === 'strike' && dv < 2.4) killCiv(v, V(v.pos.x - e.pos.x, 0, v.pos.z - e.pos.z).setLength(2.4));
+        if (e.f.phase !== 'strike') e.struck = false;
+        else if (!e.struck && dv < 2.4) { e.struck = true; e.civCd = rr(.9, 1.9); hitCiv(v, V(v.pos.x - e.pos.x, 0, v.pos.z - e.pos.z).setLength(2.4)); }
       } else {
         const dh = Math.hypot(e.home.x - e.pos.x, e.home.z - e.pos.z);
         if (dh > .25) speed = moveEnemy(e, e.home.x, e.home.z, Math.min(e.party && !betrayed ? 1.3 : betrayed ? 4.6 : 8, dh * 2.5), dt);
@@ -1817,7 +1854,9 @@ function updatePlayer(dt) {
   }
   { // running tires a little, sprinting a lot; while moving fast the breath does not come back
     const use = staminaUse({ speed, sprint });
-    if (use > 0) P.st = Math.max(0, P.st - dt * (use + (P.f.phase === 'idle' && !P.f.blocking ? C.STAMINA_REGEN : 0)));
+    const inFight = !sprint && enemies.some(e => !e.dead && e.state === 'chase' && Math.abs(e.pos.x - P.pos.x) < 10 && Math.abs(e.pos.z - P.pos.z) < 10);
+    if (use > 0 && inFight) P.st = Math.max(0, P.st - dt * (P.f.phase === 'idle' && !P.f.blocking ? C.STAMINA_REGEN * .4 : 0));   // footwork in a fight: the breath still comes back, slower
+    else if (use > 0) P.st = Math.max(0, P.st - dt * (use + (P.f.phase === 'idle' && !P.f.blocking ? C.STAMINA_REGEN : 0)));
   }
   if (keys.Space && P.ground && P.st > 10) { P.vy = 6.4; P.ground = false; P.st -= 8; }
   P.vy -= 19 * dt; P.pos.y += P.vy * dt;
