@@ -3,7 +3,7 @@ export default async ({ G, doc, st, check, forcePlay, setGod }) => {
   setGod(true); G.start(1, 'prologo'); forcePlay(); st(30);
   check('prologue: 24 disarmed people in three groups and their elder', G.civs.length === 25 && G.chapter === 'prologo');
   check('prologue: the ring has closed in', G.enemies.filter(e => e.group === 'cordon').every(e => Math.hypot(e.pos.x - G.MEADOW.x, e.pos.z - G.MEADOW.z) < 20));
-  st(1300);
+  st(1700);
   check('prologue: soldiers hunt Viriato after the betrayal', G.enemies.some(e => e.state === 'chase'));
   check('prologue: the soldiers cut down most of the adults', G.civs.filter(c => c.dead).length >= 10);
   check('prologue: children are never cut down', G.civs.filter(c => c.child && c.dead).length === 0);

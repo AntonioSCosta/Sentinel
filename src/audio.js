@@ -120,7 +120,7 @@ export const SFX = {
   // blade into a body: a deep thump, a wet slap and a muffled tear
   flesh: (v = 1) => { if (!ok()) return; const t = now(); thump({ t, f: 120, f2: 50, dur: .16, vol: .55 * v }); hiss({ t, dur: .07, f: 1700, q: .9, vol: .3 * v, send: .05 }); hiss({ t: t + .01, dur: .16, type: 'lowpass', f: 900, vol: .25 * v, buf: pink, send: .1 }); },
   // metal on metal: blade on blade, blade on a boss or helmet
-  clank: (v = 1) => { if (!ok()) return; metal({ f0: R(520, 820), vol: .2 * v, decay: R(.7, 1.1) }); thump({ f: 160, f2: 90, dur: .08, vol: .2 * v }); },
+  clank: (v = 1) => { if (!ok()) return; const t = now(); thump({ t, f: 150, f2: 70, dur: .1, vol: .4 * v }); hiss({ t, dur: .05, f: 2600, q: 1.2, vol: .22 * v, send: .15 }); hiss({ t, dur: .14, f: 1100, q: .9, vol: .12 * v, buf: pink, send: .2 }); },   // a dry clash, no bell-like ring
   // javelin leaving the hand
   throwJ: () => { if (!ok()) return; const t = now(); hiss({ t, dur: .35, f: 380, f2: 1400, q: 2, vol: .22, a: .05, send: .1 }); hiss({ t, dur: .12, type: 'lowpass', f: 500, vol: .08, buf: pink, send: 0 }); },
   // sling: the whirl and the crack of the release

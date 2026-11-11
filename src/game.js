@@ -570,29 +570,60 @@ function rigSoldier(kind, look = null) {
    * its own thigh (and, on long dresses, a little of the shin), blended across the front and back. Simple, and it never pinches.
    */
   let fsm = null; rig.body.traverse(o => { if (o.isSkinnedMesh && !fsm && o.skeleton.bones.some(b => b.name === 'pelvis')) fsm = o; });
-  const skirt = (color, { rTop = .19, rBot = .25, y0 = 1.04, y1 = .56, folds = 14, amp = .05, mat = null, zs = .9 } = {}) => {
+  /**
+   * Two extra "panel" bones under the pelvis carry the front and back of every skirt: each frame the front panel takes the
+   * rotation of whichever thigh is further forward and the back panel that of the one further back, so the cloth always
+   * stays outside the legs; the sides follow their own thigh. (A plain 50/50 blend let the leading leg poke through.)
+   */
+  let panels = null;
+  const getPanels = () => {
+    if (panels) return panels;
+    const sk = fsm.skeleton, names = sk.bones.map(b => b.name), I = n => names.indexOf(n);
+    const pel = sk.bones[I('pelvis')], th = [sk.bones[I('thigh_l')], sk.bones[I('thigh_r')]], ca = [sk.bones[I('calf_l')], sk.bones[I('calf_r')]];
+    const bindW = i => sk.boneInverses[i].clone().invert(), PB = bindW(I('pelvis')), TB = [bindW(I('thigh_l')), bindW(I('thigh_r'))];
+    const hip = new THREE.Vector3().setFromMatrixPosition(TB[0]).add(new THREE.Vector3().setFromMatrixPosition(TB[1])).multiplyScalar(.5);
+    const local = hip.clone().applyMatrix4(PB.clone().invert());
+    const mk = () => { const b = new THREE.Bone(); b.position.copy(local); pel.add(b); return b; };
+    const F = mk(), Bk = mk(), inv = PB.clone().multiply(new THREE.Matrix4().makeTranslation(local.x, local.y, local.z)).invert();
+    const q = new THREE.Quaternion(), qp = new THREE.Quaternion(), pbq = new THREE.Quaternion(), tbq = TB.map(() => new THREE.Quaternion());
+    PB.decompose(new THREE.Vector3(), pbq, new THREE.Vector3()); TB.forEach((m, i) => m.decompose(new THREE.Vector3(), tbq[i], new THREE.Vector3()));
+    const bindRel = tbq.map(t => pbq.clone().invert().multiply(t));                // thigh relative to pelvis in the bind pose
+    const fwd = new THREE.Vector3(), a = new THREE.Vector3(), c = new THREE.Vector3(), delta = [new THREE.Quaternion(), new THREE.Quaternion()];
+    (rig.dyn = rig.dyn || []).push(() => {
+      rig.root.updateMatrixWorld(true);
+      fwd.set(0, 0, 1).applyQuaternion(rig.root.getWorldQuaternion(q));
+      pel.getWorldQuaternion(qp); const qpi = qp.clone().invert(), fw = [0, 0];
+      for (let i = 0; i < 2; i++) {
+        th[i].getWorldQuaternion(q); delta[i].copy(qpi).multiply(q).multiply(bindRel[i].clone().invert());   // how far the thigh has swung, in the pelvis frame
+        th[i].getWorldPosition(a); ca[i].getWorldPosition(c); fw[i] = c.sub(a).normalize().dot(fwd);
+      }
+      const front = fw[0] >= fw[1] ? 0 : 1;
+      F.quaternion.copy(delta[front]); Bk.quaternion.copy(delta[1 - front]);
+    });
+    panels = { bones: [pel, th[0], th[1], F, Bk], inverses: [sk.boneInverses[I('pelvis')], sk.boneInverses[I('thigh_l')], sk.boneInverses[I('thigh_r')], inv, inv.clone()] };
+    return panels;
+  };
+  const skirt = (color, { rTop = .2, rBot = .25, y0 = 1.04, y1 = .56, folds = 14, amp = .05, mat = null, zs = .9 } = {}) => {
     if (!fsm) return;
     const m = mat || new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 1, side: THREE.DoubleSide }); extraMats.push(m);
     const H = y0 - y1, g = new THREE.CylinderGeometry(rTop, rBot, H, 36, 10, true), pos = g.attributes.position;
-    const names = fsm.skeleton.bones.map(b => b.name), B = n => Math.max(0, names.indexOf(n));
-    const PEL = B('pelvis'), TL = B('thigh_l'), TR = B('thigh_r'), CL = B('calf_l'), CR = B('calf_r');
     const HIP = .93, KNEE = .53, base = new THREE.Color(color), col = [], si = [], sw = [];
     for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i), z = pos.getZ(i), t = 1 - (pos.getY(i) + H / 2) / H, y = y0 - t * H, a = Math.atan2(z, x);
+      const x = pos.getX(i), z = pos.getZ(i), t = 1 - (pos.getY(i) + H / 2) / H, y = y0 - t * H, a = Math.atan2(z, x), r = Math.hypot(x, z) || 1;
       const k = 1 + amp * t * Math.sin(a * folds + t * 2) + amp * .4 * t * Math.sin(a * folds * 2.3);
       pos.setXYZ(i, x * k, y, z * k * zs);
-      const side = clamp(x / .12, -1, 1), wl = (1 + side) / 2, wr = 1 - wl;
-      const thigh = clamp((HIP + .1 - y) / (HIP + .1 - KNEE), 0, 1) * .9, shin = clamp((KNEE - y) / .45, 0, 1) * .3;
-      const pel = Math.max(0, 1 - thigh - shin);
-      si.push(PEL, wl >= wr ? TL : TR, wl >= wr ? TR : TL, wl >= wr ? CL : CR);
-      sw.push(pel, thigh * Math.max(wl, wr), thigh * Math.min(wl, wr), shin);
+      const long = y1 < .4, leg = smooth(1.0, .8, y) * (long ? .6 : .97), cz = z / r;   // follows the thigh from just under the hip; long dresses swing less (no sail)
+      const wf = smooth(.3, .85, cz), wb = smooth(.3, .85, -cz), side = 1 - wf - wb, wl = (1 + clamp(x / .05, -1, 1)) / 2;
+      // 0 pelvis, 1 thigh_l, 2 thigh_r, 3 front panel, 4 back panel
+      si.push(0, 1, 2, wf > 0 ? 3 : 4);
+      sw.push(1 - leg, leg * side * wl, leg * side * (1 - wl), leg * (wf > 0 ? wf : wb));
       const d = t > .93 ? .6 : 1; col.push(base.r * d, base.g * d, base.b * d);
     }
     g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4)); g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.computeVertexNormals();
     rig.root.updateMatrixWorld(true); g.applyMatrix4(fsm.matrixWorld.clone().invert().multiply(rig.root.matrixWorld));   // into the body's own space
-    const sk = new THREE.SkinnedMesh(g, m); sk.castShadow = true; sk.frustumCulled = false; sk.name = 'skirt';
-    fsm.parent.add(sk); sk.bind(fsm.skeleton, fsm.bindMatrix);
+    const pn = getPanels(), sk = new THREE.SkinnedMesh(g, m); sk.castShadow = true; sk.frustumCulled = false; sk.name = 'skirt';
+    fsm.parent.add(sk); sk.bind(new THREE.Skeleton(pn.bones, pn.inverses), fsm.bindMatrix);
   };
   /** Short loose sleeve over the upper arm so the muscle is not painted straight onto the body. */
   const sleeve = (side, color, r0 = .062, r1 = .095, from = .06, to = .6) => {
@@ -609,7 +640,7 @@ function rigSoldier(kind, look = null) {
   if (lus) skirt((look && look.palette && look.palette.dress) || { lusitano: 0x46341f, lusitano_b: 0x5c4630, lusitano_c: 0x96682c, lusitano_d: 0x605440 }[outfit] || 0x46341f, look && look.dress ? { rTop: .19, rBot: .33, y1: .2, amp: .07, folds: 16 } : {});   // wool saia to mid-thigh
   else if (kind !== 'velite') {   // Roman tunic to the knee, a short mail skirt over it for the hamata
     const col = outfit === 'roman_white' ? 0xd8d0bc : 0x9a2a20;
-    skirt(col, { rTop: .19, rBot: .235, y0: 1.04, y1: .52, amp: .03, zs: .82 });
+    skirt(col, { rTop: .2, rBot: .24, y0: 1.04, y1: .52, amp: .03, zs: .86 });
     if (outfit === 'roman_mail') { const mm = MATS.mail.clone(); if (mm.map) { mm.map = mm.map.clone(); mm.map.repeat.set(2.6, 1); mm.map.wrapS = mm.map.wrapT = THREE.RepeatWrapping; mm.map.needsUpdate = true; } mm.side = THREE.DoubleSide; mm.color.setHex(0xb4b4b4); mm.roughness = .75; skirt(0xffffff, { rTop: .2, rBot: .25, y0: 1.04, y1: .74, amp: .02, mat: mm, folds: 8, zs: .84 }); }
   } else { skirt(0x5c4630, { rTop: .19, rBot: .27, y1: .68 }); }
   Object.assign(rig.root.userData, ud);
