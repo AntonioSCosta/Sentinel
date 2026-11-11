@@ -822,7 +822,7 @@ function armEnvoy(on) {
   const sh = envoy.m.root.userData.scutum || envoy.m.root.userData.parma; if (sh) sh.visible = on;
 }
 /* Cavalry: two riders sweep in with the legions, circle the field cutting down whoever runs, then flank the captives. */
-const SADDLE = .62;
+const SADDLE = 1.0;   // rider root height above the horse (crouched legs astride its back)
 function spawnRider(ang, dir) {
   const h = chars.horse, hg = h.scene.clone(true); hg.scale.setScalar(.0095);
   hg.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.material = o.material.clone(); o.material.color.setHex(0x8f7464); } });   // a darker bay
@@ -914,7 +914,7 @@ function checkPrologue() {
   if (state === 'play' && Math.hypot(P.pos.x - ESCAPE.x, P.pos.z - ESCAPE.z) < 9) startOutro();
 }
 /* Escape: Viriato runs on into the trees, then stops, turns and looks back at the field. */
-const OUTRO_LEN = 14;
+const OUTRO_LEN = 15;
 let outroT = 0, outroCam = null, outroSaid = 0;
 function startOutro() {
   state = 'outro'; outroT = 0; outroSaid = 0; introView = view;
@@ -942,32 +942,27 @@ function startOutro() {
     e.pos.set(c.pos.x + e.off.x, c.pos.y, c.pos.z + e.off.z); e.m.root.position.copy(e.pos);
   });
   outroCam.column = caught; outroCam.w = w; outroCam.q = q;
+  outroCam.base = V(P.pos.x, 0, P.pos.z).addScaledVector(u, -2.6).addScaledVector(n, 1.3); outroCam.base.y = heightAt(outroCam.base.x, outroCam.base.z) + 1.6;
 }
 function updateOutro(dt) {
-  outroT += dt; const T = outroT, { u, n } = outroCam;
+  outroT += dt; const T = outroT, { u } = outroCam;
   if (missionMsgT > 0) { missionMsgT -= dt; if (missionMsgT <= 0) $('msg').style.opacity = 0; }
-  if (T < 1.7) {          // into the trees
-    const sp = 4.6; P.vel.x = u.x * sp; P.vel.z = u.z * sp; P.pos.x += P.vel.x * dt; P.pos.z += P.vel.z * dt; P.yaw = Math.atan2(-u.x, -u.z);
-  } else {                // he stops, catches his breath and turns to look back
-    P.vel.x = P.vel.z = 0; P.yaw += wrapA(Math.atan2(u.x, u.z) - P.yaw) * Math.min(1, dt * 2.2);
-  }
-  P.pos.y = heightAt(P.pos.x, P.pos.z); P.pitch = 0;
-  view = 'third'; updateCamera(dt); view = introView; AV.root.visible = true; VM.visible = false;
-  if (T < 2.6) { camera.position.copy(outroCam.at); camera.lookAt(P.pos.x, P.pos.y + 1.3, P.pos.z); }
-  else if (T > 6.2) {     // the field: the captives are led away between the dead
-    const col = outroCam.column, k = smooth(6.2, OUTRO_LEN, T), C0 = V(0, 0, 0);
-    if (col.length) { for (const c of col) C0.add(c.pos); C0.multiplyScalar(1 / col.length); } else C0.set(MEADOW.x, heightAt(MEADOW.x, MEADOW.z), MEADOW.z);
-    camera.position.copy(C0).addScaledVector(outroCam.q, 7 - k * 1.5).addScaledVector(outroCam.w, 3.5 - k * 2); camera.position.y = C0.y + 4.2 - k * 1.2;
-    camera.lookAt(C0.x - outroCam.w.x * 1.5, C0.y + .9, C0.z - outroCam.w.z * 1.5);
-  }
-  else {                  // over his shoulder as he turns to look back
-    const k = smooth(2.6, OUTRO_LEN, T), back = 3 - k * 1.2;
-    camera.position.set(P.pos.x, 0, P.pos.z).addScaledVector(u, back).addScaledVector(n, .55); camera.position.y = P.pos.y + 2.3 - k * .3;
-    camera.lookAt(MEADOW.x, heightAt(MEADOW.x, MEADOW.z) + .5, MEADOW.z);
-  }
-  if (outroSaid < 1 && T > 3.4) { outroSaid = 1; showMsg('VIRIATO ESCAPOU', '', 2.4); }
-  if (outroSaid < 2 && T > 6.8) { outroSaid = 2; showMsg('', 'Galba matou ou vendeu como escravos milhares de lusitanos.', 3.4); }
-  if (outroSaid < 3 && T > 10.6) { outroSaid = 3; showMsg('', 'Dos que fugiram, um voltaria com um exército.', 3.2); }
+  // he keeps running, deeper and deeper among the trees, until the wood swallows him
+  if (T < 6) { const sp = 4.4; P.vel.x = u.x * sp; P.vel.z = u.z * sp; P.pos.x += P.vel.x * dt; P.pos.z += P.vel.z * dt; } else { P.vel.x = P.vel.z = 0; }
+  P.yaw = Math.atan2(-u.x, -u.z); P.pos.y = heightAt(P.pos.x, P.pos.z); P.pitch = 0;
+  view = 'third'; updateCamera(dt); view = introView; VM.visible = false; AV.root.visible = T < 4.8;
+  // the camera stays at the edge of the wood, then rises up through the leaves and turns to the field
+  const col = outroCam.column, C0 = V(0, 0, 0);
+  if (col.length) { for (const c of col) C0.add(c.pos); C0.multiplyScalar(1 / col.length); } else C0.set(MEADOW.x, heightAt(MEADOW.x, MEADOW.z), MEADOW.z);
+  const rise = smooth(4.6, 9.5, T), drift = smooth(9, OUTRO_LEN, T), turn = smooth(5, 9.2, T);
+  const cam = outroCam.base.clone(); cam.y += rise * 17;
+  cam.addScaledVector(V(C0.x - cam.x, 0, C0.z - cam.z), drift * .6); cam.y = lerp(cam.y, Math.max(C0.y + 7, heightAt(cam.x, cam.z) + 4), drift);   // glide out over the field toward the column
+  camera.position.copy(cam);
+  const tgt = V(P.pos.x, P.pos.y + 1.2, P.pos.z).lerp(V(C0.x, C0.y + 1, C0.z), turn);
+  camera.lookAt(tgt);
+  if (outroSaid < 1 && T > 3) { outroSaid = 1; showMsg('VIRIATO ESCAPOU', '', 2.6); }
+  if (outroSaid < 2 && T > 8.6) { outroSaid = 2; showMsg('', 'Galba matou ou vendeu como escravos milhares de lusitanos.', 3.2); }
+  if (outroSaid < 3 && T > 11.9) { outroSaid = 3; showMsg('', 'Dos que fugiram, um voltaria com um exército.', 3); }
   if (T >= OUTRO_LEN) {
     $('hud').classList.remove('intro'); state = 'won'; endT = .05; nextChapter = 'emboscada';
     endArgs = ['PRÓLOGO · 150 A.C.', 'Viriato escapou', 'Galba voltou a Roma, foi julgado e absolvido. A guerra na Lusitânia continuou.'];
