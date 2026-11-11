@@ -13,7 +13,7 @@ def acc(i):
     return np.frombuffer(b, dtype=dt, count=a['count'] * n, offset=v.get('byteOffset', 0) + a.get('byteOffset', 0)).reshape(a['count'], n)
 prim = next(p for m in j['meshes'] for p in m['primitives'] if j['materials'][p['material']]['name'] == 'MI_Superhero_Male')
 P = acc(prim['attributes']['POSITION']); UV = acc(prim['attributes']['TEXCOORD_0']); I = acc(prim['indices']).reshape(-1, 3)
-masks = {k: Image.new('L', (S, S), 0) for k in ('upper', 'lower', 'sleeve', 'shoe', 'strap')}
+masks = {k: Image.new('L', (S, S), 0) for k in ('upper', 'lower', 'sleeve', 'shoe', 'strap', 'trim')}
 draw = {k: ImageDraw.Draw(m) for k, m in masks.items()}
 for tri in I:
     c = P[tri].mean(0); x, y = abs(c[0]), c[1]
@@ -23,10 +23,12 @@ for tri in I:
     elif .2 <= x < .4 and y > 1.28: k = 'sleeve'          # short sleeves
     elif y < .095 and x < .3: k = 'shoe'                  # closed leather shoe
     elif (.095 <= y < .125 or .19 <= y < .215) and x < .3: k = 'strap'  # ankle cuff and a thong tied above it
+    trim = (k == 'lower' and y < .7) or (k == 'sleeve' and x > .34) or (k == 'upper' and y > 1.5)   # hem, cuffs, neckline
     if not k: continue
     uv = UV[tri]
     if np.ptp(uv[:, 0]) > .3 or np.ptp(uv[:, 1]) > .3: continue  # seam-spanning triangle
     draw[k].polygon([(u * S, v * S) for u, v in uv], fill=255)
+    if trim: draw['trim'].polygon([(u * S, v * S) for u, v in uv], fill=255)
 for k in masks: masks[k] = masks[k].filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.GaussianBlur(1.5))
 skin = Image.open(SRC + '/T_Superhero_Male_Dark.png').convert('RGB').resize((S, S), Image.LANCZOS)
 lum = np.asarray(skin.convert('L'), np.float32) / 255; shade = np.clip(lum / max(1e-3, np.median(lum)), .55, 1.35)[..., None]
@@ -47,13 +49,19 @@ OUTFITS = {   # (upper, lower, sleeve) colours, or 'mail'
   'lusitano_c':  ((150, 104, 44), (150, 104, 44), (150, 104, 44)),   # ochre wool tunic
   'lusitano_d':  ((58, 78, 56), (96, 84, 62), (58, 78, 56)),         # green tunic over undyed wool
 }
+rng = np.random.default_rng(7)
+yy, xx = np.mgrid[0:S, 0:S]
+noise = np.asarray(Image.fromarray((rng.standard_normal((S // 2, S // 2)) * 40 + 128).clip(0, 255).astype(np.uint8)).resize((S, S), Image.BICUBIC), np.float32) / 255 - .5
+weave = (1 + .10 * noise)[..., None].astype(np.float32)   # soft mottling of dyed wool, no hard stripes (they alias)
 base = np.asarray(skin, np.float32)
 for name, cols in OUTFITS.items():
     img = base.copy()
     for k, col in zip(('upper', 'lower', 'sleeve'), cols):
         m = np.asarray(masks[k], np.float32)[..., None] / 255
-        cloth = mail * shade if col == 'mail' else np.array(col, np.float32) * shade
+        cloth = mail * shade if col == 'mail' else np.array(col, np.float32) * shade * weave
         img = img * (1 - m) + cloth * m
+    tm = np.asarray(masks['trim'], np.float32)[..., None] / 255       # darker hem / cuffs / neckline, with a stitch line
+    img = img * (1 - tm * .22)
     for k, col in (('shoe', (74, 50, 32)), ('strap', (58, 38, 24))):
         m = np.asarray(masks[k], np.float32)[..., None] / 255
         img = img * (1 - m) + np.array(col, np.float32) * np.clip(shade, .7, 1.25) * m

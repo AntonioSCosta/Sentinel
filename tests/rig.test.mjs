@@ -68,3 +68,17 @@ test('the chest never winds up: guarding while side-stepping keeps the spine twi
   }
   assert.ok(worst < .15, 'chest stays on the target, got ' + worst.toFixed(2) + ' rad');
 });
+
+test('the waist never wrings: the counter-twist is shared by all three spine bones', () => {
+  const bone = n => { const b = new THREE.Bone(); b.name = n; return b; };
+  const body = new THREE.Group(), root = bone('root'), pelvis = bone('pelvis'), s1 = bone('spine_01'), s2 = bone('spine_02'), s3 = bone('spine_03');
+  body.add(root); root.add(pelvis); pelvis.add(s1); s1.add(s2); s2.add(s3);
+  const q = n => new THREE.QuaternionKeyframeTrack(n + '.quaternion', [0, 2], [0, 0, 0, 1, 0, 0, 0, 1]);
+  const clips = ['Idle_Loop', 'Walk_Loop', 'Jog_Fwd_Loop', 'Idle_Shield_Loop'].map(n => new THREE.AnimationClip(n, 2, ['pelvis', 'spine_01', 'spine_02', 'spine_03'].map(q)));
+  const rig = makeRig(THREE, o => o.clone(true), { body, clips, split: [null, null] }, { shielded: true });
+  for (let i = 0; i < 120; i++) driveRig(THREE, rig, { speed: .3, side: 1.6, combat: true, f: { phase: 'idle' }, T: C, throwK: -1 }, 1 / 60);
+  const yaw = b => 2 * Math.asin(Math.abs(b.quaternion.y));
+  const a = [rig.bones.spine_01, rig.bones.spine_02, rig.bones.spine_03].map(yaw), tot = a[0] + a[1] + a[2];
+  assert.ok(tot > .1, 'there is a counter-twist to share (' + tot.toFixed(2) + ')');
+  assert.ok(Math.max(...a) < tot * .45, 'no single bone takes the whole twist: ' + a.map(x => x.toFixed(2)));
+});

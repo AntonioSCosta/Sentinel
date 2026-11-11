@@ -110,7 +110,7 @@ export function makeRig(THREE, cloneSkinned, assets, { outfit = 'roman_red', hai
   return rig;
 }
 
-export const LEG_TWIST_MAX = .5;
+export const LEG_TWIST_MAX = .45;
 /**
  * Pure: how far the legs turn toward the travel direction (radians, + = model's left) and whether to play the walk backwards.
  * Capped and faded in with speed; `wasBackward` gives hysteresis so strafing jitter doesn't flip the legs.
@@ -185,14 +185,18 @@ export function driveRig(THREE, rig, s, dt) {
   }
   blendLayer(rig, 'lo', lo, dt); blendLayer(rig, 'up', up, dt); if (rig.shielded) blendLayer(rig, 'sh', sh, dt);
   // undo last frame's counter-twist first: the mixer skips bones whose animated value did not change
-  // (a held guard pose), so a twist left on the bone would add up frame after frame and spin the chest
-  const sp1 = rig.bones.spine_01;
-  if (rig.spineBase && sp1) { sp1.quaternion.copy(rig.spineBase); rig.spineBase = null; }
+  // (a held guard pose), so a twist left on a bone would add up frame after frame and spin the chest
+  const SP = ['spine_01', 'spine_02', 'spine_03'].map(n => rig.bones[n]).filter(Boolean);
+  if (rig.spineBase) { SP.forEach((b, i) => b.quaternion.copy(rig.spineBase[i])); rig.spineBase = null; }
   rig.mixer.update(dt);
-  // legs turn toward travel, spine turns back so the chest stays on the target
+  // legs turn toward travel; the spine turns back so the chest stays on the target. The turn is shared by
+  // all three spine bones (a single bone wrings the waist like a candy wrapper)
   if (Math.abs(rig.side) > .01) {
     rig.body.rotation.y = rig.side;
-    if (sp1) { rig.spineBase = (rig._sb || (rig._sb = sp1.quaternion.clone())).copy(sp1.quaternion); twistWorldY(THREE, sp1, -rig.side); }
+    if (SP.length) {
+      rig.spineBase = SP.map((b, i) => (rig._sb?.[i] || (rig._sb = rig._sb || [], rig._sb[i] = b.quaternion.clone())).copy(b.quaternion));
+      SP.forEach(b => twistWorldY(THREE, b, -rig.side / SP.length));
+    }
   } else rig.body.rotation.y = 0;
 }
 

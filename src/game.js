@@ -508,8 +508,20 @@ function rigSoldier(kind, look = null) {
   for (const o of plates) { o.parent.remove(o); o.position.set(0, 1.33, o.name === 'pectorale' ? .14 : -.17); o.scale.set(.9, .9, 1); rig.attach('spine_03', o); }
   const gr = []; p.root.traverse(o => { if (o.name === 'greave') gr.push(o); });
   gr.forEach((o, i) => { o.parent.remove(o); o.position.set(i ? -.114 : .114, .33, -.035); o.scale.set(.82, 1.05, .82); rig.attach(i ? 'calf_r' : 'calf_l', o); });
+  // leather belt with a bronze buckle (a pugio on the Romans' left hip), tied to the waist bone so it turns with the body
+  const bMat = MAT('leather'), gMat = MAT('iron', { metalness: .8, roughness: .45 }), sMat = MAT('leather');
+  bMat.color.setHex(lus ? 0x4a3524 : 0x3a2616); gMat.color.setHex(lus ? 0x8a6d3b : 0xb8893c); sMat.color.setHex(0x2c1c10);
+  const belt = new THREE.Mesh(new THREE.TorusGeometry(1, .02, 6, 32).rotateX(Math.PI / 2).scale(.18, 1, .142), bMat); belt.position.set(0, 1.0, -.028);
+  const buckle = new THREE.Mesh(new THREE.BoxGeometry(.045, .05, .012), gMat); buckle.position.set(0, 1.0, .118);
+  const bg = new THREE.Group(); bg.add(belt, buckle);
+  if (!lus && kind !== 'velite') {
+    const sheath = new THREE.Mesh(new THREE.BoxGeometry(.035, .2, .02), sMat); sheath.position.set(.14, .9, .06); sheath.rotation.z = -.12;
+    const hilt = new THREE.Mesh(new THREE.CylinderGeometry(.012, .012, .07, 6), gMat); hilt.position.set(.15, 1.04, .06); bg.add(sheath, hilt);
+  }
+  bg.traverse(o => { if (o.isMesh) { o.castShadow = true; } });
+  rig.attach('spine_01', bg);
   Object.assign(rig.root.userData, ud);
-  const mats = [...new Set([...rig.mats, ...p.mats])];
+  const mats = [...new Set([...rig.mats, ...p.mats, bMat, gMat, sMat])];
   return { root: rig.root, rig, mats, weapon: wpn };
 }
 const soldier = (kind, look) => { const m = chars ? rigSoldier(kind, look) : makeSoldier(kind); if (look) m.root.scale.setScalar(look.scale); return m; };
