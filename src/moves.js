@@ -42,8 +42,35 @@ export const BLOCK_VS_RIGHT = {
   clavicle_r: [0, 12, 0], upperarm_r: [-55, 38, 0], lowerarm_r: [-55, 10, 0], hand_r: [35, 0, 25],
 };
 
-export const MOVES = { right: RIGHT_CUT };
-export const BLOCKS = { right: BLOCK_VS_RIGHT };   // keyed by the INCOMING attack direction
+/**
+ * OVERHEAD (combat.js dir 'up'). Proportions from the Warband one-handed overswing, studied as reference only:
+ * drawn = hips turned right over the back foot, chest square, sword lifted over the right shoulder and laid back
+ * behind the head; the cut bends the trunk ~40° forward while the chest turns ~35° left of the hips, the hand
+ * dropping from above the head to the front of the waist.
+ */
+export const OVERHEAD = {
+  windup: {
+    pelvis: [0, -15, 0], spine: [-6, 10, 0], neck: [4, 5, 0],
+    clavicle_r: [0, 0, 18], upperarm_r: [-140, 0, 15], lowerarm_r: [0, 0, 70], hand_r: [-30, 0, 0],
+  },
+  mid: {
+    pelvis: [10, 0, 0], spine: [18, 15, 0], neck: [-10, -8, 0],
+    clavicle_r: [0, 8, 6], upperarm_r: [-85, 10, 10], lowerarm_r: [-10, 0, 15], hand_r: [10, 0, 0],
+  },
+  follow: {
+    pelvis: [14, 8, 0], spine: [24, 30, 0], neck: [-16, -18, 0],
+    clavicle_r: [0, 12, 0], upperarm_r: [-35, 15, 5], lowerarm_r: [-25, 0, 10], hand_r: [20, 0, 0],
+  },
+};
+
+/** BLOCK AGAINST AN OVERHEAD: sword held flat above the head, hilt over the right shoulder, point to the left. */
+export const BLOCK_VS_UP = {
+  pelvis: [0, 0, 0], spine: [-4, 8, 0], neck: [6, 0, 0],
+  clavicle_r: [0, 6, 14], upperarm_r: [-120, 45, 0], lowerarm_r: [-40, 20, 0], hand_r: [0, -130, 0],
+};
+
+export const MOVES = { right: RIGHT_CUT, up: OVERHEAD };
+export const BLOCKS = { right: BLOCK_VS_RIGHT, up: BLOCK_VS_UP };   // keyed by the INCOMING attack direction
 export const BLOCK_IN = .12;    // s to bring the guard up (kept inside the parry window, combat.js PARRY_WINDOW)
 export const HOLD_OVERDRAW = .12; // extra draw (fraction of the windup pose) reached after holding a charged blow ~1 s
 

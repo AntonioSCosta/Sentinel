@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { attackPose, blockPose, RIGHT_CUT, BLOCK_VS_RIGHT, BLOCK_IN } from '../src/moves.js';
+import { attackPose, blockPose, RIGHT_CUT, BLOCK_VS_RIGHT, OVERHEAD, BLOCK_VS_UP, BLOCK_IN } from '../src/moves.js';
 
 const T = { windup: .5, strike: .3, recovery: .4 };
 const close = (a, b, eps = .01) => { for (const k of Object.keys(b)) for (let i = 0; i < 3; i++) assert.ok(Math.abs((a[k]?.[i] ?? 0) - b[k][i]) < eps, `${k}[${i}] ${a[k]?.[i]} vs ${b[k][i]}`); };
@@ -32,6 +32,33 @@ test('the block comes up within BLOCK_IN and holds', () => {
   assert.ok(blockPose('right', BLOCK_IN / 2).upperarm_r[1] < BLOCK_VS_RIGHT.upperarm_r[1]);
 });
 test('directions not yet authored fall back to the clip animation', () => {
-  assert.equal(attackPose('up', 'windup', .1, T), null);
-  assert.equal(blockPose('up', .1), null);
+  assert.equal(attackPose('thrust', 'windup', .1, T), null);
+  assert.equal(blockPose('thrust', .1), null);
+});
+
+// OVERHEAD (dir 'up'), proportions taken from the Warband one-handed overswing used as reference:
+// sword raised over the right shoulder and laid back behind the head, trunk upright; the cut bends the trunk ~40°
+// forward and turns the chest ~35° to the left of the hips, the hand finishing in front at waist height.
+test('overhead windup: arm raised high, trunk upright or leaning slightly back', () => {
+  const w = attackPose('up', 'windup', T.windup, T);
+  close(w, OVERHEAD.windup);
+  assert.ok(w.upperarm_r[0] <= -110, 'upper arm swung up past the horizontal');
+  assert.ok(w.pelvis[0] + w.spine[0] <= 2, 'no forward lean while drawn');
+});
+test('overhead strike bends the trunk forward and turns the chest to the left of the hips', () => {
+  const f = attackPose('up', 'strike', T.strike, T), w = OVERHEAD.windup;
+  const lean = f.pelvis[0] + f.spine[0];
+  assert.ok(lean >= 30 && lean <= 50, `lean ${lean}`);
+  assert.ok((f.pelvis[1] + f.spine[1]) - (w.pelvis[1] + w.spine[1]) >= 25, 'chest turns left through the cut');
+  assert.ok(f.upperarm_r[0] > w.upperarm_r[0] + 60, 'the arm comes down a long way');
+});
+test('overhead phases join without jumps and recover to the guard', () => {
+  close(attackPose('up', 'strike', 0, T), OVERHEAD.windup);
+  close(attackPose('up', 'recovery', 0, T), OVERHEAD.follow);
+  const end = attackPose('up', 'recovery', T.recovery, T);
+  for (const k of Object.keys(end)) assert.ok(end[k].every(v => Math.abs(v) < 1e-9), k);
+});
+test('the block against an overhead raises the sword above the head', () => {
+  close(blockPose('up', BLOCK_IN), BLOCK_VS_UP);
+  assert.ok(BLOCK_VS_UP.upperarm_r[0] <= -90);
 });
