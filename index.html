@@ -103,10 +103,14 @@
 
 <div id="menu" class="screen">
   <div class="card">
-    <p class="kicker">LUSITÂNIA · 147 A.C.</p>
+    <p class="kicker" id="kicker">LUSITÂNIA · 147 A.C.</p>
     <h1>VIRIATO</h1>
     <h2>A Guerra dos Montes Hermínios</h2>
-    <p class="brief">Três anos depois da traição de Galba, Roma volta a marchar pelos vales. Uma patrulha desce a estrada do vale e o acampamento que a abastece fica a norte. Embosca-os, queima-lhes os mantimentos e derruba o centurião que os comanda.</p>
+    <p class="brief" id="brief">Três anos depois da traição de Galba, Roma volta a marchar pelos vales. Uma patrulha desce a estrada do vale e o acampamento que a abastece fica a norte. Embosca-os, queima-lhes os mantimentos e derruba o centurião que os comanda.</p>
+    <div class="row"><span class="lbl">CAPÍTULO</span>
+      <button type="button" data-ch="prologo" aria-pressed="true">Prólogo · A traição de Galba</button>
+      <button type="button" data-ch="emboscada" aria-pressed="false">I · A Emboscada</button>
+    </div>
     <div class="row"><span class="lbl">DIFICULDADE</span>
       <button type="button" data-diff="0" aria-pressed="false">Fácil</button>
       <button type="button" data-diff="1" aria-pressed="true">Normal</button>
@@ -155,6 +159,7 @@
     <h1 id="endt" style="font-size:52px"></h1>
     <p class="brief" id="endp" style="margin-top:14px"></p>
     <div class="stats" id="ends"></div>
+    <button type="button" class="go hidden" id="next">CONTINUAR · A EMBOSCADA</button>
     <button type="button" class="go" id="again">JOGAR OUTRA VEZ</button>
   </div>
 </div>
