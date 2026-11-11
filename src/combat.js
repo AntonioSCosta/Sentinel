@@ -141,3 +141,8 @@ export function reaim(f, dir) {
   if (f.phase !== 'windup' || f.released || f.t > REAIM_TIME || !dir) return false;
   f.dir = dir; return true;
 }
+/** For click-to-attack: a random direction, different from the previous blow. */
+export function randomDir(prev, rng = Math.random) {
+  const opts = DIRS.filter(d => d !== prev);
+  return opts[Math.floor(rng() * opts.length) % opts.length];
+}

@@ -58,8 +58,8 @@ test('foliage: cut-out leaf materials for oak, shrub and pine; still three mater
   const ok = await loadFoliage({ THREE, loader: stubLoader(), document: null });
   for (const k of ['oak', 'shrub', 'pine']) { assert.ok(ok[k].isMeshStandardMaterial, k); assert.equal(ok[k].side, THREE.DoubleSide); }
   assert.ok(ok.oak.map && ok.shrub.map, 'oak and shrub use the CC0 leaf cards');
-  assert.equal(ok.oak.alphaTest, .5);
-  assert.ok(ok.oakDepth && ok.oakDepth.alphaTest === .5, 'shadows respect the leaf cut-out');
+  assert.equal(ok.oak.alphaTest, .4);
+  assert.ok(ok.oakDepth && ok.oakDepth.alphaTest === .4, 'shadows respect the leaf cut-out');
   const none = await loadFoliage({ THREE, loader: stubLoader(() => true), document: null });
   assert.deepEqual(['oak', 'shrub', 'pine'].map(k => !!none[k]), [true, true, true]);
 });

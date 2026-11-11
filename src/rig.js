@@ -110,6 +110,21 @@ export function makeRig(THREE, cloneSkinned, assets, { outfit = 'roman_red', hai
   return rig;
 }
 
+export const LEG_TWIST_MAX = .5;
+/**
+ * Pure: how far the legs turn toward the travel direction (radians, + = model's left) and whether to play the walk backwards.
+ * Capped and faded in with speed; `wasBackward` gives hysteresis so strafing jitter doesn't flip the legs.
+ */
+export function legTwist(fwd, side, wasBackward) {
+  const sp = Math.hypot(fwd, side);
+  const backward = wasBackward ? fwd < .2 * sp : fwd < -.35 * sp;
+  if (sp < .5) return { yaw: 0, backward };
+  const f = backward ? -fwd : fwd, sd = backward ? -side : side;
+  const a = Math.atan2(sd, Math.max(0, f) + 1e-6);
+  const fade = Math.min(1, (sp - .5) / .8);
+  return { yaw: Math.max(-LEG_TWIST_MAX, Math.min(LEG_TWIST_MAX, a)) * fade, backward };
+}
+
 const SMOOTH = 14;
 /** Blend one layer toward `target` = { clipName: { w, time?, rate? } }; weights always sum to 1. */
 function blendLayer(rig, L, target, dt, snap) {
@@ -141,9 +156,9 @@ export function driveRig(THREE, rig, s, dt) {
   }
   // locomotion: legs take the travel direction, the chest keeps facing the foe
   const fwd = s.speed || 0, side = s.side || 0, sp = Math.hypot(fwd, side);
-  let yaw = 0, signed = fwd;
-  if (sp > .2) { yaw = Math.atan2(side, Math.abs(fwd) + 1e-6); signed = Math.sign(fwd || 1) * sp; if (fwd < -.1) yaw = -yaw; yaw = Math.max(-1.1, Math.min(1.1, yaw)); }
-  rig.side += (yaw - rig.side) * Math.min(1, dt * 8);
+  const lt = legTwist(fwd, side, rig.backward); rig.backward = lt.backward;
+  const signed = (lt.backward ? -1 : 1) * sp;
+  rig.side += (lt.yaw - rig.side) * Math.min(1, dt * 4);
   const L0 = locomotion(signed, s.crouch);
   lo[L0.clip] = { w: 1, rate: L0.rate };
   // one-shot reactions (hit / knockback) override the upper body for their length

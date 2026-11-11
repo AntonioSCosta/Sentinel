@@ -18,7 +18,7 @@ export default async function ({ G, THREE, st, check, forcePlay }) {
   check(`a cut from the left twists the torso (${e.m.spine.rotation.y.toFixed(2)})`, e.m.spine.rotation.y > .25);
   // first-person falcata sweeps through the arc during the player's cut
   C.feint(e.f); e.state = 'guard'; e.pos.x += 300;
-  G.input.mouse(true, false); st(1); G.input.mouseMove(-30, 0); st(20); G.input.mouse(false, false);
+  G.input.mouse(true, false); st(6); G.P.f.dir = 'left'; st(15); G.input.mouse(false, false); // direction is random on click: pin a cut
   let q0 = null, maxAng = 0;
   for (let i = 0; i < 40; i++) { st(1); if (G.P.f.phase === 'strike') { const q = G.vm.fal.quaternion.clone(); if (!q0) q0 = q; maxAng = Math.max(maxAng, q0.angleTo(q)); } }
   check(`first-person falcata sweeps through its arc (${maxAng.toFixed(2)} rad)`, maxAng > .8);

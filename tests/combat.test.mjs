@@ -136,3 +136,9 @@ test('re-aim: a windup can change direction early, not once released or late', (
   const g = C.createFighter(); C.beginAttack(g, 'up'); C.releaseAttack(g);
   assert.equal(C.reaim(g, 'left'), false);
 });
+
+test('random blow: any of the four directions, never the same twice in a row', () => {
+  let prev = null; const seen = new Set(); let r = 0; const rng = () => (r = (r * 9301 + 49297) % 233280) / 233280;
+  for (let i = 0; i < 200; i++) { const d = C.randomDir(prev, rng); assert.ok(C.DIRS.includes(d)); assert.notEqual(d, prev); seen.add(d); prev = d; }
+  assert.equal(seen.size, 4);
+});

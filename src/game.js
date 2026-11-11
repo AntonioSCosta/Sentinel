@@ -1324,13 +1324,14 @@ function updatePlayer(dt) {
     if (P.f.phase !== 'windup' && (P.chargeT >= .08 || released)) {
       // buffered: a click during recovery/flinch starts the blow as soon as the fighter is free
       P.post.x = 0; P.post.y = 0;
-      if (!C.beginAttack(P.f, C.dirFromMouse(P.acc.x, P.acc.y))) {
+      // direction is random for now (no mouse sweep needed); C.dirFromMouse(P.acc) is the Mount & Blade alternative
+      if (!C.beginAttack(P.f, C.randomDir(P.lastDir))) {
         if (P.f.phase === 'idle' && !P.f.blocking) { P.charging = false; showPrompt('Sem fôlego para atacar', .6); }
         else if (released) P.queued = true;
       } else if (P.queued) { P.queued = false; C.releaseAttack(P.f); P.charging = false; }
     }
     // a clear sweep right after the blow started still turns it (the first one may have been read from camera turning)
-    if (P.f.phase === 'windup' && Math.hypot(P.post.x, P.post.y) > 14) { C.reaim(P.f, C.dirFromMouse(P.post.x, P.post.y)); P.post.x = P.post.y = 0; }
+    if (P.f.phase === 'windup') P.lastDir = P.f.dir;
     if (released && P.f.phase === 'windup') { C.releaseAttack(P.f); P.charging = false; }
     if (P.w !== 0) P.charging = false;
   }
@@ -1381,6 +1382,9 @@ function updateCamera(dt) {
   const bob3 = setPose(avatar, dt);
   AV.root.position.set(P.pos.x, P.pos.y + bob3 - (AV.rig ? 0 : P.crouch * .3), P.pos.z); AV.root.rotation.y = avatar.yaw;
   AV.root.visible = view === 'third'; AV_FAL.visible = P.w === 0;
+  const thrown = !P.throwPending && P.throwT > 0; // between release and drawing the next one
+  AV_JAV.visible = P.w === 1 && P.dardos + (P.throwPending ? 1 : 0) > 0 && !thrown;
+  AV_STONE.visible = P.w === 2 && P.pedras + (P.throwPending ? 1 : 0) > 0 && !thrown;
   if (view === 'third') {
     const dir = fwd3(), right = V(Math.cos(P.yaw), 0, -Math.sin(P.yaw));
     const pivot = V(P.pos.x, P.pos.y + 1.6 - P.crouch * .5, P.pos.z);
@@ -1583,6 +1587,16 @@ function step(dt) {
 const AV = soldier('lusitano'); scene.add(AV.root); AV.root.visible = false;
 let AV_FAL = null; AV.root.traverse(o => { if (o.name === 'falcata') AV_FAL = o; });
 const AV_HAND = AV.rig ? AV.weapon : AV.elbows[1].children.at(-1);
+// what Viriato holds for the ranged weapons: a dardo along the forearm line (hand +z, point forward) and a sling stone
+const AV_JAV = new THREE.Group(), AV_STONE = new THREE.Group();
+{
+  const sh = new THREE.Mesh(new THREE.CylinderGeometry(.013, .013, 1.35, 6), MAT('wood')); sh.rotation.x = Math.PI / 2; sh.position.z = .2; sh.castShadow = true;
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(.026, .17, 6), MAT('iron')); tip.rotation.x = Math.PI / 2; tip.position.z = .95; tip.castShadow = true;
+  AV_JAV.add(sh, tip);
+  const st = new THREE.Mesh(new THREE.SphereGeometry(.035, 8, 6), MAT('castro_stone')); st.position.set(0, -.04, .02); st.castShadow = true;
+  const cord = new THREE.Mesh(new THREE.CylinderGeometry(.004, .004, .55, 4), M(0x7a5a3a)); cord.position.set(0, -.3, 0); AV_STONE.add(st, cord);
+  AV_HAND.add(AV_JAV, AV_STONE); AV_JAV.visible = AV_STONE.visible = false;
+}
 const avatar = { m: AV, f: P.f, yaw: 0, mv: { x: 0, z: 0 }, state: 'chase', kind: 'lusitano', stride: 0 };
 R = await createRender({ THREE, renderer, scene, camera, sun, grass: GRASS, quality: resolveQuality(quality), devicePixelRatio: window.devicePixelRatio || 1 });
 for (const b of document.querySelectorAll('[data-q]')) {
@@ -1598,7 +1612,7 @@ return {
   get enemies() { return enemies; }, get mission() { return mission; }, get state() { return state; },
   get projectiles() { return projectiles; }, get pickups() { return pickups; },
   input: { mouse: (l, r) => { mouseL = l; mouseR = r; }, mouseMove: (dx, dy) => { C.nudgeIntent(P.intent, dx, dy); if (P.charging) { P.acc.x += dx; P.acc.y += dy; } if (P.f.phase === 'windup' && !P.f.released) { P.post.x += dx; P.post.y += dy; } } },
-  studio: { pose: (e, dt) => { const b = setPose(e, dt); e.m.root.position.set(e.pos.x, e.pos.y + b, e.pos.z); e.m.root.rotation.y = e.yaw; }, freeze: () => { state = 'studio'; }, avatarEntity: () => avatar },
+  studio: { pose: (e, dt) => { const b = setPose(e, dt); e.m.root.position.set(e.pos.x, e.pos.y + b, e.pos.z); e.m.root.rotation.y = e.yaw; }, freeze: () => { state = 'studio'; }, play: () => { state = 'play'; }, avatarEntity: () => avatar },
   avatar: AV, get view() { return view; }, avatarHand: () => throwOrigin(), trailCount: () => { let n = 0; for (const t of trails.values()) n += t.samples.length; return n; }, physicsOk: phys.ok, physCounts: () => phys.counts(), V3: THREE.Vector3, damageEnemyForTest: (e, d) => damageEnemy(e, d, false, e.pos.clone()), spawnEnemyJavelin, vm: { stuckVisible: () => STUCK.filter(m => m.visible).length, fal: FAL },
 };
 }

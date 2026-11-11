@@ -10,7 +10,7 @@ export default async function ({ G, THREE, st, key, check, forcePlay, setGod }) 
   // (a) charged overhead from behind kills an unaware legionary
   fresh();
   let e = legioAhead(); e.state = 'guard'; e.yaw = Math.PI; e.wander = null; e.wT = 99; // facing away (+z is away? enemy faces +z when yaw=0) -> yaw=PI faces -z, away from player
-  key('KeyC'); st(15); key('Digit1'); G.input.mouse(true, false); st(1); G.input.mouseMove(0, -30); st(48); G.input.mouse(false, false); st(60);
+  key('KeyC'); st(15); key('Digit1'); G.input.mouse(true, false); st(6); G.P.f.dir = 'up'; st(43); G.input.mouse(false, false); st(60);
   key('KeyC', false);
   check('charged overhead from behind kills unaware legionary', e.dead);
   // (b) perfect parry with Q staggers the attacker
@@ -45,7 +45,7 @@ export default async function ({ G, THREE, st, key, check, forcePlay, setGod }) 
     if (t.pos.x > 200) { t.pos.x -= 400; t.pos.y = G.heightAt(t.pos.x, t.pos.z); }
     t.hp = 100; t.state = 'guard'; t.yaw = Math.PI; t.wT = 99; t.wander = t.pos.clone(); t.aware = 0;
     G.P.pos.set(t.pos.x, G.heightAt(t.pos.x, t.pos.z + 1.4), t.pos.z + 1.4); G.P.yaw = 0;
-    key('KeyC'); st(10); G.input.mouse(true, false); st(1); G.input.mouseMove(0, -30); st(47); G.input.mouse(false, false); st(40); key('KeyC', false);
+    key('KeyC'); st(10); G.input.mouse(true, false); st(6); G.P.f.dir = 'up'; st(42); G.input.mouse(false, false); st(40); key('KeyC', false);
     if (!t.dead) misses++;
   }
   check(`crouched charged backstab kills in 12/12 trials (misses ${misses})`, misses === 0);
@@ -55,16 +55,10 @@ export default async function ({ G, THREE, st, key, check, forcePlay, setGod }) 
   G.P.pos.z += 1.2; st(50);
   check('a blow at a player who stepped back misses', G.P.hp === 100 && e.swingHit === false);
   setGod(false);
-  // (z) Mount & Blade aim: a sweep just before the click picks the blow; a clear sweep right after re-aims it
-  fresh(); key('Digit1'); st(30);
-  G.input.mouseMove(-35, 3); st(2); G.input.mouse(true, false); st(8);
-  check('sweep left just before clicking → blow from the left', G.P.f.dir === 'left');
-  G.input.mouse(false, false); st(90);
-  G.input.mouse(true, false); st(6); G.input.mouseMove(2, 1); st(1);
-  check('no sweep → thrust', G.P.f.dir === 'thrust');
-  G.input.mouseMove(30, -2); st(1);
-  check('sweep right early in the windup turns it into a blow from the right', G.P.f.dir === 'right');
-  G.input.mouse(false, false); st(90);
+  // (z) click-to-attack: direction is random and changes from blow to blow
+  fresh(); key('Digit1'); st(30); const dirs = [];
+  for (let i = 0; i < 4; i++) { G.input.mouse(true, false); st(8); dirs.push(G.P.f.dir); G.input.mouse(false, false); st(90); }
+  check('a plain click attacks, in a random direction that changes each blow', dirs.every(d => C.DIRS.includes(d)) && dirs.every((d, i) => i === 0 || d !== dirs[i - 1]));
   // momentum and fighting stride
   fresh(); st(30); const p0 = G.P.pos.clone(); key('KeyW'); st(1); const v1 = Math.hypot(G.P.vel.x, G.P.vel.z); st(30);
   const v2 = Math.hypot(G.P.vel.x, G.P.vel.z); key('KeyW', false); st(30);

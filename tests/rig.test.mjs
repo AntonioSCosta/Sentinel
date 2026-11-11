@@ -37,3 +37,16 @@ test('clips split into disjoint per-layer sub-clips', () => {
   assert.deepEqual(s.sh.tracks.map(t => t.name), ['hand_l.quaternion']);
   assert.equal(splitClips(THREE, [c], false).X.sh, undefined);
 });
+
+import { legTwist, LEG_TWIST_MAX } from '../src/rig.js';
+test('legs turn gently toward travel, capped, and do not flip back and forth around sideways motion', () => {
+  assert.equal(legTwist(1.5, 0, false).yaw, 0);
+  assert.equal(legTwist(.1, .2, false).yaw, 0);                       // shuffling: legs stay put
+  const s = legTwist(.05, 1.5, false); assert.ok(s.yaw > 0 && s.yaw <= LEG_TWIST_MAX);
+  assert.ok(LEG_TWIST_MAX <= .55);
+  // tiny forward/back jitter while strafing keeps the same side (hysteresis)
+  let st = legTwist(-.05, 1.5, false); assert.equal(st.backward, false);
+  st = legTwist(-.2, 1.5, st.backward); assert.equal(st.backward, false);
+  st = legTwist(-1.4, .3, st.backward); assert.equal(st.backward, true);
+  st = legTwist(.1, 1.5, st.backward); assert.equal(st.backward, true);
+});
