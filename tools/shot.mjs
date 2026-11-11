@@ -3,7 +3,7 @@ import { createRequire } from 'module'; import http from 'http'; import fs from 
 const require = createRequire('/opt/npm-tools/node_modules/');
 const puppeteer = require('puppeteer');
 const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
-const TYPES = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.html': 'text/html', '.png': 'image/png', '.jpg': 'image/jpeg', '.glb': 'model/gltf-binary', '.wasm': 'application/wasm', '.json': 'application/json' };
+const TYPES = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.html': 'text/html', '.png': 'image/png', '.jpg': 'image/jpeg', '.glb': 'model/gltf-binary', '.bin': 'application/octet-stream', '.wasm': 'application/wasm', '.json': 'application/json' };
 const srv = http.createServer((q, r) => {
   const u = decodeURIComponent(q.url.split('?')[0]);
   let f = u.startsWith('/__nm/') ? path.join(ROOT, 'node_modules', u.slice(6)) : path.join(ROOT, u === '/' ? 'index.html' : u);

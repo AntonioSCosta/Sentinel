@@ -1619,7 +1619,7 @@ export async function boot() {
 export async function loadChars(THREE, base = 'assets/chars/') {
   const [{ GLTFLoader }, SkeletonUtils] = await Promise.all([import('three/addons/loaders/GLTFLoader.js'), import('three/addons/utils/SkeletonUtils.js')]);
   const gl = new GLTFLoader(), get = f => gl.loadAsync(base + f);
-  const [body, a1, a2, hl, hb] = await Promise.all(['body.glb', 'anim_ual1.glb', 'anim_ual2.glb', 'hair_long.glb', 'hair_beard.glb'].map(get));
+  const [body, a1, a2, hl, hb] = await Promise.all(['body.bin', 'anim_ual1.bin', 'anim_ual2.bin', 'hair_long.bin', 'hair_beard.bin'].map(get));
   const tl = new THREE.TextureLoader(), textures = {};
   await Promise.all(['roman_red', 'roman_white', 'roman_mail', 'velite', 'lusitano', 'lusitano_b'].map(async k => {
     const t = await tl.loadAsync(base + 'body_' + k + '.jpg'); t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; textures[k] = t;

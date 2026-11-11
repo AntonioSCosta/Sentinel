@@ -23,14 +23,14 @@ function slim(doc) {
   setTex(doc, { Superhero_Male_Dark: OUT + 'body_roman_red.jpg', Superhero_Male_Normal: OUT + 'body_normal.jpg', Superhero_Male_Roughness: OUT + 'body_roughness.jpg',
     Eye_Brown: TEX + '/T_Eye_Brown.png', Eye_Normal: TEX + '/T_Eye_Normal.png', Hair_1_Normal: TEX + '/T_Hair_1_Normal.jpg', Hair_1_BaseColor: TEX + '/T_Hair_1_BaseColor.jpg' });
   slim(doc); await doc.transform(prune());
-  await io.write(OUT + 'body.glb', doc);
+  await io.write(OUT + 'body.bin', doc);
 }
 // hair (origin at 0 = modelled in place on the bind-pose head)
 for (const h of ['Hair_Long', 'Hair_Beard', 'Hair_Buzzed']) {
   const doc = await io.read(path.join(SRC, 'hair', h + '.gltf'));
   setTex(doc, { Hair_1_Normal: TEX + '/T_Hair_1_Normal.jpg', Hair_1_BaseColor: TEX + '/T_Hair_1_BaseColor.jpg', Hair_2_Normal: TEX + '/T_Hair_2_Normal.jpg', Hair_2_BaseColor: TEX + '/T_Hair_2_BaseColor.jpg' });
   slim(doc); await doc.transform(prune());
-  await io.write(OUT + h.toLowerCase() + '.glb', doc);
+  await io.write(OUT + h.toLowerCase() + '.bin', doc);
 }
 // animations: keep only the clips the game uses; drop the mannequin mesh, scale tracks and non-root translations
 const KEEP = {
@@ -50,6 +50,6 @@ for (const [f, keep] of Object.entries(KEEP)) {
   for (const n of root.listNodes()) { if (n.getMesh()) n.setMesh(null); n.setSkin(null); }
   for (const s of root.listSkins()) s.dispose();
   await doc.transform(prune({ keepLeaves: true }), dedup());
-  await io.write(OUT + 'anim_' + f.slice(0, 4).toLowerCase() + '.glb', doc);
+  await io.write(OUT + 'anim_' + f.slice(0, 4).toLowerCase() + '.bin', doc);
 }
 console.log(fs.readdirSync(OUT).map(f => f + ' ' + (fs.statSync(OUT + f).size / 1024 | 0) + 'KB').join('\n'));
