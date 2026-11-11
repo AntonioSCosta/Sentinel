@@ -48,3 +48,11 @@ test('a velite who has drawn his sword can parry too', async () => {
   const act = decide({ kind: 'velite', fighter: { phase: 'idle' } }, { dist: 1, playerFighter: { phase: 'windup' }, difficulty: 2, attackersNow: 0, rng: () => 0 });
   assert.equal(act, 'block');
 });
+
+test('a soldier a step away from a wind-up raises his guard, even when it is not his turn to attack', async () => {
+  const { decide, REACH } = await import('../src/ai.js');
+  const ctx = { playerFighter: { phase: 'windup' }, difficulty: 1, attackersNow: 0, rng: () => .1 };
+  assert.equal(decide({ kind: 'legio', fighter: { phase: 'idle' } }, { ...ctx, dist: REACH + .7 }), 'block');
+  assert.equal(decide({ kind: 'legio', fighter: { phase: 'idle' } }, { ...ctx, dist: 2, engaged: false }), 'block');
+  assert.equal(decide({ kind: 'legio', fighter: { phase: 'idle' } }, { ...ctx, dist: 5 }), 'approach', 'too far to matter');
+});

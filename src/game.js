@@ -840,7 +840,7 @@ function dropPack(e) {
 function resetWorld() {
   for (const g of packs) scene.remove(g); packs.length = 0;
   if (halt) { for (const o of halt.objs) scene.remove(o); for (const c of halt.cols) c.off = true; halt = null; }
-  for (const s of fallen) scene.remove(s.mesh); fallen.length = 0; loot = null;
+  for (const s of fallen) scene.remove(s.mesh); fallen.length = 0; loot = null; catOut = null;
   scene.fog.density = FOG_BASE;
   if (typeof avatar !== 'undefined') { avatar.shieldLost = false; if (AV.shield) AV.shield.visible = true; }
   // clear dynamic objects
@@ -869,8 +869,8 @@ function resetWorld() {
   P.yaw = Math.PI * .3; P.pitch = -.05;
   for (let i = 0; i < companions; i++) spawnAlly(i);
   // patrol on the road, marching south
-  const col = ['legio', 'legio', 'velite', 'legio', 'legio', 'velite', 'legio', 'legio'];
-  col.forEach((k, i) => { const z = -18 - i * 3.2; spawn(k, roadX(z) + (i % 2 ? 1 : -1), z, 'patrol'); });
+  const col8 = ['legio', 'legio', 'velite', 'legio', 'legio', 'velite', 'legio', 'legio'], col = [...col8, ...col8];   // sixteen men in two files
+  col.forEach((k, i) => { const z = -18 - Math.floor(i / 2) * 3.2; spawn(k, roadX(z) + (i % 2 ? 1.1 : -1.1), z, 'patrol'); });
   // camp garrison (kept for a later chapter: the ambush mission ends on the road)
   const guards = chapter !== 'acampamento' ? [] : [[-10, 0], [10, -2], [-3, -10], [12, 14], [-12, 16], [3, 14]];
   for (const [ox, oz] of guards) spawn('legio', CAMP.x + ox, CAMP.z + oz, 'camp');
@@ -893,7 +893,7 @@ function spawn(kind, x, z, group) {
   const stats = { legio: { hp: 100, sp: 3.9, dmg: 13 }, velite: { hp: 65, sp: 3.7, dmg: 15 }, centurion: { hp: 460, sp: 4.4, dmg: 24 } }[kind];
   const e = { kind, m, pos: new THREE.Vector3(x, heightAt(x, z), z), hp: stats.hp, maxhp: stats.hp, sp: stats.sp, dmg: stats.dmg,
     state: group === 'patrol' ? 'march' : group === 'boss' ? 'chase' : 'guard', group, yaw: Math.PI, home: new THREE.Vector3(x, 0, z),
-    dir: -1, aware: 0, atkT: 0, f: C.createFighter({ shieldHP: kind === 'velite' ? 35 : kind === 'centurion' ? 120 : 70, stamina: kind === 'centurion' ? 140 : 100, tele: kind === 'velite' ? 1.4 : kind === 'centurion' ? 1.5 : 1.7 }), aiT: rr(0, .3), act: 'approach', vel: { x: 0, z: 0 }, dodgeRoll: 1, mv: { x: 0, z: 0 }, releaseAt: 0, feintAt: 0, blockLeft: 0, slowT: 0, cd: rr(.5, 1.5), ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, wander: null, wT: 0, strafe: rand() < .5 ? 1 : -1, moving: 0, barkT: 0, jav: kind === 'velite' ? JAVELINS.velite : 0 };
+    dir: -1, aware: 0, atkT: 0, f: C.createFighter({ shieldHP: kind === 'velite' ? 35 : kind === 'centurion' ? 140 : 90, stamina: kind === 'centurion' ? 140 : 100, tele: kind === 'velite' ? 1.4 : kind === 'centurion' ? 1.5 : 1.7 }), aiT: rr(0, .3), act: 'approach', vel: { x: 0, z: 0 }, dodgeRoll: 1, mv: { x: 0, z: 0 }, releaseAt: 0, feintAt: 0, blockLeft: 0, slowT: 0, cd: rr(.5, 1.5), ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, wander: null, wT: 0, strafe: rand() < .5 ? 1 : -1, moving: 0, barkT: 0, jav: kind === 'velite' ? JAVELINS.velite : 0 };
   if (group === 'patrol') { e.yaw = 0; e.dir = 1; } // marching south (+z)
   enemies.push(e); return e;
 }
@@ -901,7 +901,7 @@ function spawn(kind, x, z, group) {
 /* =========================================================
    Prologue: the betrayal of Galba (150 BC)
    ========================================================= */
-const RING_FAR = 52, RING_N = 36, RING_R0 = 30, RING_R1 = 11.5, RING_R2 = 7;
+const RING_FAR = 42, RING_N = 36, RING_R0 = 30, RING_R1 = 11.5, RING_R2 = 7;
 function ringRadius(t) { return lerp(RING_R0, RING_R1, t); }
 function setRing(R) { for (const e of enemies) if (e.group === 'cordon' && e.state === 'cordon' && !(e.party && !betrayed)) e.home.set(MEADOW.x + Math.cos(e.ang) * R, 0, MEADOW.z + Math.sin(e.ang) * R); }
 function resetPrologue() {
@@ -1117,6 +1117,7 @@ const HALT_COLS = [];   // tent colliders, made once and switched on for this mi
 function resetCativos() {
   const L = haltLayout(HALT), objs = [], add = o => { scene.add(o); objs.push(o); return o; }, Y = (x, z) => heightAt(x, z);
   P.pos.set(CSTART.x, Y(CSTART.x, CSTART.z), CSTART.z); P.yaw = Math.atan2(P.pos.x - HALT.x, P.pos.z - HALT.z); P.pitch = -.05; P.pedras = 0;
+  for (let i = 0; i < 2; i++) spawnAlly(i);   // two men who escaped the field with him
   // tents and the fire
   if (!HALT_COLS.length) for (const t of L.tents) HALT_COLS.push(addCol(t.x, t.z, 1.25));
   for (const c of HALT_COLS) c.off = false;
@@ -1145,7 +1146,7 @@ function resetCativos() {
   });
   for (const q of L.sentinel) { const e = spawn('legio', q.x, q.z, 'halt'); e.yaw = q.yaw; e.beat = 3; }
   addPickup('dardos', CSTART.x - 6, CSTART.z + 3); addPickup('odre', CSTART.x - 2, CSTART.z - 4);
-  halt = { groups, objs, cols: HALT_COLS, freed: 0, fighters: 0, cut: null, cutT: 0, reinfT: null, warned: 0 };
+  halt = { groups, objs, cols: HALT_COLS, freed: 0, fighters: 0, cut: null, cutT: 0, reinfT: null, warned: 0, said: 0 };
 }
 const boundNear = (r = 3.2) => halt ? halt.groups.find(g => g.bound && Math.hypot(g.x - P.pos.x, g.z - P.pos.z) < r) : null;
 /** The ropes are cut: the men look for arms among the dead, the others run for the woods. */
@@ -1155,7 +1156,7 @@ function freeGroup(g) {
     c.bound = false; c.crouch = false; halt.freed++;
     if (!isFighter(c.kind2)) { c.fleeTo = WOODS; c.delay = rr(0, .5); continue; }
     scene.remove(c.m.root); c.gone = true; men++;
-    const a = spawnAlly(allies.length); a.pos.copy(c.pos); a.yaw = c.yaw; a.jav = 0; a.unarmed = true; a.armT = 0;
+    const a = spawnAlly(allies.length); a.pos.copy(c.pos); a.yaw = c.yaw; a.jav = 0; a.unarmed = true; a.armT = 0; a.freed = true;
     a.f.shieldHP = 0; a.shieldLost = true; if (a.m.shield) a.m.shield.visible = false; if (a.m.rig) a.m.rig.bareArm = true; if (a.m.weapon) a.m.weapon.visible = false;
     a.m.root.position.copy(a.pos);
   }
@@ -1202,15 +1203,81 @@ function updateCaptives(dt) {
   }
   // away into the woods
   if (Math.hypot(P.pos.x - WOODS.x, P.pos.z - WOODS.z) < 9) {
-    if (canLeave(H.freed)) winCativos();
+    if (canLeave(H.freed)) startCatOutro();
     else if ((H.warned -= dt) <= 0) { H.warned = 6; showPrompt(`Ainda só libertaste ${H.freed} cativos: precisas de ${FREE_TO_LEAVE}`, 2.5); }
   }
   setObjective();
 }
-function winCativos() {
-  const men = allies.filter(a => !a.dead).length; companions = companionsFrom(men);
-  state = 'won'; SFX.horn(); endT = 1.2; nextChapter = 'emboscada';
-  endArgs = ['I · 149 A.C.', 'Os cativos estão livres', `${halt.freed} de 12 libertados. ${men} ${men === 1 ? 'homem pegou' : 'homens pegaram'} em armas romanas e ${men === 1 ? 'segue' : 'seguem'} Viriato.`];
+/** Opening: the stakes and the guards seen close, the halt from above the fire, then Viriato and his two men in the scrub. */
+function updateIntroCativos(dt) {
+  const T = introT, L = CAT_INTRO, y0 = heightAt(HALT.x, HALT.z), H = halt;
+  P.crouch = 1; view = 'third'; updateCamera(dt); view = introView; AV.root.visible = true;
+  introP1.copy(camera.position); introQ1.copy(camera.quaternion);
+  let tgt; const look = (p, q) => { tgt = q; introP0.copy(p); introQ0.setFromRotationMatrix(new THREE.Matrix4().lookAt(p, q, V(0, 1, 0))); };
+  if (T < 4.5) {          // 1 · among the captives at the first stake, low: roped, on their knees, a guard beside them
+    const g = H.groups[0], gy = heightAt(g.x, g.z), a = Math.atan2(g.x - HALT.x, g.z - HALT.z) + .5 + T * .07;
+    look(V(g.x + Math.sin(a) * 3.6, gy + 1.05, g.z + Math.cos(a) * 3.6), V(g.x, gy + .8, g.z));
+  } else if (T < 9) {     // 2 · the halt from above the clearing: the awnings, the fire, the guards on their beats
+    const a = 2.3 + (T - 4.5) * .08;
+    look(V(HALT.x + Math.sin(a) * 12.5, y0 + 6.4 - (T - 4.5) * .25, HALT.z + Math.cos(a) * 12.5), V(HALT.x, y0 + .8, HALT.z));
+  } else {                // 3 · from the scrub: Viriato and his two men watching, then down to his shoulder
+    const dx = HALT.x - P.pos.x, dz = HALT.z - P.pos.z, dl = Math.hypot(dx, dz) || 1, k = smooth(11, L, T);
+    look(V(P.pos.x + dx / dl * 4.6 - dz / dl * 1.8, P.pos.y + 1.0, P.pos.z + dz / dl * 4.6 + dx / dl * 1.8), V(P.pos.x, P.pos.y + .95, P.pos.z));
+    introP0.lerp(introP1, k); introQ0.slerp(introQ1, k);
+  }
+  camera.position.copy(introP0); camera.quaternion.copy(introQ0);
+  sun.position.copy(tgt).addScaledVector(SUN_DIR, 120); sun.target.position.copy(tgt);
+  const cut = [0, 4.5, 9].reduce((m, c) => Math.min(m, Math.abs(T - c)), 9);
+  if (introVeil) introVeil.style.opacity = String(Math.max(clamp(1 - (T - .2) / 1.6, 0, 1), clamp(1 - cut / .3, 0, 1) * (T > 1 ? .85 : 0)));
+  if (H.said < 1 && T > .6) { H.said = 1; showMsg('LUSITÂNIA · 149 A.C.', 'Os que Galba não matou vão a caminho dos mercados de escravos.', 3.6); }
+  if (H.said < 2 && T > 4.9) { H.said = 2; showMsg('', 'A coluna parou numa clareira. Sete legionários, doze cativos.', 3.6); }
+  if (H.said < 3 && T > 9.4) { H.said = 3; showMsg('I · OS CATIVOS', 'Viriato seguiu-os com dois homens.', 3.2); }
+  if (T >= L) endIntro();
+}
+/** Closing: the freed and the armed walk on into the wood past the smoke, Viriato last, and the mist closes behind them. */
+const CAT_OUT = 12;
+let catOut = null;
+function startCatOutro() {
+  state = 'outro'; outroT = 0; outroSaid = 0; introView = view;
+  $('hud').classList.add('intro'); $('msg').style.opacity = 0; missionMsgT = 0;
+  releaseAll(); C.endBlock(P.f); C.feint(P.f); P.charging = false; P.aimT = null; halt.cut = null;
+  for (const e of enemies) if (!e.dead) { e.state = 'guard'; e.home.copy(e.pos); e.wander = V(e.pos.x, 0, e.pos.z); e.wT = 99; e.aware = 0; e.alarmT = null; if (e.f.blocking) C.endBlock(e.f); C.feint(e.f); }   // the Romans lose them in the mist
+  const dx = WOODS.x - HALT.x, dz = WOODS.z - HALT.z, dl = Math.hypot(dx, dz) || 1, u = V(dx / dl, 0, dz / dl), n = V(-u.z, 0, u.x);
+  for (const c of civs) if (c.fleeTo && !c.gone) c.fleeTo = { x: WOODS.x + u.x * 45, z: WOODS.z + u.z * 45 };
+  for (const a of allies) if (!a.dead) { if (a.f.blocking) C.endBlock(a.f); C.feint(a.f); a.throwPending = 0; a.throwT = 0; a.crouch = false; a.reach = 0; a.state = 'follow'; }
+  // a place for the camera beside their path with no trunk right in front of the lens
+  let cam = null; for (const [b, sd] of [[-8, 5.5], [-8, -5.5], [-5, 6.5], [-11, 4.5], [-5, -6.5], [-11, -4.5]]) { const p = V(WOODS.x, 0, WOODS.z).addScaledVector(u, b).addScaledVector(n, sd); if (!cam) cam = p; if (![[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([ox, oz]) => solidAt(p.x + ox, p.z + oz))) { cam = p; break; } }
+  catOut = { u, n, cam };
+}
+function updateCatOutro(dt) {
+  outroT += dt; const T = outroT, O = catOut, u = O.u, n = O.n;
+  if (missionMsgT > 0) { missionMsgT -= dt; if (missionMsgT <= 0) $('msg').style.opacity = 0; }
+  const c0 = V(P.pos.x, 0, P.pos.z); let cn = 1;
+  allies.filter(a => !a.dead).forEach((a, i) => {   // a loose file, each a little to one side of the last
+    const tx = WOODS.x + u.x * 60 + n.x * ((i % 3) - 1) * 2.2, tz = WOODS.z + u.z * 60 + n.z * ((i % 3) - 1) * 2.2, dx = tx - a.pos.x, dz = tz - a.pos.z, d = Math.hypot(dx, dz) || 1, sp = 2.9;
+    a.pos.x += dx / d * sp * dt; a.pos.z += dz / d * sp * dt; resolve(a.pos, .35); a.pos.y = heightAt(a.pos.x, a.pos.z);
+    a.mv.x = lerp(a.mv.x, dx / d * sp, Math.min(1, dt * 6)); a.mv.z = lerp(a.mv.z, dz / d * sp, Math.min(1, dt * 6)); a.vel.x = a.vel.z = 0;
+    faceTo(a, tx, tz, dt, 5); C.tickFighter(a.f, dt); a.flash = 0; for (const mt of a.m.mats) mt.emissive.setRGB(0, 0, 0);
+    const bob = setPose(a, dt); a.m.root.position.set(a.pos.x, a.pos.y + bob, a.pos.z); a.m.root.rotation.y = a.yaw; c0.add(V(a.pos.x, 0, a.pos.z)); cn++;
+  });
+  // Viriato goes last
+  { const sp = T > 1.2 ? 2.5 : 0; P.vel.x = u.x * sp; P.vel.z = u.z * sp; P.pos.x += P.vel.x * dt; P.pos.z += P.vel.z * dt; resolve(P.pos, .4); P.pos.y = heightAt(P.pos.x, P.pos.z);
+    P.yaw = wrapA(P.yaw + clamp(wrapA(Math.atan2(-u.x, -u.z) - P.yaw), -dt * 4, dt * 4)); P.pitch = 0; P.crouch = lerp(P.crouch, 0, Math.min(1, dt * 5)); }
+  view = 'third'; updateCamera(dt); view = introView; VM.visible = false; AV.root.visible = true;
+  // the camera waits at the edge of the wood by the smoke, lets them pass, and rises as the mist takes them
+  c0.multiplyScalar(1 / cn); const cam = O.cam.clone(); cam.y = heightAt(cam.x, cam.z) + 1.5 + smooth(3, CAT_OUT, T) * .9;   // kept under the crowns of the trees
+  const tgt = V(c0.x, heightAt(c0.x, c0.z) + 1.1, c0.z);
+  camera.position.copy(cam); camera.lookAt(tgt); sun.position.copy(tgt).addScaledVector(SUN_DIR, 120); sun.target.position.copy(tgt);
+  scene.fog.density = FOG_BASE * (1 + 1.6 * smooth(5.5, CAT_OUT, T));
+  const men = allies.filter(a => !a.dead).length, freedMen = allies.filter(a => !a.dead && a.freed).length;
+  if (outroSaid < 1 && T > 1) { outroSaid = 1; showMsg('OS CATIVOS ESTÃO LIVRES', '', 2.6); }
+  if (outroSaid < 2 && T > 4.6) { outroSaid = 2; showMsg('', `${halt.freed} de 12 saíram da clareira. ${freedMen} ${freedMen === 1 ? 'leva' : 'levam'} armas romanas.`, 3.4); }
+  if (outroSaid < 3 && T > 8.6) { outroSaid = 3; showMsg('', 'Nos montes, outros fugitivos juntaram-se a eles.', 3); }
+  if (T >= CAT_OUT) {
+    companions = companionsFrom(men); catOut = null;
+    $('hud').classList.remove('intro'); state = 'won'; SFX.horn(); endT = .05; nextChapter = 'emboscada';
+    endArgs = ['I · 149 A.C.', 'Os cativos estão livres', `${halt.freed} de 12 libertados. Viriato segue para os montes com ${men} ${men === 1 ? 'homem' : 'homens'}.`];
+  }
 }
 
 /* Ambush won: Viriato's men come out of the scrub and strip the fallen patrol of its arms and rations. */
@@ -1273,6 +1340,7 @@ function updateLoot(dt) {
 }
 function updateOutro(dt) {
   if (loot) return updateLoot(dt);
+  if (catOut) return updateCatOutro(dt);
   outroT += dt; const T = outroT, { u } = outroCam;
   if (missionMsgT > 0) { missionMsgT -= dt; if (missionMsgT <= 0) $('msg').style.opacity = 0; }
   // he keeps running, deeper and deeper among the trees, until the wood swallows him
@@ -1310,7 +1378,7 @@ const SIGNAL = new THREE.Group(); SIGNAL.visible = false; scene.add(SIGNAL);
   const ring = new THREE.Mesh(new THREE.RingGeometry(7.4, 8, 48), new THREE.MeshBasicMaterial({ color: 0xe8c36a, transparent: true, opacity: .35, side: THREE.DoubleSide, depthWrite: false })); ring.rotation.x = -Math.PI / 2; ring.position.y = .08; SIGNAL.add(ring);
 }
 function updateSignal(dt) {
-  SIGNAL.visible = (chapter === 'prologo' || chapter === 'cativos') && state !== 'menu' && state !== 'outro';
+  SIGNAL.visible = (chapter === 'prologo' || chapter === 'cativos') && state !== 'menu' && (state !== 'outro' || chapter === 'cativos');
   if (!SIGNAL.visible) return;
   const sg = chapter === 'cativos' ? WOODS : ESCAPE; SIGNAL.position.set(sg.x, heightAt(sg.x, sg.z), sg.z);
   SIGNAL.children[0].rotation.y += dt * .25; SIGNAL.children[1].intensity = 2 + Math.sin(performance.now() * .013) * .5;
@@ -1393,8 +1461,7 @@ function raiseAlarm() {
    ========================================================= */
 const cv = canvas;
 window.addEventListener('keydown', e => {
-  if (state === 'intro' && e.code !== 'Escape') { introT = chapter === 'prologo' ? INTRO_P : INTRO_LEN; return; }
-  if (state === 'outro' && e.code !== 'Escape') { outroT = OUTRO_LEN; return; }
+  if (state === 'intro' || state === 'outro') { if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !e.repeat) { if (state === 'intro') introT = introLen(); else outroT = 99; } return; }   // only Enter skips: clicks and held keys from the fight do not
   keys[e.code] = true;
   if (state !== 'play') return;
   if (e.code === 'Digit1') selectW(0); if (e.code === 'Digit2') selectW(1); if (e.code === 'Digit3') selectW(2);
@@ -1413,8 +1480,7 @@ window.addEventListener('mousemove', e => {
   if (P.f.phase === 'windup' && !P.f.released) { P.post.x += e.movementX; P.post.y += e.movementY; }
 });
 window.addEventListener('mousedown', e => {
-  if (state === 'intro') { introT = chapter === 'prologo' ? INTRO_P : INTRO_LEN; return; }
-  if (state === 'outro') { outroT = OUTRO_LEN; return; }
+  if (state === 'intro' || state === 'outro') return;
   if (state !== 'play') return;
   if (document.pointerLockElement !== cv) { lock(); return; }
   if (e.button === 0) mouseL = true; if (e.button === 2) mouseR = true;
@@ -2029,7 +2095,7 @@ function updateEnemies(dt) {
         else if (!e.struck && dv < 2.4) { e.struck = true; e.civCd = rr(1.5, 2.8); hitCiv(v, V(v.pos.x - e.pos.x, 0, v.pos.z - e.pos.z).setLength(2.4)); }
       } else {
         const dh = Math.hypot(e.home.x - e.pos.x, e.home.z - e.pos.z);
-        if (dh > .25) speed = moveEnemy(e, e.home.x, e.home.z, Math.min(e.party && !betrayed ? 1.3 : betrayed ? 4.6 : 8, dh * 2.5), dt);
+        if (dh > .25) speed = moveEnemy(e, e.home.x, e.home.z, Math.min(e.party && !betrayed ? 1.3 : betrayed ? 4.6 : 6, dh * 2.5), dt);
         const ft = e.party && !betrayed && elder ? elder.pos : MEADOW; faceTo(e, ft.x, ft.z, dt, e.party ? 6 : 3);   // the parley party backs away still facing the elder
       }
       if (e.pilaT != null && state === 'play' && (e.pilaT -= dt) <= 0) {
@@ -2404,10 +2470,17 @@ function updateHUD(dt) {
    Flow: menu, pause, end
    ========================================================= */
 let introT = 0, introView = 'third';
-const INTRO_LEN = 9.5;
+const INTRO_LEN = 9.5, CAT_INTRO = 13;
+const introLen = () => chapter === 'prologo' ? INTRO_P : chapter === 'cativos' ? CAT_INTRO : INTRO_LEN;
+let skipEl = null;
+function skipHint() {
+  const on = state === 'intro' || state === 'outro';
+  if (on && !skipEl) { skipEl = document.createElement('div'); skipEl.textContent = 'ENTER para saltar'; skipEl.style.cssText = 'position:fixed;right:22px;bottom:18px;z-index:6;font:13px Georgia,serif;letter-spacing:.12em;color:rgba(232,220,196,.55);pointer-events:none'; document.body.appendChild(skipEl); }
+  if (skipEl) skipEl.style.display = on ? 'block' : 'none';
+}
 let introVeil = null, introTitled = false, introHorn = false;
 const OPENING = {
-  cativos: ['I · Os Cativos', 'Sozinho. Agacha-te (C), mata os guardas pelas costas ou com dardos, e corta as cordas (E).'],
+  cativos: ['I · Os Cativos', 'Agacha-te (C), mata os guardas pelas costas ou com dardos, e corta as cordas (E). Os teus dois homens só atacam quando a luta começar.'],
   emboscada: ['II · A Emboscada', 'Agacha-te (C) e aproxima-te sem seres visto. Um golpe pelas costas é mortal.'],
 };
 function startGame(intro = false) {
@@ -2471,6 +2544,7 @@ function updateIntro(dt) {
   introT += dt;
   if (missionMsgT > 0) { missionMsgT -= dt; if (missionMsgT <= 0) $('msg').style.opacity = 0; }
   if (chapter === 'prologo') return updateIntroPrologue(dt);
+  if (chapter === 'cativos' && halt) return updateIntroCativos(dt);
   view = 'third'; updateCamera(dt); view = introView;        // avatar posed, camera at its final third-person spot
   AV.root.visible = true;
   introP1.copy(camera.position); introQ1.copy(camera.quaternion);
@@ -2536,7 +2610,7 @@ $('next').addEventListener('click', () => { if (!nextChapter) return; setChapter
 const BRIEF = {
   prologo: ['LUSITÂNIA · 150 A.C.', 'Prólogo. O pretor Sérvio Galba promete terras aos lusitanos que entreguem as armas. Viriato está entre os que as entregaram.'],
   emboscada: ['LUSITÂNIA · 147 A.C.', 'Três anos depois de Galba, Roma volta aos vales. Uma patrulha desce a estrada do vale. Viriato e os seus esperam-na escondidos no mato. Não deixes nenhum voltar.'],
-  cativos: ['LUSITÂNIA · 149 A.C.', 'Os que Galba não matou vão a caminho dos mercados de escravos. A coluna parou numa clareira. Viriato seguiu-a sozinho.'],
+  cativos: ['LUSITÂNIA · 149 A.C.', 'Os que Galba não matou vão a caminho dos mercados de escravos. A coluna parou numa clareira. Viriato seguiu-a com dois homens.'],
   acampamento: ['LUSITÂNIA · 147 A.C.', 'O acampamento romano a norte: os mantimentos e o centurião.'],
 };
 function setChapter(c) {
@@ -2557,6 +2631,7 @@ $('sens2').addEventListener('input', e => { setSens(+e.target.value); $('sens').
    ========================================================= */
 let menuT = 0;
 function step(dt) {
+  skipHint();
   if (hitStopT > 0) { hitStopT -= dt; dt *= .15; } // brief impact freeze
   if (state === 'outro') { updateEnemies(dt); updateCivs(dt); updateRiders(dt); updateProjectiles(dt); updateOutro(dt); }
   else if (state === 'intro') { updateAllies(dt); updateEnemies(dt); updateCivs(dt); updateRiders(dt); updateProjectiles(dt); updateIntro(dt); }

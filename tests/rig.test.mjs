@@ -138,3 +138,17 @@ test('a civilian build narrows chest and arms but leaves the head its size', asy
   assert.ok(Math.abs(b.spine_01.scale.x * b.neck_01.scale.x - 1) < 1e-9 && Math.abs(b.spine_01.scale.z * b.neck_01.scale.z - 1) < 1e-9);
   assert.equal(b.spine_01.scale.y, 1);
 });
+
+test('raising the shield lifts the left arm and tucks the body behind it, eased in', async () => {
+  const { shieldUpPose } = await import('../src/rig.js');
+  const full = shieldUpPose(1), half = shieldUpPose(.5);
+  assert.ok(full.upperarm_l[0] < -20, 'left arm swung forward and up');
+  assert.ok(full.spine[0] > 0, 'crouched in behind it');
+  assert.ok(Math.abs(half.upperarm_l[0] - full.upperarm_l[0] / 2) < 1e-9);
+  assert.ok(Math.abs(shieldUpPose(0).upperarm_l[0]) < 1e-9);
+});
+test('fading a pose scales every bone offset, not only the trunk', async () => {
+  const { fadePose } = await import('../src/rig.js');
+  const p = fadePose({ spine: [10, 0, 0], upperarm_l: [-40, 0, 0], arm: { hand: [0, 1, 0], w: 1 } }, .5);
+  assert.deepEqual(p.upperarm_l, [-20, 0, 0]); assert.deepEqual(p.spine, [5, 0, 0]); assert.equal(p.arm.w, .5);
+});

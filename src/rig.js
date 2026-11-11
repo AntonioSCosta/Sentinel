@@ -292,9 +292,14 @@ function blendLayer(rig, L, target, dt, snap) {
  * The hips' turn is taken back out of the thighs so the feet stay planted. The touched bones are saved and restored next frame.
  */
 const _q = {};
+/** Shield raised (k = 0…1): the left arm brings it up in front of chest and face, the body tucks in behind it. */
+export function shieldUpPose(k) {
+  const m = v => v.map(x => x * k);
+  return { pelvis: m([3, 0, 0]), spine: m([9, 8, 0]), neck: m([7, -6, 0]), upperarm_l: m([-34, -10, 0]), lowerarm_l: m([-14, 0, 0]) };
+}
 /** A move scaled toward the base animation: body offsets and arm weight times k. */
 export function fadePose(p, k) {
-  const out = {}; for (const n of ['pelvis', 'spine', 'neck']) if (p[n]) out[n] = p[n].map(v => v * k);
+  const out = {}; for (const n of Object.keys(p)) if (Array.isArray(p[n])) out[n] = p[n].map(v => v * k);
   if (p.arm) out.arm = { ...p.arm, w: p.arm.w * k };
   return out;
 }
@@ -318,7 +323,7 @@ export function applyPose(THREE, rig, pose) {
     for (const n of ['thigh_l', 'thigh_r']) if (B[n]) { save(B[n]); rotateWorld(THREE, B[n], Ri); }
   }
   if (pose.spine) for (const n of ['spine_01', 'spine_02', 'spine_03']) if (B[n]) { save(B[n]); rotateWorld(THREE, B[n], charQuat(THREE, rootQ, pose.spine, 1 / 3)); }
-  const map = { neck: 'neck_01', clavicle_r: 'clavicle_r', upperarm_r: 'upperarm_r', lowerarm_r: 'lowerarm_r', hand_r: 'hand_r' };
+  const map = { neck: 'neck_01', clavicle_r: 'clavicle_r', upperarm_r: 'upperarm_r', lowerarm_r: 'lowerarm_r', hand_r: 'hand_r', upperarm_l: 'upperarm_l', lowerarm_l: 'lowerarm_l' };
   for (const [k, n] of Object.entries(map)) if (pose[k] && B[n]) { save(B[n]); rotateWorld(THREE, B[n], charQuat(THREE, rootQ, pose[k])); }
   if (pose.arm && pose.arm.w > 0 && B.upperarm_r && B.lowerarm_r && B.hand_r) { for (const n of ['upperarm_r', 'lowerarm_r', 'hand_r']) save(B[n]); solveArm(THREE, rig, pose.arm); }
   rig.poseSaved = saved;
@@ -393,6 +398,8 @@ export function driveRig(THREE, rig, s, dt) {
   if (!upper && f.blocking === 'sword') { pose = blockPose(BLOCKS[s.blockDir] ? s.blockDir : 'left', f.blockT || 0); upper = guardClip; }
   // reaching down to something on the ground (stripping the fallen): trunk bent over it, right hand going down to it
   if (!pose && !upper && s.reach > 0) pose = { spine: [22 * s.reach, 8 * s.reach, 0], neck: [10 * s.reach, 0, 0], arm: { hand: [.16, .34, .46], pole: [.9, .2, -.4], w: s.reach } };
+  // shield raised: visibly up in front of him, body tucked in behind it
+  if (!pose && !rig.oneShot && f.blocking === 'shield' && rig.shielded && !rig.bareArm) { const k = Math.min(1, (f.blockT || 0) / .14); pose = shieldUpPose(k * (2 - k)); }
   // a move cut short (hit, stagger, feint) lets go of the body over a few frames instead of snapping
   if (pose) { rig.lastPose = pose; rig.poseK = 1; }
   else if (rig.lastPose && (rig.poseK = (rig.poseK || 0) - dt / .12) > 0) pose = fadePose(rig.lastPose, rig.poseK);
