@@ -13,7 +13,7 @@ def acc(i):
     return np.frombuffer(b, dtype=dt, count=a['count'] * n, offset=v.get('byteOffset', 0) + a.get('byteOffset', 0)).reshape(a['count'], n)
 prim = next(p for m in j['meshes'] for p in m['primitives'] if j['materials'][p['material']]['name'] == 'MI_Superhero_Male')
 P = acc(prim['attributes']['POSITION']); UV = acc(prim['attributes']['TEXCOORD_0']); I = acc(prim['indices']).reshape(-1, 3)
-masks = {k: Image.new('L', (S, S), 0) for k in ('upper', 'lower', 'sleeve')}
+masks = {k: Image.new('L', (S, S), 0) for k in ('upper', 'lower', 'sleeve', 'shoe', 'strap')}
 draw = {k: ImageDraw.Draw(m) for k, m in masks.items()}
 for tri in I:
     c = P[tri].mean(0); x, y = abs(c[0]), c[1]
@@ -21,6 +21,8 @@ for tri in I:
     if x < .26 and .98 <= y <= 1.58: k = 'upper'          # chest, back, and the shoulder tops round the neck opening
     elif x < .26 and .6 <= y < .98: k = 'lower'           # belly, hips, skirt to mid-thigh
     elif .2 <= x < .4 and y > 1.28: k = 'sleeve'          # short sleeves
+    elif y < .095 and x < .3: k = 'shoe'                  # closed leather shoe
+    elif (.095 <= y < .125 or .19 <= y < .215) and x < .3: k = 'strap'  # ankle cuff and a thong tied above it
     if not k: continue
     uv = UV[tri]
     if np.ptp(uv[:, 0]) > .3 or np.ptp(uv[:, 1]) > .3: continue  # seam-spanning triangle
@@ -50,5 +52,8 @@ for name, cols in OUTFITS.items():
         m = np.asarray(masks[k], np.float32)[..., None] / 255
         cloth = mail * shade if col == 'mail' else np.array(col, np.float32) * shade
         img = img * (1 - m) + cloth * m
+    for k, col in (('shoe', (74, 50, 32)), ('strap', (58, 38, 24))):
+        m = np.asarray(masks[k], np.float32)[..., None] / 255
+        img = img * (1 - m) + np.array(col, np.float32) * np.clip(shade, .7, 1.25) * m
     Image.fromarray(img.clip(0, 255).astype(np.uint8)).save(OUT + 'body_' + name + '.jpg', quality=88)
     print('body_' + name + '.jpg')

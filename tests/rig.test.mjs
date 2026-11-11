@@ -50,3 +50,21 @@ test('legs turn gently toward travel, capped, and do not flip back and forth aro
   st = legTwist(-1.4, .3, st.backward); assert.equal(st.backward, true);
   st = legTwist(.1, 1.5, st.backward); assert.equal(st.backward, true);
 });
+
+import { makeRig, driveRig } from '../src/rig.js';
+test('the chest never winds up: guarding while side-stepping keeps the spine twist bounded', () => {
+  const bone = n => { const b = new THREE.Bone(); b.name = n; return b; };
+  const body = new THREE.Group(), root = bone('root'), pelvis = bone('pelvis'), s1 = bone('spine_01'), s3 = bone('spine_03');
+  body.add(root); root.add(pelvis); pelvis.add(s1); s1.add(s3);
+  const q = n => new THREE.QuaternionKeyframeTrack(n + '.quaternion', [0, 2], [0, 0, 0, 1, 0, 0, 0, 1]);
+  const clips = ['Idle_Loop', 'Walk_Loop', 'Jog_Fwd_Loop', 'Idle_Shield_Loop', 'Sword_Regular_A'].map(n => new THREE.AnimationClip(n, 2, [q('pelvis'), q('spine_01'), q('spine_03')]));
+  const rig = makeRig(THREE, o => o.clone(true), { body, clips, split: [null, null] }, { shielded: true });
+  const f = new THREE.Vector3(); let worst = 0;
+  for (let i = 0; i < 600; i++) {
+    driveRig(THREE, rig, { speed: .3, side: 1.6, combat: true, f: { phase: 'idle' }, T: C, throwK: -1 }, 1 / 60);
+    rig.root.updateMatrixWorld(true);
+    f.set(0, 0, 1).transformDirection(rig.bones.spine_03.matrixWorld);
+    worst = Math.max(worst, Math.abs(Math.atan2(f.x, f.z)));
+  }
+  assert.ok(worst < .15, 'chest stays on the target, got ' + worst.toFixed(2) + ' rad');
+});

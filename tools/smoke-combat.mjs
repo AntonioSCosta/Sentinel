@@ -10,9 +10,9 @@ export default async function ({ G, THREE, st, key, check, forcePlay, setGod }) 
   // (a) charged overhead from behind kills an unaware legionary
   fresh();
   let e = legioAhead(); e.state = 'guard'; e.yaw = Math.PI; e.wander = null; e.wT = 99; // facing away (+z is away? enemy faces +z when yaw=0) -> yaw=PI faces -z, away from player
-  key('KeyC'); st(15); key('Digit1'); G.input.mouse(true, false); st(6); G.P.f.dir = 'up'; st(43); G.input.mouse(false, false); st(60);
+  key('KeyC'); st(15); key('Digit1'); G.forceDir('up'); G.input.mouse(true, false); st(49); G.forceDir(null); G.input.mouse(false, false); st(60);
   key('KeyC', false);
-  check('charged overhead from behind kills unaware legionary', e.dead);
+  check('charged overhead from behind kills unaware legionary (' + [e.state, e.hp | 0, e.yaw.toFixed(2), G.P.f.phase, e.pos.distanceTo(G.P.pos).toFixed(2)] + ')', e.dead);
   // (b) perfect parry with Q staggers the attacker
   fresh(); e = legioAhead(); e.state = 'chase'; e.yaw = 0; e.aiT = 99;
   C.beginAttack(e.f, 'left'); e.releaseAt = 0; C.releaseAttack(e.f);
@@ -45,7 +45,7 @@ export default async function ({ G, THREE, st, key, check, forcePlay, setGod }) 
     if (t.pos.x > 200) { t.pos.x -= 400; t.pos.y = G.heightAt(t.pos.x, t.pos.z); }
     t.hp = 100; t.state = 'guard'; t.yaw = Math.PI; t.wT = 99; t.wander = t.pos.clone(); t.aware = 0;
     G.P.pos.set(t.pos.x, G.heightAt(t.pos.x, t.pos.z + 1.4), t.pos.z + 1.4); G.P.yaw = 0;
-    key('KeyC'); st(10); G.input.mouse(true, false); st(6); G.P.f.dir = 'up'; st(42); G.input.mouse(false, false); st(40); key('KeyC', false);
+    key('KeyC'); st(10); G.forceDir('up'); G.input.mouse(true, false); st(48); G.forceDir(null); G.input.mouse(false, false); st(40); key('KeyC', false);
     if (!t.dead) misses++;
   }
   check(`crouched charged backstab kills in 12/12 trials (misses ${misses})`, misses === 0);

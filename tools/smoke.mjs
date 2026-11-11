@@ -24,6 +24,7 @@ export const checks = [];
 const check = (name, ok) => { checks.push([name, !!ok]); if (!ok) console.log('CHECK FAILED:', name); };
 
 try {
+  G.setCompanions(0); // the older scenarios are solo; companions have their own in smoke-allies.mjs
   G.start(1); forcePlay();
   key('KeyW'); st(180); key('KeyW', false);
   st(1200);
@@ -47,7 +48,7 @@ try {
   G.damagePlayer(500, G.P.pos.clone().add(new THREE.Vector3(1, 0, 0)), false); st(200);
   check('death', G.state === 'dead' && doc.getElementById('endt').textContent.length > 0);
   // extra scenario hooks for later tasks
-  for (const mod of ['./smoke-combat.mjs', './smoke-models.mjs', './smoke-pause.mjs', './smoke-review.mjs', './smoke-anim.mjs', './smoke-armour.mjs', './smoke-foliage.mjs', './smoke-shieldhand.mjs', './smoke-thirdperson.mjs', './smoke-throw.mjs']) { const extra = await import(mod);
+  for (const mod of ['./smoke-combat.mjs', './smoke-models.mjs', './smoke-pause.mjs', './smoke-review.mjs', './smoke-anim.mjs', './smoke-armour.mjs', './smoke-foliage.mjs', './smoke-shieldhand.mjs', './smoke-thirdperson.mjs', './smoke-throw.mjs', './smoke-allies.mjs']) { const extra = await import(mod);
   const ctx = { G, THREE, win, doc, st, key, check, forcePlay, setGod: v => { god = v; } };
   await extra.default(ctx); if (extra.chargeOnly) await extra.chargeOnly(ctx); }
 } catch (e) { console.log('EXCEPTION', e.stack); checks.push(['no exception', false]); }

@@ -184,11 +184,15 @@ export function driveRig(THREE, rig, s, dt) {
     if (rig.oneShot && /Shield_Break|Knockback/.test(rig.oneShot.clip)) sh[rig.oneShot.clip] = { w: 2, time: rig.oneShot.t };
   }
   blendLayer(rig, 'lo', lo, dt); blendLayer(rig, 'up', up, dt); if (rig.shielded) blendLayer(rig, 'sh', sh, dt);
+  // undo last frame's counter-twist first: the mixer skips bones whose animated value did not change
+  // (a held guard pose), so a twist left on the bone would add up frame after frame and spin the chest
+  const sp1 = rig.bones.spine_01;
+  if (rig.spineBase && sp1) { sp1.quaternion.copy(rig.spineBase); rig.spineBase = null; }
   rig.mixer.update(dt);
   // legs turn toward travel, spine turns back so the chest stays on the target
   if (Math.abs(rig.side) > .01) {
     rig.body.rotation.y = rig.side;
-    const sp1 = rig.bones.spine_01; if (sp1) twistWorldY(THREE, sp1, -rig.side);
+    if (sp1) { rig.spineBase = (rig._sb || (rig._sb = sp1.quaternion.clone())).copy(sp1.quaternion); twistWorldY(THREE, sp1, -rig.side); }
   } else rig.body.rotation.y = 0;
 }
 

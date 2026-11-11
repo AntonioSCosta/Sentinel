@@ -11,6 +11,7 @@ import { withTimeout } from './physics.js';
 import { sweepHit, capsuleOf, glance, bladeSegment, toWorld, bladeDir } from './swing.js';
 import { resolveQuality } from './quality.js';
 import { makeRig, driveRig } from './rig.js';
+import { followSlot, pickFoe, pickTarget, allyAct } from './ally.js';
 
 /**
  * Builds the whole game. Rendering, DOM and window are injected so the game can run headless in tests.
@@ -587,7 +588,8 @@ const WNAMES = ['Falcata', 'Dardos', 'Funda'];
 let state = 'menu';
 const P = { f: C.createFighter(), pos: new THREE.Vector3(), vy: 0, yaw: 0, pitch: 0, hp: 100, ground: true, crouch: 0, w: 0, dardos: 0, pedras: 0,
   atk: 0, cd: 0, kills: 0, shots: 0, hits: 0, heads: 0, time: 0, stepT: 0, bob: 0, swing: 0, throwT: 0, hurtT: 0 };
-let enemies = [], projectiles = [], pickups = [];
+let enemies = [], projectiles = [], pickups = [], allies = [], companions = 3;
+let forcedDir = null; // tests pin the blow direction
 let mission = 0, tentsBurnt = 0, missionMsgT = 0, alarm = false;
 Object.defineProperty(P, 'st', { get() { return P.f.stamina; }, set(v) { P.f.stamina = v; }, enumerable: false });
 Object.defineProperty(P, 'block', { get() { return P.f.blocking != null; }, enumerable: false });
@@ -597,6 +599,8 @@ let view = 'third'; // M&B-style over-the-shoulder by default; V toggles first p
 function resetWorld() {
   // clear dynamic objects
   for (const e of enemies) { scene.remove(e.m.root); if (e.corpse) phys.removeCorpse(e.corpse); }
+  for (const a of allies) scene.remove(a.m.root);
+  allies = [];
   for (const p of projectiles) phys.remove(p.pid);
   for (const p of projectiles) scene.remove(p.mesh);
   for (const p of pickups) scene.remove(p.mesh);
@@ -611,6 +615,7 @@ function resetWorld() {
   P.pos.set(CASTRO.x - 9, 0, CASTRO.z - 5); P.pos.y = heightAt(P.pos.x, P.pos.z);
   P.yaw = Math.PI * .28; P.pitch = -.05;
   mission = 0; tentsBurnt = 0; alarm = false;
+  for (let i = 0; i < companions; i++) spawnAlly(i);
   // patrol on the road, marching south
   const col = ['legio', 'legio', 'velite', 'legio', 'legio', 'velite', 'legio', 'legio'];
   col.forEach((k, i) => { const z = -18 - i * 3.2; spawn(k, roadX(z) + (i % 2 ? 1 : -1), z, 'patrol'); });
@@ -637,6 +642,16 @@ function spawn(kind, x, z, group) {
     dir: -1, aware: 0, atkT: 0, f: C.createFighter({ shieldHP: kind === 'velite' ? 0 : 220, stamina: kind === 'centurion' ? 140 : 100 }), aiT: rr(0, .3), act: 'approach', vel: { x: 0, z: 0 }, dodgeRoll: 1, mv: { x: 0, z: 0 }, releaseAt: 0, feintAt: 0, blockLeft: 0, slowT: 0, cd: rr(.5, 1.5), ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, wander: null, wT: 0, strafe: rand() < .5 ? 1 : -1, moving: 0, barkT: 0 };
   if (group === 'patrol') { e.yaw = 0; e.dir = 1; } // marching south (+z)
   enemies.push(e); return e;
+}
+
+/** One of Viriato's companions: follows him, joins the fight once the Romans are fighting. */
+function spawnAlly(i) {
+  const m = soldier('lusitano'); scene.add(m.root);
+  const s = followSlot(i, P.pos, flatFwd());
+  const a = { kind: 'lusitano', ally: true, m, pos: new THREE.Vector3(s.x, heightAt(s.x, s.z), s.z), yaw: P.yaw + Math.PI, hp: 110, f: C.createFighter(), state: 'follow', i,
+    vel: { x: 0, z: 0 }, mv: { x: 0, z: 0 }, aiT: rr(0, .3), blockLeft: 0, releaseAt: 0, stride: 0, ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, hits: 0, crouch: false, swingHits: new Set() };
+  m.root.position.copy(a.pos); m.root.rotation.y = a.yaw;
+  allies.push(a); return a;
 }
 
 function addPickup(type, x, z, y) {
@@ -843,6 +858,19 @@ function enemySwing(e, ev) {
   if (ev.p0 === 0) { e.swingHit = false; SFX.swing(); }
   if (e.swingHit || state !== 'play') return;
   if (bladeBounced(e.pos, e.yaw, ev.dir, ev.p1)) { C.stopBlade(e.f); SFX.clank(spatial(e.pos) * .7); return; }
+  const a = e.T && e.T.ally;
+  if (a) {                               // the blow is aimed at a companion
+    if (a.dead) return;
+    const ra = sweepHit(e.pos, e.yaw, ev.dir, ev.p0, ev.p1, capsuleOf(a.pos));
+    if (!ra.hit) return;
+    e.swingHit = true;
+    const da = V(a.pos.x - e.pos.x, 0, a.pos.z - e.pos.z).normalize(), af = V(Math.sin(a.yaw), 0, Math.cos(a.yaw));
+    const res = C.resolveHit(a.f, { dir: ev.dir, power: ev.power * glance(ra.p), fromAngle: deg(Math.acos(clamp(af.dot(da.clone().negate()), -1, 1))), baseDamage: e.dmg });
+    const at = V(ra.at.x, ra.at.y, ra.at.z);
+    if (res.result === 'parried' || res.result === 'blocked') { C.stopBlade(e.f); if (res.attackerStagger) C.stagger(e.f, res.attackerStagger); SFX.clank(spatial(a.pos)); burst('spark', at, 8); return; }
+    if (res.damage > 0) hurtAlly(a, res.damage, at);
+    return;
+  }
   const r = sweepHit(e.pos, e.yaw, ev.dir, ev.p0, ev.p1, capsuleOf(P.pos, .32, 1.75 - P.crouch * .55));
   if (!r.hit) return;
   e.swingHit = true;
@@ -855,6 +883,86 @@ function enemySwing(e, ev) {
   if (res.result === 'blocked') { C.stopBlade(e.f); SFX.clank(); burst('spark', spark, 8); P.shake = .18; P.push = { x: dd.x * 1.5, z: dd.z * 1.5 }; return; }
   if (res.result === 'guardBroken') showPrompt('Guarda quebrada!', 1);
   if (res.damage > 0) { hurtPlayer(res.damage, e.pos); burst('blood', spark, 4); P.push = { x: dd.x * 2.5, z: dd.z * 2.5 }; P.kick = .25; hitStop(.05); }
+}
+function hurtAlly(a, dmg, at) {
+  a.hp -= dmg; a.hits++; a.heavy = dmg >= 30; a.flash = .15; burst('blood', at, 6); SFX.flesh(spatial(a.pos));
+  if (a.hp <= 0) { a.dead = true; a.deadT = 0; C.endBlock(a.f); SFX.die(spatial(a.pos)); feed('Um companheiro tombou'); }
+}
+/** A companion's falcata travelling its arc. */
+function allySwing(a, ev) {
+  if (ev.p0 === 0) { a.swingHits = new Set(); SFX.swing(spatial(a.pos)); }
+  if (bladeBounced(a.pos, a.yaw, ev.dir, ev.p1)) { C.stopBlade(a.f); return; }
+  for (const e of enemies) {
+    if (e.dead || a.swingHits.has(e) || Math.abs(e.pos.x - a.pos.x) > 4 || Math.abs(e.pos.z - a.pos.z) > 4) continue;
+    const r = sweepHit(a.pos, a.yaw, ev.dir, ev.p0, ev.p1, capsuleOf(e.pos));
+    if (!r.hit) continue;
+    a.swingHits.add(e);
+    const d = V(e.pos.x - a.pos.x, 0, e.pos.z - a.pos.z).normalize(), ef = V(Math.sin(e.yaw), 0, Math.cos(e.yaw));
+    const res = C.resolveHit(e.f, { dir: ev.dir, power: ev.power * glance(r.p), fromAngle: deg(Math.acos(clamp(ef.dot(d.clone().negate()), -1, 1))), baseDamage: 26 });
+    const at = V(r.at.x, r.at.y, r.at.z);
+    if (res.result === 'parried' || res.result === 'blocked') { C.stopBlade(a.f); if (res.attackerStagger) C.stagger(a.f, res.attackerStagger); SFX.clank(spatial(a.pos)); burst('spark', at, 8); return; }
+    damageEnemy(e, res.damage, false, at, null, true); knock(e, d, 1);
+  }
+}
+function updateAllies(dt) {
+  const pf = flatFwd(), sprinting = Math.hypot(P.vel.x, P.vel.z) > 6;
+  for (const a of allies) {
+    const r = a.m.root;
+    if (a.dead) {
+      a.deadT += dt; a.mv.x = a.mv.z = 0;
+      if (a.m.rig) setPose(a, dt); else if (a.deadT < 1) { r.rotation.x = -Math.PI / 2 * smooth(0, .7, a.deadT); r.position.y = a.pos.y + .15 * smooth(0, .7, a.deadT); }
+      for (const m of a.m.mats) m.emissive.setRGB(0, 0, 0);
+      continue;
+    }
+    const px0 = a.pos.x, pz0 = a.pos.z;
+    if (a.flash > 0) a.flash -= dt; a.ph += dt;
+    const fl = Math.max(0, a.flash) * 4; for (const m of a.m.mats) m.emissive.setRGB(fl * .6, 0, 0);
+    const near = Math.hypot(P.pos.x - a.pos.x, P.pos.z - a.pos.z) < 32;
+    const foe = state === 'play' && near ? pickFoe(a.pos, enemies, 22) : null;
+    let want = { x: 0, z: 0 };
+    if (foe) {
+      a.state = 'chase'; a.crouch = false;
+      const dx = foe.pos.x - a.pos.x, dz = foe.pos.z - a.pos.z, d = Math.hypot(dx, dz) || 1;
+      faceTo(a, foe.pos.x, foe.pos.z, dt, a.f.phase === 'windup' ? 3.5 : 7);
+      a.aiT -= dt; a.blockLeft -= dt;
+      if (a.f.phase === 'idle') { const wb = a.blockLeft > 0 && a.f.shieldHP > 0; if (wb && !a.f.blocking) C.beginBlock(a.f, 'shield'); else if (!wb && a.f.blocking) C.endBlock(a.f); }
+      if (a.aiT <= 0 && a.f.phase === 'idle') {
+        a.aiT = .3;
+        const act = allyAct({ dist: d, foePhase: foe.f.phase, rng: rand });
+        if (act === 'block') a.blockLeft = rr(.5, .8);
+        else if (act === 'attack' && a.blockLeft <= 0) { C.endBlock(a.f); const dir = C.randomDir(a.lastDir, rand); if (C.beginAttack(a.f, dir)) { a.lastDir = dir; a.releaseAt = C.WINDUP[dir] + rr(0, .2); } }
+      }
+      if (a.f.phase === 'windup' && !a.f.released && a.f.t >= a.releaseAt) C.releaseAttack(a.f);
+      const sp = d > REACH ? Math.min(4.6, Math.max(.8, (d - REACH) * 3)) * (a.f.blocking ? .6 : 1) : d < 1.1 ? -1.4 : a.f.phase === 'windup' ? .9 : 0;
+      want = { x: dx / d * sp, z: dz / d * sp };
+      for (const ev of C.tickFighter(a.f, dt)) if (ev.type === 'swing') allySwing(a, ev);
+      sampleTrail(a, a.pos, a.yaw, a.f);
+    } else {
+      a.state = 'follow'; if (a.f.blocking) C.endBlock(a.f); if (a.f.phase === 'windup') C.feint(a.f);
+      C.tickFighter(a.f, dt);
+      a.crouch = P.crouch > .5;
+      const s = followSlot(a.i, P.pos, pf), dx = s.x - a.pos.x, dz = s.z - a.pos.z, d = Math.hypot(dx, dz);
+      if (d > 70) { a.pos.x = s.x; a.pos.z = s.z; a.vel.x = a.vel.z = 0; }
+      else if (d > (a.moving ? .5 : 1.6)) {
+        a.moving = true; const sp = Math.min(a.crouch ? 2.4 : sprinting || d > 9 ? 8 : 4.6, d * 2.2); want = { x: dx / d * sp, z: dz / d * sp };
+        // blocked by a wall, hut or tree: slide round it for a moment
+        if (sp > 1.5 && Math.hypot(a.mv.x, a.mv.z) < .6) a.stuckT = (a.stuckT || 0) + dt; else a.stuckT = 0;
+        if (a.stuckT > .5) { a.detourT = 1.3; a.detour = a.detour ? -a.detour : (a.i % 2 ? 1 : -1); a.stuckT = 0; }
+        if (a.detourT > 0) { a.detourT -= dt; want = { x: (-dz / d * a.detour * .9 + dx / d * .3) * sp, z: (dx / d * a.detour * .9 + dz / d * .3) * sp }; }
+        faceTo(a, a.pos.x + want.x, a.pos.z + want.z, dt, 5);
+      }
+      else { a.moving = false; faceTo(a, a.pos.x + pf.x, a.pos.z + pf.z, dt, 3); }
+    }
+    a.vel = steer(a.vel, want, 12, dt);
+    a.pos.x += a.vel.x * dt; a.pos.z += a.vel.z * dt;
+    for (const o of allies) { if (o === a || o.dead) continue; const dx = a.pos.x - o.pos.x, dz = a.pos.z - o.pos.z, d = Math.hypot(dx, dz); if (d < 1.3 && d > 1e-3) { a.pos.x += dx / d * (1.3 - d) * .5; a.pos.z += dz / d * (1.3 - d) * .5; } }
+    for (const o of enemies) { if (o.dead) continue; const dx = a.pos.x - o.pos.x, dz = a.pos.z - o.pos.z, d = Math.hypot(dx, dz); if (d < 1.0 && d > 1e-3) { a.pos.x += dx / d * (1 - d); a.pos.z += dz / d * (1 - d); } }
+    { const dx = a.pos.x - P.pos.x, dz = a.pos.z - P.pos.z, d = Math.hypot(dx, dz); if (d < 1.1 && d > 1e-3) { a.pos.x += dx / d * (1.1 - d); a.pos.z += dz / d * (1.1 - d); } }
+    resolve(a.pos, .4); a.pos.y = heightAt(a.pos.x, a.pos.z);
+    if (dt > 1e-4) { const k = Math.min(1, dt * 12); a.mv.x = lerp(a.mv.x, (a.pos.x - px0) / dt, k); a.mv.z = lerp(a.mv.z, (a.pos.z - pz0) / dt, k); }
+    const bob = setPose(a, dt);
+    r.position.set(a.pos.x, a.pos.y + bob, a.pos.z); r.rotation.y = a.yaw;
+  }
 }
 function use() {
   for (const t of supplyTents) {
@@ -948,16 +1056,15 @@ function updateProjectiles(dt) {
    Damage
    ========================================================= */
 let hitmT = 0, dmgT = 0;
-function damageEnemy(e, dmg, head, where, special) {
+function damageEnemy(e, dmg, head, where, special, byAlly) {
   e.hp -= dmg; e.flash = .15; e.hits = (e.hits || 0) + 1; e.heavy = dmg >= 45; burst('blood', where, head ? 14 : 8);
   SFX.flesh(); alert(e);
-  hitmT = .18; $('hitm').className = head ? 'head' : ''; $('hitm').style.opacity = 1;
-  if (head) P.heads++;
+  if (!byAlly) { hitmT = .18; $('hitm').className = head ? 'head' : ''; $('hitm').style.opacity = 1; if (head) P.heads++; }
   if (e.hp <= 0) {
-    e.dead = true; e.deadT = 0; P.kills++; SFX.die(spatial(e.pos));
+    e.dead = true; e.deadT = 0; if (!byAlly) P.kills++; SFX.die(spatial(e.pos));
     { const d = V(e.pos.x - P.pos.x, 0, e.pos.z - P.pos.z).normalize(); e.corpse = phys.addCorpse(e.pos, e.yaw, { x: d.x, y: .3, z: d.z }); }
     const name = { legio: 'Legionário', velite: 'Vélite', centurion: 'Centurião' }[e.kind];
-    feed(`${name} abatido${special ? ' — ' + special : head ? ' — na cabeça' : ''}`);
+    feed(`${name} abatido${byAlly ? ' por um companheiro' : special ? ' — ' + special : head ? ' — na cabeça' : ''}`);
     if (e.kind !== 'centurion' && rand() < .4) addPickup(rand() < .5 ? 'odre' : (rand() < .5 ? 'dardos' : 'pedras'), e.pos.x + rr(-.6, .6), e.pos.z + rr(-.6, .6));
     // the fallen alert their comrades
     for (const o of enemies) if (!o.dead && o.pos.distanceTo(e.pos) < 22) alert(o);
@@ -1158,7 +1265,8 @@ const engaged = new Set();
 /** Only the 2 (3 on Hard) nearest alerted swordsmen may close in; the rest wait in a ring. */
 function updateEngaged() {
   engaged.clear();
-  const melee = enemies.filter(e => !e.dead && e.state === 'chase' && e.kind !== 'velite');
+  for (const e of enemies) e.T = !e.dead && e.state === 'chase' ? pickTarget(e.pos, P, allies) : null;
+  const melee = enemies.filter(e => !e.dead && e.state === 'chase' && e.kind !== 'velite' && !e.T.ally);
   melee.sort((a, b) => a.pos.distanceToSquared(P.pos) - b.pos.distanceToSquared(P.pos));
   for (const e of melee.slice(0, diff === 2 ? 3 : 2)) engaged.add(e);
 }
@@ -1203,18 +1311,19 @@ function updateEnemies(dt) {
       }
     } else if (e.state === 'chase') {
       if (e.alarmT != null && e.alarmT > 0) { e.alarmT -= dt; if (e.alarmT <= 0) raiseAlarm(); }
-      faceTo(e, P.pos.x, P.pos.z, dt, e.f.phase === 'windup' ? 3.5 : 7);
+      const T = e.T || pickTarget(e.pos, P, allies), td = T.dist, tf = T.ally ? T.ally.f : P.f; // fights Viriato or a companion
+      faceTo(e, T.pos.x, T.pos.z, dt, e.f.phase === 'windup' ? 3.5 : 7);
       const slow = e.slowT > 0 ? LEG_SLOW.factor : 1; e.slowT -= dt;
       e.blockLeft -= dt; e.aiT -= dt;
       // raise the scutum against missiles while closing in, or when the AI chose to block
       if (e.f.phase === 'idle') {
-        const want = e.blockLeft > 0 || (pd > 3.5 && P.w !== 0);
+        const want = e.blockLeft > 0 || (!T.ally && pd > 3.5 && P.w !== 0);
         if (want && !e.f.blocking) C.beginBlock(e.f, 'shield'); else if (!want && e.f.blocking) C.endBlock(e.f);
       }
       if (e.aiT <= 0 && state === 'play' && e.f.phase === 'idle') {
         e.aiT = e.kind === 'centurion' ? .18 : .26; e.dodgeRoll = rand(); if (rand() < .12) e.strafe *= -1;
         const attackersNow = enemies.filter(o => o !== e && !o.dead && o.kind !== 'velite' && o.f.phase === 'windup').length;
-        e.act = decide({ kind: e.kind, fighter: e.f }, { dist: pd, playerFighter: P.f, difficulty: diff, attackersNow, rng: rand, engaged: engaged.has(e) });
+        e.act = decide({ kind: e.kind, fighter: e.f }, { dist: td, playerFighter: tf, difficulty: diff, attackersNow, rng: rand, engaged: engaged.has(e) || !!T.ally });
         if (e.act.startsWith('attack:')) { const dir = e.act.slice(7); C.endBlock(e.f); if (C.beginAttack(e.f, dir)) { e.releaseAt = C.WINDUP[dir] + rr(0, .25) * (e.kind === 'centurion' ? .4 : 1); e.feintAt = 0; } }
         else if (e.act === 'block') e.blockLeft = rr(.5, .9);
         else if (e.act === 'feint') { C.endBlock(e.f); if (C.beginAttack(e.f, C.DIRS[Math.floor(rand() * 4)])) { e.feintAt = rr(.15, .3); e.releaseAt = 99; } }
@@ -1224,9 +1333,9 @@ function updateEnemies(dt) {
         else if (!e.f.released && e.f.t >= e.releaseAt) C.releaseAttack(e.f);
       }
       { // duel footwork with acceleration-limited steering (no instant starts, stops or sliding)
-        const fw = footwork({ dist: pd, sp: e.sp * slow * (e.f.blocking ? .6 : 1) * (pd > 25 ? 1.15 : 1), act: e.act, strafe: e.strafe,
-          difficulty: diff, rng: () => e.dodgeRoll, self: e.f, player: P.f });
-        const fx = (P.pos.x - e.pos.x) / (pd || 1), fz = (P.pos.z - e.pos.z) / (pd || 1);
+        const fw = footwork({ dist: td, sp: e.sp * slow * (e.f.blocking ? .6 : 1) * (td > 25 ? 1.15 : 1), act: e.act, strafe: e.strafe,
+          difficulty: diff, rng: () => e.dodgeRoll, self: e.f, player: tf });
+        const fx = (T.pos.x - e.pos.x) / (td || 1), fz = (T.pos.z - e.pos.z) / (td || 1);
         e.vel = steer(e.vel, { x: fx * fw.forward + fz * fw.strafe, z: fz * fw.forward - fx * fw.strafe }, 9, dt);
         e.pos.x += e.vel.x * dt; e.pos.z += e.vel.z * dt;
         speed = Math.hypot(e.vel.x, e.vel.z);
@@ -1236,9 +1345,10 @@ function updateEnemies(dt) {
       if (e.kind === 'centurion' && e.barkT <= 0) { e.barkT = 6; SFX.grunt(spatial(e.pos)); for (const o of enemies) if (!o.dead && o.pos.distanceTo(e.pos) < 30) alert(o); }
     } else if (e.state === 'skirmish') {
       if (e.alarmT != null && e.alarmT > 0) { e.alarmT -= dt; if (e.alarmT <= 0) raiseAlarm(); }
-      faceTo(e, P.pos.x, P.pos.z, dt, 6);
+      if (pd < 9) e.flee = true; else if (pd > 14) e.flee = false;
+      if (e.flee && e.atkT <= 0) faceTo(e, 2 * e.pos.x - P.pos.x, 2 * e.pos.z - P.pos.z, dt, 6); else faceTo(e, P.pos.x, P.pos.z, dt, 6);
       const sees = losTerrain(e.pos.x, e.pos.y + 1.7, e.pos.z, P.pos.x, P.pos.y + 1.4, P.pos.z);
-      if (pd < 11) { const a = Math.atan2(e.pos.x - P.pos.x, e.pos.z - P.pos.z); speed = moveEnemy(e, e.pos.x + Math.sin(a) * 3, e.pos.z + Math.cos(a) * 3, e.sp, dt); }
+      if (e.flee) { const a = Math.atan2(e.pos.x - P.pos.x, e.pos.z - P.pos.z); speed = moveEnemy(e, e.pos.x + Math.sin(a) * 3, e.pos.z + Math.cos(a) * 3, e.sp, dt); }
       else if (pd > 26 || !sees) speed = moveEnemy(e, P.pos.x, P.pos.z, e.sp, dt);
       else { const a = Math.atan2(P.pos.x - e.pos.x, P.pos.z - e.pos.z) + Math.PI / 2 * e.strafe; speed = moveEnemy(e, e.pos.x + Math.sin(a) * 2, e.pos.z + Math.cos(a) * 2, 1.6, dt); if (rand() < dt * .3) e.strafe *= -1; }
       if (e.atkT > 0) {
@@ -1250,7 +1360,7 @@ function updateEnemies(dt) {
           const vel = V((target.x - from.x) / t, (target.y - from.y) / t + .5 * 11 * t, (target.z - from.z) / t);
           spawnProj('javelin', from, vel, 'enemy', e.dmg); SFX.jav(spatial(from));
         }
-      } else if (sees && pd < 34 && e.cd <= 0 && state === 'play') { e.atkT = .55; e.cd = rr(2.2, 3.6); }
+      } else if (sees && !e.flee && pd < 34 && e.cd <= 0 && state === 'play') { e.atkT = .55; e.cd = rr(2.2, 3.6); }
     }
     // separation
     for (const o of enemies) {
@@ -1325,7 +1435,7 @@ function updatePlayer(dt) {
       // buffered: a click during recovery/flinch starts the blow as soon as the fighter is free
       P.post.x = 0; P.post.y = 0;
       // direction is random for now (no mouse sweep needed); C.dirFromMouse(P.acc) is the Mount & Blade alternative
-      if (!C.beginAttack(P.f, C.randomDir(P.lastDir))) {
+      if (!C.beginAttack(P.f, forcedDir || C.randomDir(P.lastDir))) {
         if (P.f.phase === 'idle' && !P.f.blocking) { P.charging = false; showPrompt('Sem fôlego para atacar', .6); }
         else if (released) P.queued = true;
       } else if (P.queued) { P.queued = false; C.releaseAttack(P.f); P.charging = false; }
@@ -1568,10 +1678,10 @@ $('sens2').addEventListener('input', e => { setSens(+e.target.value); $('sens').
 let menuT = 0;
 function step(dt) {
   if (hitStopT > 0) { hitStopT -= dt; dt *= .15; } // brief impact freeze
-  if (state === 'play') { updatePlayer(dt); updateEnemies(dt); updateProjectiles(dt); updateCamera(dt); updateHUD(dt); }
+  if (state === 'play') { updatePlayer(dt); updateEnemies(dt); updateAllies(dt); updateProjectiles(dt); updateCamera(dt); updateHUD(dt); }
   else if (state === 'dead' || state === 'won') {
     if (endT > 0) { endT -= dt; if (endT <= 0 && endArgs) { endScreen(...endArgs); endArgs = null; } }
-    updateEnemies(dt); updateProjectiles(dt);
+    updateEnemies(dt); updateAllies(dt); updateProjectiles(dt);
     if (state === 'dead') { P.crouch = Math.min(1.9, P.crouch + dt * 2); camera.position.y = Math.max(P.pos.y + .3, camera.position.y - dt * 2); camera.rotation.z = Math.min(.6, camera.rotation.z + dt); }
   } else if (state === 'menu') {
     menuT += dt * .04;
@@ -1609,7 +1719,7 @@ $('start').disabled = false; $('start').textContent = 'COMEÇAR';
 return {
   start: d => { if (d != null) diff = d; startGame(); }, step, render: () => R.render(), setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
   P, supplyTents, heightAt, CAMP, scene, camera,
-  get enemies() { return enemies; }, get mission() { return mission; }, get state() { return state; },
+  get enemies() { return enemies; }, get allies() { return allies; }, setCompanions: n => { companions = n; }, forceDir: d => { forcedDir = d; }, hurtAllyForTest: (a, d) => hurtAlly(a, d, a.pos.clone()), get mission() { return mission; }, get state() { return state; },
   get projectiles() { return projectiles; }, get pickups() { return pickups; },
   input: { mouse: (l, r) => { mouseL = l; mouseR = r; }, mouseMove: (dx, dy) => { C.nudgeIntent(P.intent, dx, dy); if (P.charging) { P.acc.x += dx; P.acc.y += dy; } if (P.f.phase === 'windup' && !P.f.released) { P.post.x += dx; P.post.y += dy; } } },
   studio: { pose: (e, dt) => { const b = setPose(e, dt); e.m.root.position.set(e.pos.x, e.pos.y + b, e.pos.z); e.m.root.rotation.y = e.yaw; }, freeze: () => { state = 'studio'; }, play: () => { state = 'play'; }, avatarEntity: () => avatar },
