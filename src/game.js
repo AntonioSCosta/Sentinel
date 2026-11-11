@@ -28,8 +28,8 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
-const FOG = 0xcfb894;
-scene.fog = new THREE.FogExp2(FOG, .0058);
+const FOG = 0xb7c2bf;   // the damp blue-grey haze of the Beira hills
+scene.fog = new THREE.FogExp2(FOG, .0042);
 scene.background = new THREE.Color(FOG);
 const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, .05, 900);
 camera.rotation.order = 'YXZ';
@@ -50,7 +50,7 @@ const SUN_DIR = new THREE.Vector3(-.55, .62, .56).normalize();
 {
   const g = new THREE.SphereGeometry(700, 32, 16);
   const pos = g.attributes.position, cols = [];
-  const top = new THREE.Color(0x4f7fb4), hor = new THREE.Color(0xe9cf9f), low = new THREE.Color(0xb59b78), c = new THREE.Color();
+  const top = new THREE.Color(0x4a78ad), hor = new THREE.Color(0xcfd8d6), low = new THREE.Color(0x8f9a86), c = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
     const y = pos.getY(i) / 700;
     if (y > 0) c.copy(hor).lerp(top, Math.pow(y, .55)); else c.copy(hor).lerp(low, Math.min(1, -y * 4));
@@ -130,24 +130,25 @@ setSeed(777);
 {
   const pines = [], oaks = [], rocks = [], grass = [], shrubs = [];
   const blocked = (x, z, m) => Math.abs(x - roadX(z)) < 7 + m || inCamp(x, z, 12 + m) || Math.hypot(x - CASTRO.x, z - CASTRO.z) < 16 + m || Math.hypot(x - MEADOW.x, z - MEADOW.z) < 30 + m;
-  for (let n = 0; n < 2400 && pines.length + oaks.length < 760; n++) {
+  const DENS = { low: .45, medium: .8, high: 1 }[quality] || .8, TREES = Math.round(3000 * DENS);
+  for (let n = 0; n < 16000 && pines.length + oaks.length < TREES; n++) {
     const x = rr(-WORLD + 8, WORLD - 8), z = rr(-WORLD + 8, WORLD - 8);
     if (blocked(x, z, 0)) continue;
     const forest = vnoise(x * .025 + 40, z * .025);
-    if (rand() > forest * 1.25) continue;
+    if (rand() > .2 + forest * 1.5) continue;
     const y = heightAt(x, z), s = rr(.8, 1.35);
-    if (y > 46) continue;
-    if (y > 16 || rand() < .45) pines.push({ x, y, z, s, ry: rr(0, TAU) }); else oaks.push({ x, y, z, s, ry: rr(0, TAU) });
+    if (y > 52) continue;
+    if (y > 22 || rand() < .3) pines.push({ x, y, z, s, ry: rr(0, TAU) }); else oaks.push({ x, y, z, s, ry: rr(0, TAU) });
     addCol(x, z, .45 * s);
   }
   // mountains: three more trees for every one already on the slopes (4x in all), thinning out toward the bare peaks
-  { const mtn = pines.length + oaks.length ? [...pines, ...oaks].filter(t => t.y > 12).length : 0, want = mtn * 3;
+  { const mtn = pines.length + oaks.length ? [...pines, ...oaks].filter(t => t.y > 12).length : 0, want = Math.round(3200 * DENS) + mtn * 0;   // pine and oak woods climbing the slopes
     for (let n = 0, added = 0; n < want * 12 && added < want; n++) {
       const x = rr(-WORLD + 8, WORLD - 8), z = rr(-WORLD + 8, WORLD - 8);
       if (blocked(x, z, 0)) continue;
-      const y = heightAt(x, z); if (y < 12 || y > 64) continue;
-      if (rand() > .35 + vnoise(x * .03 + 11, z * .03) * .9 - (y - 12) / 110) continue;
-      const s = rr(.8, 1.3); (y > 22 || rand() < .6 ? pines : oaks).push({ x, y, z, s, ry: rr(0, TAU) }); addCol(x, z, .45 * s); added++;
+      const y = heightAt(x, z); if (y < 10 || y > 95) continue;
+      if (rand() > .55 + vnoise(x * .03 + 11, z * .03) * .7 - (y - 10) / 160) continue;
+      const s = rr(1, 1.55); (y > 45 || rand() < .5 ? pines : oaks).push({ x, y, z, s, ry: rr(0, TAU) }); addCol(x, z, .45 * s); added++;
     } }
   // thick groves: the forest the survivors run to, and cover round the ambush hide
   for (const [cx, cz, n, r] of [[ESCAPE.x, ESCAPE.z, 52, 24], [AMBUSH.x + 5, AMBUSH.z, 24, 13]]) for (let k = 0; k < n; k++) {
@@ -155,10 +156,11 @@ setSeed(777);
     if (Math.abs(x - roadX(z)) < 8 || Math.hypot(x - MEADOW.x, z - MEADOW.z) < 32 || Math.hypot(x - AMBUSH.x, z - AMBUSH.z) < 3.5 || Math.hypot(x - ESCAPE.x, z - ESCAPE.z) < 3) continue;
     const y = heightAt(x, z), s = rr(.85, 1.3); (rand() < .4 ? pines : oaks).push({ x, y, z, s, ry: rr(0, TAU) }); addCol(x, z, .45 * s);
   }
-  for (let n = 0; n < 170; n++) {
+  for (let n = 0; n < 700; n++) {   // penedos: rounded granite boulders, in clusters on the slopes
     const x = rr(-WORLD + 8, WORLD - 8), z = rr(-WORLD + 8, WORLD - 8);
     if (blocked(x, z, -3)) continue;
-    const s = rr(.6, 2.4), y = heightAt(x, z);
+    if (rand() > .3 + vnoise(x * .04 + 7, z * .04)) continue;
+    const s = rr(.6, 2.8), y = heightAt(x, z);
     rocks.push({ x, y: y - s * .25, z, s, sy: s * rr(.5, .9), ry: rr(0, TAU), rx: rr(-.3, .3) });
     addCol(x, z, s * .85, s * .55);
   }
@@ -168,28 +170,30 @@ setSeed(777);
     const y = heightAt(x, z); if (y > 30) continue;
     grass.push({ x, y, z, s: rr(.7, 1.4), ry: rr(0, TAU) });
   }
-  for (let n = 0; n < 6000 && shrubs.length < 900; n++) {          // mato: low evergreen shrubs, thicker where the forest is
+  const broom = [];
+  for (let n = 0; n < 20000 && shrubs.length < Math.round(3200 * DENS); n++) {          // mato: low evergreen shrubs, thicker where the forest is
     const x = rr(-WORLD + 6, WORLD - 6), z = rr(-WORLD + 6, WORLD - 6);
     if (blocked(x, z, -4)) continue;
     if (rand() > .25 + vnoise(x * .025 + 40, z * .025)) continue;
     const y = heightAt(x, z); if (y > 40) continue;
-    shrubs.push({ x, y: y - .05, z, s: rr(.6, 1.4), sy: rr(.5, 1.1), ry: rr(0, TAU) });
+    (rand() < .3 ? broom : shrubs).push({ x, y: y - .05, z, s: rr(.6, 1.4), sy: rr(.5, 1.1), ry: rr(0, TAU) });   // giesta in yellow flower among the green
   }
   for (let k = 0; k < 40; k++) { const a = rr(0, TAU), d = rr(1.6, 9), x = AMBUSH.x + Math.cos(a) * d, z = AMBUSH.z + Math.sin(a) * d; if (Math.abs(x - roadX(z)) < 6) continue; shrubs.push({ x, y: heightAt(x, z) - .05, z, s: rr(.9, 1.6), sy: rr(.7, 1.2), ry: rr(0, TAU) }); }
   // maritime pine: tall bare trunk with an umbrella crown; holm/cork oak: short trunk, forked limbs, wide dense crown
-  const pineTrunk = new THREE.CylinderGeometry(.16, .3, 8.2, 10); pineTrunk.translate(0, 4.1, 0);
+  const pineTrunk = new THREE.CylinderGeometry(.16, .3, 8.2, 6, 1, true);   // light geometry: thousands of these pineTrunk.translate(0, 4.1, 0);
   const oakTrunk = mergeGeos([
-    (() => { const g = new THREE.CylinderGeometry(.24, .38, 3.4, 10); g.translate(0, 1.7, 0); return g; })(),
-    (() => { const g = new THREE.CylinderGeometry(.1, .2, 2.4, 8); g.translate(0, 1.2, 0); g.rotateZ(.6); g.translate(.2, 3, 0); return g; })(),
-    (() => { const g = new THREE.CylinderGeometry(.1, .2, 2.2, 8); g.translate(0, 1.1, 0); g.rotateZ(-.55); g.rotateY(2.1); g.translate(-.1, 3, .1); return g; })(),
+    (() => { const g = new THREE.CylinderGeometry(.24, .38, 3.4, 6, 1, true); g.translate(0, 1.7, 0); return g; })(),
+    (() => { const g = new THREE.CylinderGeometry(.1, .2, 2.4, 5, 1, true); g.translate(0, 1.2, 0); g.rotateZ(.6); g.translate(.2, 3, 0); return g; })(),
+    (() => { const g = new THREE.CylinderGeometry(.1, .2, 2.2, 5, 1, true); g.translate(0, 1.1, 0); g.rotateZ(-.55); g.rotateY(2.1); g.translate(-.1, 3, .1); return g; })(),
   ]);
   instanced(pineTrunk, MAT('bark_pine'), pines);
   instanced(oakTrunk, MAT('bark_oak'), oaks);
   const leafy = (name, geo, mat, depth, list) => { const im = instanced(geo, mat, list); im.name = name; im.customDepthMaterial = depth; return im; };
-  leafy('pine-canopy', canopyGeo({ cards: 72, rx: 2.5, ry: 1.3, cy: 8.3, w: 1.15, h: 1, seed: 5, flat: .5 }), FOL.pine, FOL.pineDepth, pines);
-  leafy('oak-canopy', canopyGeo({ cards: 54, rx: 3.3, ry: 2.1, cy: 5.3, w: 1.8, h: 1.8, seed: 9 }), FOL.oak, FOL.oakDepth, oaks);
-  leafy('shrubs', canopyGeo({ cards: 12, rx: .9, ry: .55, cy: .55, w: 1, h: 1, seed: 13 }), FOL.shrub, FOL.shrubDepth, shrubs);
-  instanced(new THREE.DodecahedronGeometry(1, 0), MAT('terrain_rock', { flatShading: true }), rocks);
+  leafy('pine-canopy', canopyGeo({ cards: 23, rx: 2.2, ry: 2.5, cy: 7.2, w: 2.1, h: 1.9, seed: 5, flat: 0 }), FOL.pine, FOL.pineDepth, pines);
+  leafy('oak-canopy', canopyGeo({ cards: 22, rx: 3.1, ry: 2.0, cy: 5.3, w: 2.8, h: 2.8, seed: 9 }), FOL.oak, FOL.oakDepth, oaks);
+  leafy('shrubs', canopyGeo({ cards: 7, rx: .85, ry: .5, cy: .55, w: 1.3, h: 1.2, seed: 13 }), FOL.shrub, FOL.shrubDepth, shrubs);
+  { const bm = FOL.shrub.clone(); bm.color = new THREE.Color(0xe6cf3a); leafy('broom', canopyGeo({ cards: 6, rx: .75, ry: .55, cy: .6, w: 1.1, h: 1.1, seed: 21 }), bm, FOL.shrubDepth, broom); }
+  { const gm = MAT('terrain_rock', { flatShading: true }); gm.color = new THREE.Color(0x8d8e8c); instanced(new THREE.IcosahedronGeometry(1, 0), gm, rocks); }   // grey granite
   const gg = new THREE.PlaneGeometry(.8, .55); gg.translate(0, .27, 0);
   const gg2 = gg.clone(); gg2.rotateY(Math.PI / 2);
   const grassGeo = mergeGeos([gg, gg2]);

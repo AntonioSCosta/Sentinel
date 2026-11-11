@@ -79,7 +79,7 @@ export async function loadMaterials({ THREE, loader, quality = 'medium', anisotr
  * Uses world-space UVs so the 420 m terrain tiles cleanly. Falls back to flat colours when maps are missing.
  */
 /** Tints over the photo layers so the five ground textures sit together (the dried mud is much paler than the rest). */
-const TERRAIN_TINT = { camp_ground: 0x9a8670 };
+const TERRAIN_TINT = { camp_ground: 0x9a8670, terrain_grass: 0x86a25a, terrain_dry: 0x9a9468, terrain_rock: 0x8e8f8e };   // green pasture, damp earth, grey granite
 
 export function terrainMaterial(THREE, mats) {
   const layers = ['terrain_grass', 'terrain_dry', 'terrain_rock', 'road', 'camp_ground'];
