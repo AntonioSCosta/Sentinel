@@ -114,6 +114,54 @@ function addFace(THREE, assets, body) {
     fsm.parent.add(m); m.bind(fsm.skeleton, fsm.bindMatrix);
   }
 }
+/**
+ * Garment shell lifted off the body itself: the triangles of the trunk, shoulders and upper arms, pushed out a little and
+ * smoothed (so the cloth hangs over the muscles instead of showing them), keeping the body's own skin weights and UVs,
+ * so it bends exactly with the body and stays joined at the shoulders. Built once and shared.
+ */
+export function shellGeometry(THREE, bm, { offset = .014, iters = 14 } = {}) {
+  const g = bm.geometry, P = g.attributes.position, N = g.attributes.normal, SI = g.attributes.skinIndex, SW = g.attributes.skinWeight, UV = g.attributes.uv;
+  const names = bm.skeleton.bones.map(b => b.name), M = bm.matrixWorld, Mi = M.clone().invert(), v = new THREE.Vector3(), nv = new THREE.Vector3();
+  const nm = new THREE.Matrix3().getNormalMatrix(M);
+  const C = (a, i, k) => k === 0 ? a.getX(i) : k === 1 ? a.getY(i) : k === 2 ? a.getZ(i) : a.getW(i);
+  const WP = [], WN = [], dom = [];
+  for (let i = 0; i < P.count; i++) {
+    v.fromBufferAttribute(P, i).applyMatrix4(M); WP.push(v.clone()); nv.fromBufferAttribute(N, i).applyMatrix3(nm).normalize(); WN.push(nv.clone());
+    let b = 0, w = -1; for (let k = 0; k < 4; k++) { const ww = C(SW, i, k); if (ww > w) { w = ww; b = C(SI, i, k); } } dom.push(names[b]);
+  }
+  const inside = i => { const n = dom[i], y = WP[i].y; return /^spine_0[123]$|^clavicle_/.test(n) || (n === 'pelvis' && y > .95) || (/^upperarm_/.test(n)); };
+  const idx = g.index ? g.index.array : Array.from({ length: P.count }, (_, i) => i), tri = [];
+  for (let t = 0; t < idx.length; t += 3) if (inside(idx[t]) && inside(idx[t + 1]) && inside(idx[t + 2])) tri.push(idx[t], idx[t + 1], idx[t + 2]);
+  // weld seam duplicates so the smoothing treats the surface as one
+  const key = p => `${Math.round(p.x * 2000)},${Math.round(p.y * 2000)},${Math.round(p.z * 2000)}`, grp = new Map(), gid = new Int32Array(P.count).fill(-1);
+  const used = [...new Set(tri)];
+  for (const i of used) { const k = key(WP[i]); if (!grp.has(k)) grp.set(k, grp.size); gid[i] = grp.get(k); }
+  const G = grp.size, pos = Array.from({ length: G }, () => new THREE.Vector3()), base = Array.from({ length: G }, () => new THREE.Vector3()), nor = Array.from({ length: G }, () => new THREE.Vector3()), cnt = new Float32Array(G);
+  for (const i of used) { const j = gid[i]; base[j].add(WP[i]); nor[j].add(WN[i]); cnt[j]++; }
+  for (let j = 0; j < G; j++) { base[j].multiplyScalar(1 / cnt[j]); nor[j].normalize(); pos[j].copy(base[j]).addScaledVector(nor[j], offset); }
+  const adj = Array.from({ length: G }, () => new Set());
+  for (let t = 0; t < tri.length; t += 3) { const a = gid[tri[t]], b = gid[tri[t + 1]], c = gid[tri[t + 2]]; adj[a].add(b).add(c); adj[b].add(a).add(c); adj[c].add(a).add(b); }
+  const tmp = pos.map(p => p.clone()), avg = new THREE.Vector3();
+  for (let it = 0; it < iters; it++) {
+    for (let j = 0; j < G; j++) { avg.set(0, 0, 0); for (const k of adj[j]) avg.add(pos[k]); avg.multiplyScalar(1 / Math.max(1, adj[j].size)); tmp[j].copy(pos[j]).lerp(avg, .6); }
+    for (let j = 0; j < G; j++) {   // never sink under the skin: keep at least `offset` out along the surface normal
+      const d = tmp[j].clone().sub(base[j]).dot(nor[j]); if (d < offset) tmp[j].addScaledVector(nor[j], offset - d);
+      pos[j].copy(tmp[j]);
+    }
+  }
+  // assemble: only the vertices the shell uses, positions back in the body's own space
+  const map = new Map(), outP = [], outUV = [], outSI = [], outSW = [], outI = [];
+  for (const i of tri) {
+    if (!map.has(i)) { map.set(i, map.size); const p = pos[gid[i]].clone().applyMatrix4(Mi); outP.push(p.x, p.y, p.z); if (UV) outUV.push(UV.getX(i), UV.getY(i));
+      for (let k = 0; k < 4; k++) { outSI.push(C(SI, i, k)); outSW.push(C(SW, i, k)); } }
+    outI.push(map.get(i));
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(outP, 3)); if (UV) out.setAttribute('uv', new THREE.Float32BufferAttribute(outUV, 2));
+  out.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(outSI, 4)); out.setAttribute('skinWeight', new THREE.Float32BufferAttribute(outSW, 4));
+  out.setIndex(outI); out.computeVertexNormals();
+  return out;
+}
 export function makeRig(THREE, cloneSkinned, assets, { outfit = 'roman_red', hair = [], shielded = false, tint = 1, hairColor = 0x3b2a1e, female = false, palette = null } = {}) {
   const root = new THREE.Group(); root.rotation.order = 'YXZ';
   female = female && !!assets.bodyF;
@@ -131,6 +179,15 @@ export function makeRig(THREE, cloneSkinned, assets, { outfit = 'roman_red', hai
     }
   });
   root.updateMatrixWorld(true);
+  if (!female) {   // a tunic shell over torso, shoulders and upper arms: smooth cloth that moves with the body, no painted muscles
+    let bm = null; body.traverse(o => { if (o.isSkinnedMesh && o.material.name === 'MI_Superhero_Male') bm = o; });
+    if (bm) {
+      const geo = assets.shellGeo || (assets.shellGeo = shellGeometry(THREE, bm));
+      const cm = new THREE.MeshStandardMaterial({ map: bm.material.map, color: bm.material.color.clone(), roughness: 1, metalness: 0, name: 'tunic' });
+      const sh = new THREE.SkinnedMesh(geo, cm); sh.name = 'tunic'; sh.castShadow = true; sh.frustumCulled = false;
+      bm.parent.add(sh); sh.bind(bm.skeleton, bm.bindMatrix); mats.push(cm);
+    }
+  }
   for (const h of hair) {           // hair is modelled in place on the bind-pose head: attach keeps that
     const src = assets.hair?.[h]; if (!src) continue;
     const g = src.clone(true);

@@ -570,7 +570,7 @@ function rigSoldier(kind, look = null) {
    * its own thigh (and, on long dresses, a little of the shin), blended across the front and back. Simple, and it never pinches.
    */
   let fsm = null; rig.body.traverse(o => { if (o.isSkinnedMesh && !fsm && o.skeleton.bones.some(b => b.name === 'pelvis')) fsm = o; });
-  const skirt = (color, { rTop = .19, rBot = .28, y0 = 1.04, y1 = .56, folds = 14, amp = .05, mat = null, zs = .9 } = {}) => {
+  const skirt = (color, { rTop = .19, rBot = .25, y0 = 1.04, y1 = .56, folds = 14, amp = .05, mat = null, zs = .9 } = {}) => {
     if (!fsm) return;
     const m = mat || new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 1, side: THREE.DoubleSide }); extraMats.push(m);
     const H = y0 - y1, g = new THREE.CylinderGeometry(rTop, rBot, H, 36, 10, true), pos = g.attributes.position;
@@ -609,9 +609,8 @@ function rigSoldier(kind, look = null) {
   if (lus) skirt((look && look.palette && look.palette.dress) || { lusitano: 0x46341f, lusitano_b: 0x5c4630, lusitano_c: 0x96682c, lusitano_d: 0x605440 }[outfit] || 0x46341f, look && look.dress ? { rTop: .19, rBot: .33, y1: .2, amp: .07, folds: 16 } : {});   // wool saia to mid-thigh
   else if (kind !== 'velite') {   // Roman tunic to the knee, a short mail skirt over it for the hamata
     const col = outfit === 'roman_white' ? 0xd8d0bc : 0x9a2a20;
-    skirt(col, { rTop: .2, rBot: .3, y0: 1.04, y1: .52, amp: .06 });
-    if (outfit === 'roman_mail') { const mm = MATS.mail.clone(); if (mm.map) { mm.map = mm.map.clone(); mm.map.repeat.set(2.6, 1); mm.map.wrapS = mm.map.wrapT = THREE.RepeatWrapping; mm.map.needsUpdate = true; } mm.side = THREE.DoubleSide; mm.color.setHex(0xb4b4b4); mm.roughness = .75; skirt(0xffffff, { rTop: .205, rBot: .29, y0: 1.04, y1: .74, amp: .03, mat: mm, folds: 8 }); }
-    for (const sd of ['l', 'r']) sleeve(sd, outfit === 'roman_white' ? 0xd8d0bc : 0x9a2a20);
+    skirt(col, { rTop: .19, rBot: .235, y0: 1.04, y1: .52, amp: .03, zs: .82 });
+    if (outfit === 'roman_mail') { const mm = MATS.mail.clone(); if (mm.map) { mm.map = mm.map.clone(); mm.map.repeat.set(2.6, 1); mm.map.wrapS = mm.map.wrapT = THREE.RepeatWrapping; mm.map.needsUpdate = true; } mm.side = THREE.DoubleSide; mm.color.setHex(0xb4b4b4); mm.roughness = .75; skirt(0xffffff, { rTop: .2, rBot: .25, y0: 1.04, y1: .74, amp: .02, mat: mm, folds: 8, zs: .84 }); }
   } else { skirt(0x5c4630, { rTop: .19, rBot: .27, y1: .68 }); }
   Object.assign(rig.root.userData, ud);
   const mats = [...new Set([...rig.mats, ...p.mats, bMat, gMat, sMat, ...extraMats])];
@@ -878,18 +877,18 @@ function spawnCiv(look, x, z, child) {
   const m = soldier('lusitano', look); scene.add(m.root);
   const c = { kind: 'lusitano', civ: true, m, pos: new THREE.Vector3(x, heightAt(x, z), z), yaw: Math.atan2(x - MEADOW.x, z - MEADOW.z), f: C.createFighter(), state: 'idle',
     vel: { x: 0, z: 0 }, mv: { x: 0, z: 0 }, stride: 0, ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, hits: 0, crouch: false,
-    sp: child ? 3.4 : rr(3.6, 4.3), child: !!child, female: !!look.female, hp: child ? 1 : look.female ? 2 : 3,
+    sp: child ? 3.4 : rr(3.6, 4.3), child: !!child, female: !!look.female, hp: child ? 1 : look.female ? 3 : 4,
     resist: !child && rand() < (look.female ? .12 : .5), punchCd: 0, home: V(x, 0, z), flee: null, gone: false, delay: rr(0, .7) };
   m.root.position.copy(c.pos); m.root.rotation.y = c.yaw; civs.push(c); return c;
 }
 /** The betrayal: Galba gives the signal, the ring tightens and the people break and run in every direction. */
 function betray() {
-  if (betrayed) return; betrayed = true; betrayT = 0; SFX.horn(); armEnvoy(true);
+  if (betrayed) return; betrayed = true; betrayT = 0; SFX.horn(); SFX.warcry(1.2); armEnvoy(true);
   civs.filter(c => !c.child && !c.female && !c.elder).slice(0, 3).forEach(c => { c.spared = true; c.surrenderT = rr(1.2, 2.6); });   // a few men are taken alive, to be sold
   const near = enemies.filter(e => e.group === 'cordon' && !e.dead).sort((a, b) => a.pos.distanceTo(P.pos) - b.pos.distanceTo(P.pos));
   near.slice(0, 3).forEach((e, i) => { e.alertIn = 3 + i * 1.2; });
   // the signal: a volley of pila into the crowd at once, a few of them at Viriato
-  near.forEach((e, i) => { e.huntIn = rr(.5, 8); e.style = rand() < .35 ? 'bash' : 'sword'; if (i < 3) { e.pilaAt = 'P'; e.pilaT = rr(1.6, 3.4); } else if (rand() < .2) { e.pilaAt = nearestAdultCiv(e.pos, 30); e.pilaT = rr(0, 2.5); } });   // the nearest legionaries turn on Viriato a few seconds later
+  near.forEach((e, i) => { e.huntIn = rr(1, 16); e.style = rand() < .35 ? 'bash' : 'sword'; if (i < 3) { e.pilaAt = 'P'; e.pilaT = rr(1.6, 3.4); } else if (rand() < .12) { e.pilaAt = nearestAdultCiv(e.pos, 30); e.pilaT = rr(0, 6); } });   // the nearest legionaries turn on Viriato a few seconds later
   showMsg('A TRAIÇÃO', 'Há uma brecha no cerco. Corre por ela até ao fumo na orla da floresta.', 6);
 }
 function nearestAdultCiv(pos, r) {
@@ -903,9 +902,9 @@ function hitCiv(c, push) {
   if (--c.hp <= 0) return killCiv(c, push);
   c.knock = push.clone().multiplyScalar(.7); c.stun = .5; c.hits = (c.hits || 0) + 1; c.flash = .08; SFX.flesh(spatial(c.pos) * .6);
 }
-function killCiv(c, push) { if (c.dead) return; c.dead = true; c.deadT = 0; c.mv.x = c.mv.z = 0; c.knock = push || null; SFX.die(spatial(c.pos) * .55, c.female || c.child ? (c.child ? 1.9 : 1.6) : 1); }
+function killCiv(c, push) { if (c.dead) return; c.dead = true; c.deadT = 0; c.mv.x = c.mv.z = 0; c.knock = push || null; SFX.thud(spatial(c.pos) * .5); }
 function updateCivs(dt) {
-  if (betrayed) { betrayT += dt; setRing(state === 'outro' ? 17 : lerp(RING_R1, RING_R2, smooth(0, 20, betrayT))); }   // after the killing the line opens out round the field
+  if (betrayed) { betrayT += dt; setRing(state === 'outro' ? 17 : lerp(RING_R1, RING_R2, smooth(0, 24, betrayT))); }   // after the killing the line opens out round the field
   for (const c of civs) {
     if (c.gone) continue;
     if (c.knock) { c.pos.x += c.knock.x * dt; c.pos.z += c.knock.z * dt; c.knock.multiplyScalar(Math.exp(-6 * dt)); if (c.knock.length() < .05) c.knock = null; }
@@ -975,7 +974,8 @@ function startOutro() {
   outroCam.at.y = heightAt(outroCam.at.x, outroCam.at.z) + 1.5;
   // the survivors: roped in a double file and led off toward Galba's camp, between the bodies
   const wx = CAMP.x - MEADOW.x, wz = CAMP.z - MEADOW.z, wl = Math.hypot(wx, wz), w = V(wx / wl, 0, wz / wl), q = V(-w.z, 0, w.x);
-  const alive = civs.filter(c => !c.dead), men = alive.filter(c => c.spared), rest = alive.filter(c => !c.spared).slice(0, 10 - men.length), caught = [...rest];
+  const alive = civs.filter(c => !c.dead), men = alive.filter(c => c.spared), rest = alive.filter(c => !c.spared).slice(0, 14 - men.length), caught = [...rest];
+  for (const c of alive) if (!men.includes(c) && !rest.includes(c)) { c.gone = true; c.m.root.visible = false; }
   men.forEach((c, i) => caught.splice(Math.min(caught.length, 1 + i * 3), 0, c));   // the men walk among the women and children
   const S = V(MEADOW.x, 0, MEADOW.z).addScaledVector(w, -5);
   caught.forEach((c, i) => {
@@ -1706,7 +1706,7 @@ function updateEnemies(dt) {
       const v = betrayed && state === 'play' && !(e.huntIn > 0) ? e.victim : null;
       if (v) {
         const dv = Math.hypot(v.pos.x - e.pos.x, v.pos.z - e.pos.z);
-        if (dv > 1.3) speed = moveEnemy(e, v.pos.x, v.pos.z, 4.6, dt);
+        if (dv > 1.3) speed = moveEnemy(e, v.pos.x, v.pos.z, 3.7, dt);
         faceTo(e, v.pos.x, v.pos.z, dt, 8);
         e.civCd = Math.max(0, (e.civCd || 0) - dt);
         if (dv < 1.9 && e.f.phase === 'idle' && !(e.bashT > 0) && e.civCd <= 0) {
@@ -1715,7 +1715,7 @@ function updateEnemies(dt) {
         }
         if (e.bashT > 0 && (e.bashT -= dt) < .25 && !v.knocked) { v.knocked = true; v.stun = 1.1; v.knock = V(v.pos.x - e.pos.x, 0, v.pos.z - e.pos.z).setLength(4.5); SFX.thud(spatial(v.pos) * .6); }
         if (e.f.phase !== 'strike') e.struck = false;
-        else if (!e.struck && dv < 2.4) { e.struck = true; e.civCd = rr(.9, 1.9); hitCiv(v, V(v.pos.x - e.pos.x, 0, v.pos.z - e.pos.z).setLength(2.4)); }
+        else if (!e.struck && dv < 2.4) { e.struck = true; e.civCd = rr(1.5, 2.8); hitCiv(v, V(v.pos.x - e.pos.x, 0, v.pos.z - e.pos.z).setLength(2.4)); }
       } else {
         const dh = Math.hypot(e.home.x - e.pos.x, e.home.z - e.pos.z);
         if (dh > .25) speed = moveEnemy(e, e.home.x, e.home.z, Math.min(e.party && !betrayed ? 1.3 : betrayed ? 4.6 : 8, dh * 2.5), dt);
@@ -2106,6 +2106,7 @@ const INTRO_P = 17;
  */
 function updateIntroPrologue(dt) {
   const L = INTRO_P, T = introT, y0 = heightAt(MEADOW.x, MEADOW.z);
+  if (T > 10.6 && !envoy.cried) { envoy.cried = true; SFX.warcry(); }
   if (T > 10.6) for (const e of enemies) if (e.hidden) { e.hidden = false; e.m.root.visible = true; }   // out of the trees, at a run
   setRing(T < 10.6 ? RING_FAR : lerp(RING_FAR, RING_R1, smooth(10.6, 16.2, T)));
   view = 'third'; updateCamera(dt); view = introView; AV.root.visible = true;

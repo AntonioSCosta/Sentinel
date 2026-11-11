@@ -151,6 +151,12 @@ export const SFX = {
   },
   // fire catching: a low roar with crackles
   fire: () => { if (!ok()) return; const t = now(); hiss({ t, dur: 1.4, type: 'lowpass', f: 380, vol: .35, a: .3, buf: pink, send: .2 }); for (let i = 0; i < 14; i++) hiss({ t: t + R(0, 1.4), dur: .015, type: 'highpass', f: R(2000, 5000), vol: R(.05, .15), send: .1 }); },
+  // the legions' shout as they charge: many throats, ragged, rolling round the valley
+  warcry: (v = 1) => {
+    if (!ok()) return; const t = now();
+    for (let i = 0; i < 16; i++) voice({ t: t + R(0, .5), p0: R(120, 170), p1: R(95, 130), dur: R(.7, 1.3), vol: R(.05, .09) * v, vowel: ['a', 'o', 'e'][i % 3], breath: .5, shake: .02, send: .55 });
+    hiss({ t, dur: 1.2, type: 'bandpass', f: 700, q: .5, vol: .06 * v, a: .15, buf: pink, send: .4 });
+  },
   // a javelin passing close
   jav: (v = 1) => { if (!ok()) return; hiss({ dur: .25, f: 700, f2: 2600, q: 3, vol: .2 * v, a: .08, send: .1 }); },
 };
