@@ -517,7 +517,7 @@ function rigSoldier(kind, look = null) {
   // helmet / cap: everything on the old head except the skin
   const hk = new THREE.Group();
   for (const o of [...p.head.children]) if (!(o.isMesh && o.material === p.skin)) hk.add(o);
-  hk.position.set(0, 1.5, -.005); hk.scale.setScalar(.88); if (!look || look.cap) rig.attach('Head', hk);
+  hk.position.set(0, 1.59, -.02); hk.scale.setScalar(.84); if (!look || look.cap) rig.attach('Head', hk);
   // weapon in the right fist: blade out past the thumb, edges along the fingers
   const hand = p.elbows[1].children.at(-1), wpn = new THREE.Group(); wpn.name = 'weapon';
   for (const o of [...hand.children]) wpn.add(o);
@@ -794,7 +794,7 @@ function resetPrologue() {
       const r = rand(), child = r < .25, woman = !child && r < .62;
       const DRESS = [0x6b4a2e, 0x8a5a2b, 0x4f5a3a, 0x7a3b2a, 0x5c4f45, 0x9a7a4a];
       const look = { unarmed: true, cap: false, outfit: pick(OUT), hairColor: pick(HC), female: woman || child,
-        palette: { dress: pick(DRESS), skin: pick([0xc99a78, 0xb8876a, 0xd2a688, 0xa97b5c]), long: woman || (child && rand() < .5) },
+        palette: { dress: pick(DRESS), skin: pick([0x9c6e52, 0x8a5e44, 0xa87a5a, 0x93664a]), long: woman || (child && rand() < .5) },
         scale: child ? rr(.56, .68) : woman ? rr(.9, .96) : rr(.95, 1.06),
         dress: woman || (child && rand() < .5), hair: woman ? ['hair_long'] : child ? [rand() < .5 ? 'hair_long' : 'hair_buzzed'] : [rand() < .6 ? 'hair_long' : 'hair_buzzed', 'hair_beard'] };
       const a = rr(0, TAU), d = rr(.6, 2.6); spawnCiv(look, gx + Math.cos(a) * d, gz + Math.sin(a) * d, child);
@@ -899,11 +899,11 @@ function updateOutro(dt) {
     camera.position.set(P.pos.x, 0, P.pos.z).addScaledVector(u, back).addScaledVector(n, .55); camera.position.y = P.pos.y + 2.3 - k * .3;
     camera.lookAt(MEADOW.x, heightAt(MEADOW.x, MEADOW.z) + .5, MEADOW.z);
   }
-  if (outroSaid < 1 && T > 3.6) { outroSaid = 1; showMsg('VIRIATO ESCAPOU', 'Dos milhares que confiaram em Galba, poucos sobreviveram.', 3); }
-  if (outroSaid < 2 && T > 6.8) { outroSaid = 2; showMsg('', 'Um pastor dos Montes Hermínios jurou que Roma pagaria por aquele dia.', 3); }
+  if (outroSaid < 1 && T > 3.6) { outroSaid = 1; showMsg('VIRIATO ESCAPOU', 'Galba matou ou vendeu como escravos milhares de lusitanos.', 3); }
+  if (outroSaid < 2 && T > 6.8) { outroSaid = 2; showMsg('', 'Dos que fugiram, um voltaria com um exército.', 3); }
   if (T >= OUTRO_LEN) {
     $('hud').classList.remove('intro'); state = 'won'; endT = .05; nextChapter = 'emboscada';
-    endArgs = ['PRÓLOGO · 150 A.C.', 'Viriato escapou', 'Três anos depois, Roma voltaria a ouvir falar dele.'];
+    endArgs = ['PRÓLOGO · 150 A.C.', 'Viriato escapou', 'Galba voltou a Roma, foi julgado e absolvido. A guerra na Lusitânia continuou.'];
   }
 }
 let nextChapter = null;
@@ -2000,9 +2000,9 @@ function updateIntroPrologue(dt) {
   camera.position.copy(introP0); camera.quaternion.copy(introQ0);
   const cut = [0, 5, 9.4, 12.4].reduce((m, c) => Math.min(m, Math.abs(T - c)), 9);
   if (introVeil) introVeil.style.opacity = String(Math.max(clamp(1 - (T - .2) / 1.6, 0, 1), clamp(1 - cut / .3, 0, 1) * (T > 1 ? .85 : 0)));
-  if (!introTitled && T > .6) { introTitled = true; showMsg('LEGADO ROMANO', '«O pretor Galba oferece-vos a paz. Entregai as armas e Roma dar-vos-á terras férteis.»', 4.2); }
-  if (!introHorn && T > 5.3) { introHorn = true; showMsg('ANCIÃO LUSITANO', '«Entregámos as armas. Confiamos na palavra de Roma.»', 3.8); }
-  if (!elder.said && T > 9.7) { elder.said = true; showMsg('LEGADO ROMANO', '«Então Roma dar-vos-á a terra que mereceis.»', 3); }
+  if (!introTitled && T > .6) { introTitled = true; showMsg('LEGADO ROMANO', '«Ordens do pretor Galba: as armas no chão. Depois recebereis terras.»', 4.2); }
+  if (!introHorn && T > 5.3) { introHorn = true; showMsg('ANCIÃO LUSITANO', '«Estão no chão. Que terras?»', 3.8); }
+  if (!elder.said && T > 9.7) { elder.said = true; showMsg('LEGADO ROMANO', '«Já vos mostro.»', 3); }
   if (!envoy.saidTitle && T > 12.6) { envoy.saidTitle = true; showMsg('LUSITÂNIA · 150 A.C.', '', 2); }
   if (T >= L) endIntro();
 }
@@ -2064,15 +2064,15 @@ function endScreen(kicker, title, text) {
   $('next').classList.toggle('hidden', !nextChapter);
 }
 let endT = 0, endArgs = null;
-function die() { avatar.deadT = 0; avatar.f = P.f; C.endBlock(P.f); state = 'dead'; SFX.die(); endT = 2.8; endArgs = ['CAÍDO EM COMBATE', 'Viriato tombou', 'Roma não vencerá à primeira. Volta aos montes e tenta de novo.']; }
-function win() { state = 'won'; SFX.horn(); endT = 1.8; endArgs = ['VITÓRIA', 'Os montes são lusitanos', 'A patrulha caiu, os mantimentos arderam e o centurião jaz no seu próprio acampamento. Esta noite, nos castros, contar-se-á o teu nome.']; }
+function die() { avatar.deadT = 0; avatar.f = P.f; C.endBlock(P.f); state = 'dead'; SFX.die(); endT = 2.8; endArgs = ['CAÍDO EM COMBATE', 'Viriato tombou', 'Tenta de novo.']; }
+function win() { state = 'won'; SFX.horn(); endT = 1.8; endArgs = ['VITÓRIA', 'Os montes são lusitanos', 'A patrulha caiu, os mantimentos arderam e o centurião está morto.']; }
 
 $('start').addEventListener('click', () => startGame(!navigator.webdriver));
 $('again').addEventListener('click', () => startGame(false));
 $('next').addEventListener('click', () => { if (!nextChapter) return; setChapter(nextChapter); startGame(true); });
 const BRIEF = {
-  prologo: ['LUSITÂNIA · 150 A.C.', 'Prólogo. O pretor Sérvio Galba ofereceu paz e terras aos lusitanos que entregassem as armas. Milhares acreditaram. Viriato estava entre eles.'],
-  emboscada: ['LUSITÂNIA · 147 A.C.', 'Três anos depois da traição de Galba, Roma volta a marchar pelos vales. Uma patrulha desce a estrada do vale e o acampamento que a abastece fica a norte. Embosca-os, queima os mantimentos e derruba o centurião.'],
+  prologo: ['LUSITÂNIA · 150 A.C.', 'Prólogo. O pretor Sérvio Galba promete terras aos lusitanos que entreguem as armas. Viriato está entre os que as entregaram.'],
+  emboscada: ['LUSITÂNIA · 147 A.C.', 'Três anos depois de Galba, Roma volta aos vales. Uma patrulha desce a estrada do vale e o acampamento que a abastece fica a norte. Embosca-os, queima os mantimentos e derruba o centurião.'],
 };
 function setChapter(c) {
   chapter = c; for (const o of document.querySelectorAll('[data-ch]')) o.setAttribute('aria-pressed', o.dataset.ch === c ? 'true' : 'false');

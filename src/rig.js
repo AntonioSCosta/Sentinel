@@ -77,16 +77,48 @@ export function paintBody(THREE, body, { dress = 0x6b4a2e, skin = 0xc99a78, long
       else c.copy(D);
       const n = .9 + .2 * ((Math.sin(i * 12.9898 + y * 78.233) * 43758.5453) % 1 + 1) % 1;   // a little unevenness in dye and skin
       col[i * 3] = c.r * n; col[i * 3 + 1] = c.g * n; col[i * 3 + 2] = c.b * n;
+      if (y > 1.53 && x < .1) P.setXYZ(i, P.getX(i) * .6, 1.62 + (y - 1.62) * .6, z * .6);   // the blank head shrinks inside the borrowed face
     }
     o.geometry.setAttribute('color', new THREE.BufferAttribute(col, 3));
     o.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, name: 'painted' });
   });
 }
+/**
+ * The face of the detailed (male) body: its head and neck triangles, eyes and brows, kept skinned to the Head and neck bones
+ * so they can be bound onto the slender mannequin's skeleton (same bone names).
+ */
+export function headParts(maleBody) {
+  const parts = [];
+  maleBody.traverse(o => {
+    if (!o.isSkinnedMesh) return;
+    const names = o.skeleton.bones.map(b => b.name), g = o.geometry, si = g.attributes.skinIndex.array, sw = g.attributes.skinWeight.array, P = g.attributes.position;
+    const keep = new Set(names.map((n, i) => n === 'Head' || n === 'neck_01' ? i : -1).filter(i => i >= 0)), all = /eye|brow/i.test(o.name);
+    const dom = v => { let b = 0, w = -1; for (let k = 0; k < 4; k++) if (sw[v * 4 + k] > w) { w = sw[v * 4 + k]; b = si[v * 4 + k]; } return b; };
+    const ok = v => keep.has(dom(v)) && P.getY(v) > 1.47;
+    const idx = g.index ? g.index.array : Array.from({ length: P.count }, (_, i) => i), tri = [];
+    for (let t = 0; t < idx.length; t += 3) if (all || (ok(idx[t]) && ok(idx[t + 1]) && ok(idx[t + 2]))) tri.push(idx[t], idx[t + 1], idx[t + 2]);
+    if (tri.length) { const sub = g.clone(); sub.setIndex(tri); parts.push({ geo: sub, mat: o.material, names, name: o.name }); }
+  });
+  return parts;
+}
+/** Bind the borrowed face onto a slender body, moved to where its head sits. */
+function addFace(THREE, assets, body) {
+  let fsm = null; body.traverse(o => { if (o.isSkinnedMesh && !fsm) fsm = o; }); if (!fsm || !assets.body) return;
+  const parts = assets.headParts || (assets.headParts = headParts(assets.body));
+  const fnames = fsm.skeleton.bones.map(b => b.name), head = fnames.indexOf('Head');
+  for (const p of parts) {
+    const geo = p.geo.clone(), si = geo.attributes.skinIndex.clone();
+    for (let i = 0; i < si.array.length; i++) { const j = fnames.indexOf(p.names[si.array[i]]); si.array[i] = j >= 0 ? j : head; }
+    geo.setAttribute('skinIndex', si); geo.translate(0, -.031, .022);
+    const m = new THREE.SkinnedMesh(geo, p.mat); m.name = 'face-' + p.name; m.frustumCulled = false; m.castShadow = true;
+    fsm.parent.add(m); m.bind(fsm.skeleton, fsm.bindMatrix);
+  }
+}
 export function makeRig(THREE, cloneSkinned, assets, { outfit = 'roman_red', hair = [], shielded = false, tint = 1, hairColor = 0x3b2a1e, female = false, palette = null } = {}) {
   const root = new THREE.Group(); root.rotation.order = 'YXZ';
   female = female && !!assets.bodyF;
   const body = cloneSkinned(female ? assets.bodyF : assets.body); root.add(body);
-  if (female) paintBody(THREE, body, palette || {});
+  if (female) { paintBody(THREE, body, palette || {}); addFace(THREE, assets, body); }
   const bones = {}, mats = [];
   body.traverse(o => {
     if (o.isBone || o.type === 'Object3D' || o.isGroup) bones[o.name] = bones[o.name] || o;
@@ -99,11 +131,10 @@ export function makeRig(THREE, cloneSkinned, assets, { outfit = 'roman_red', hai
     }
   });
   root.updateMatrixWorld(true);
-  if (female) hair = hair.filter(h => h !== 'hair_buzzed' || hair.length === 1);   // the crop layer pokes through the larger head
   for (const h of hair) {           // hair is modelled in place on the bind-pose head: attach keeps that
     const src = assets.hair?.[h]; if (!src) continue;
     const g = src.clone(true);
-    if (female) { g.scale.setScalar(1.1); g.position.set(0, 1.65 * (1 - 1.1) + .035, -.012); }
+    if (female) g.position.set(0, -.031, .022);   // the borrowed face sits where the slender body's head is
     if (h === 'hair_long') { g.position.y += .028; g.position.z -= .018; }   // lift the fringe off the brows (it read as huge eyebrows)   // the mannequin's head is a little larger: grow the hair round the head's centre
     g.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.setHex(hairColor); o.castShadow = true; mats.push(o.material); } });
     bones.Head.attach(g);
