@@ -33,7 +33,7 @@ export function footwork({ dist, sp, act, strafe, difficulty, rng, self, player 
  * Player top speed (m/s) for the move direction (fwd/side in −1..1, local) and fighter state,
  * Mount & Blade style: a fighting stride, slower backwards and sideways, sprint only forward and only when not fighting.
  */
-export function playerSpeed({ fwd, side, sprint = false, crouch = false, f }) {
+export function playerSpeed({ fwd, side, sprint = false, crouch = false, f, slope = 0 }) {
   const n = Math.hypot(fwd, side) || 1, back = Math.max(0, -fwd / n), lat = Math.abs(side / n);
   let s = 4.4 * (1 - .4 * back - .15 * lat);
   const fighting = f.phase === 'windup' || f.phase === 'strike' || f.phase === 'recovery' || f.phase === 'staggered' || f.blocking;
@@ -44,5 +44,12 @@ export function playerSpeed({ fwd, side, sprint = false, crouch = false, f }) {
   if (f.phase === 'recovery') s *= .7;
   if (f.phase === 'staggered') s *= .35;
   if (f.blocking) s *= .55;
+  if (slope > .03) s *= Math.max(s > 7 ? .4 : .7, 1 - slope * (s > 7 ? 1.6 : .6));   // climbing: the sprint dies on a rise, a run only eases
   return s;
+}
+
+/** Stamina spent per second by moving (on top of not regenerating): running costs a little, sprinting a lot. */
+export function staminaUse({ speed, sprint }) {
+  if (sprint) return 20;
+  return speed > 3 ? 5 : 0;
 }

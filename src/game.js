@@ -3,7 +3,7 @@ import { initAudio, SFX, spatial, setListener } from './audio.js';
 import * as C from './combat.js';
 import { zoneFromHeight, ZONE_MULT, LEG_SLOW } from './damage.js';
 import { decide, REACH } from './ai.js';
-import { steer, footwork, playerSpeed } from './locomotion.js';
+import { staminaUse, steer, footwork, playerSpeed } from './locomotion.js';
 import { loadMaterials, terrainMaterial, makeMailMaps, loadFoliage, makeGrassMaterial } from './materials.js';
 import { createPhysics } from './physics.js';
 import { createRender } from './render.js';
@@ -140,6 +140,15 @@ setSeed(777);
     if (y > 16 || rand() < .45) pines.push({ x, y, z, s, ry: rr(0, TAU) }); else oaks.push({ x, y, z, s, ry: rr(0, TAU) });
     addCol(x, z, .45 * s);
   }
+  // mountains: three more trees for every one already on the slopes (4x in all), thinning out toward the bare peaks
+  { const mtn = pines.length + oaks.length ? [...pines, ...oaks].filter(t => t.y > 12).length : 0, want = mtn * 3;
+    for (let n = 0, added = 0; n < want * 12 && added < want; n++) {
+      const x = rr(-WORLD + 8, WORLD - 8), z = rr(-WORLD + 8, WORLD - 8);
+      if (blocked(x, z, 0)) continue;
+      const y = heightAt(x, z); if (y < 12 || y > 64) continue;
+      if (rand() > .35 + vnoise(x * .03 + 11, z * .03) * .9 - (y - 12) / 110) continue;
+      const s = rr(.8, 1.3); (y > 22 || rand() < .6 ? pines : oaks).push({ x, y, z, s, ry: rr(0, TAU) }); addCol(x, z, .45 * s); added++;
+    } }
   // thick groves: the forest the survivors run to, and cover round the ambush hide
   for (const [cx, cz, n, r] of [[ESCAPE.x, ESCAPE.z, 52, 24], [AMBUSH.x + 5, AMBUSH.z, 24, 13]]) for (let k = 0; k < n; k++) {
     const a = rr(0, TAU), d = Math.sqrt(rand()) * r, x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
@@ -731,6 +740,7 @@ function resetWorld() {
     lastDefense: null, incomingDir: null, vel: { x: 0, z: 0 }, push: null, kick: 0, swingHits: new Set(), vy: 0, hp: 100, ground: true, crouch: 0, w: 0, dardos: 5, pedras: 12, atk: 0, cd: 0,
     kills: 0, shots: 0, hits: 0, heads: 0, time: 0, swing: 0, throwT: 0, hurtT: 0 });
   mission = 0; tentsBurnt = 0; alarm = false;
+  P.unarmed = chapter === 'prologo';
   if (chapter === 'prologo') { resetPrologue(); setObjective(); return; }
   // hidden in the scrub above the road, looking north up the valley where the patrol will come from
   P.pos.set(AMBUSH.x, 0, AMBUSH.z); P.pos.y = heightAt(P.pos.x, P.pos.z);
@@ -767,7 +777,7 @@ function spawn(kind, x, z, group) {
 /* =========================================================
    Prologue: the betrayal of Galba (150 BC)
    ========================================================= */
-const RING_N = 18, RING_R0 = 36, RING_R1 = 11.5, RING_R2 = 7;
+const RING_N = 36, RING_R0 = 36, RING_R1 = 11.5, RING_R2 = 7;
 function ringRadius(t) { return lerp(RING_R0, RING_R1, t); }
 function setRing(R) { for (const e of enemies) if (e.group === 'cordon' && e.state === 'cordon') e.home.set(MEADOW.x + Math.cos(e.ang) * R, 0, MEADOW.z + Math.sin(e.ang) * R); }
 function resetPrologue() {
@@ -790,7 +800,8 @@ function resetPrologue() {
   }
   // the legions, closing a ring round the field
   for (let i = 0; i < RING_N; i++) {
-    const ang = i / RING_N * TAU, e = spawn('legio', MEADOW.x + Math.cos(ang) * RING_R0, MEADOW.z + Math.sin(ang) * RING_R0, 'cordon');
+    const ang = i / RING_N * TAU; if (Math.abs(wrapA(ang - Math.atan2(uz, ux))) < .36) continue;   // a breach on the forest side
+    const e = spawn('legio', MEADOW.x + Math.cos(ang) * RING_R0, MEADOW.z + Math.sin(ang) * RING_R0, 'cordon');
     e.ang = ang; e.state = 'cordon'; e.yaw = Math.atan2(-Math.cos(ang), -Math.sin(ang));
   }
 }
@@ -798,20 +809,29 @@ function spawnCiv(look, x, z, child) {
   const m = soldier('lusitano', look); scene.add(m.root);
   const c = { kind: 'lusitano', civ: true, m, pos: new THREE.Vector3(x, heightAt(x, z), z), yaw: Math.atan2(x - MEADOW.x, z - MEADOW.z), f: C.createFighter(), state: 'idle',
     vel: { x: 0, z: 0 }, mv: { x: 0, z: 0 }, stride: 0, ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, hits: 0, crouch: child && rand() < .3,
-    sp: child ? 3.7 : rr(4.2, 4.9), home: V(x, 0, z), flee: null, gone: false, delay: rr(0, 1.4) };
+    sp: child ? 3.4 : rr(3.6, 4.3), child: !!child, home: V(x, 0, z), flee: null, gone: false, delay: rr(0, .7) };
   m.root.position.copy(c.pos); m.root.rotation.y = c.yaw; civs.push(c); return c;
 }
 /** The betrayal: Galba gives the signal, the ring tightens and the people break and run in every direction. */
 function betray() {
   if (betrayed) return; betrayed = true; betrayT = 0; SFX.horn();
   const near = enemies.filter(e => e.group === 'cordon' && !e.dead).sort((a, b) => a.pos.distanceTo(P.pos) - b.pos.distanceTo(P.pos));
-  for (const e of near.slice(0, 3)) alert(e);
-  showMsg('A TRAIÇÃO', 'Foge do cerco e corre para a floresta.', 5);
+  near.slice(0, 3).forEach((e, i) => { e.alertIn = 3 + i * 1.2; });
+  // the signal: a volley of pila into the crowd at once, a few of them at Viriato
+  near.forEach((e, i) => { e.huntIn = rr(.6, 4); if (i < 3) { e.pilaAt = 'P'; e.pilaT = rr(1.6, 3.4); } else if (rand() < .33) { e.pilaAt = nearestAdultCiv(e.pos, 30); e.pilaT = rr(.3, 3.5); } });   // the nearest legionaries turn on Viriato a few seconds later
+  showMsg('A TRAIÇÃO', 'Há uma brecha no cerco. Corre por ela até ao fumo na orla da floresta.', 6);
 }
+function nearestAdultCiv(pos, r) {
+  let best = null, bd = r;
+  for (const c of civs) { if (c.dead || c.gone || c.child) continue; const d = Math.hypot(c.pos.x - pos.x, c.pos.z - pos.z); if (d < bd) { bd = d; best = c; } }
+  return best;
+}
+function killCiv(c) { if (c.dead) return; c.dead = true; c.deadT = 0; c.mv.x = c.mv.z = 0; SFX.die(spatial(c.pos) * .55); }
 function updateCivs(dt) {
   if (betrayed) { betrayT += dt; setRing(lerp(RING_R1, RING_R2, smooth(0, 10, betrayT))); }
   for (const c of civs) {
     if (c.gone) continue;
+    if (c.dead) { c.deadT += dt; const b = setPose(c, dt); c.m.root.position.set(c.pos.x, c.pos.y + b, c.pos.z); continue; }
     let tx = c.home.x, tz = c.home.z, sp = 0;
     if (betrayed && (c.delay -= dt) <= 0) {
       if (!c.flee) { const a = Math.atan2(c.pos.z - MEADOW.z, c.pos.x - MEADOW.x) + rr(-.6, .6); c.flee = V(MEADOW.x + Math.cos(a) * 90, 0, MEADOW.z + Math.sin(a) * 90); c.crouch = false; }
@@ -823,17 +843,34 @@ function updateCivs(dt) {
     else { c.mv.x = c.mv.z = 0; c.ph += dt; want = Math.atan2(c.pos.x - MEADOW.x, c.pos.z - MEADOW.z) + Math.sin(c.ph * .7) * .6; }   // restless, watching the soldiers
     c.yaw += wrapA(want - c.yaw) * Math.min(1, dt * 6);
     c.pos.y = heightAt(c.pos.x, c.pos.z);
-    if (Math.hypot(c.pos.x - MEADOW.x, c.pos.z - MEADOW.z) > 62) { c.gone = true; c.m.root.visible = false; continue; }   // out among the trees
+    if (Math.hypot(c.pos.x - MEADOW.x, c.pos.z - MEADOW.z) > 50) { c.gone = true; c.m.root.visible = false; continue; }   // out among the trees
     const b = setPose(c, dt); c.m.root.position.set(c.pos.x, c.pos.y + b, c.pos.z); c.m.root.rotation.y = c.yaw;
   }
 }
 function checkPrologue() {
+  setObjective();
   if (state === 'play' && Math.hypot(P.pos.x - ESCAPE.x, P.pos.z - ESCAPE.z) < 9) {
     state = 'won'; endT = 2.2; nextChapter = 'emboscada';
     endArgs = ['PRÓLOGO · 150 A.C.', 'Viriato escapou', 'Dos milhares que confiaram em Galba, poucos sobreviveram. Entre eles, um pastor dos Montes Hermínios que nunca esqueceria. Três anos depois, Roma voltaria a ouvir falar dele.'];
   }
 }
 let nextChapter = null;
+const SIGNAL = new THREE.Group(); SIGNAL.visible = false; scene.add(SIGNAL);
+{
+  const g = new THREE.CylinderGeometry(1.6, .5, 34, 16, 6, true), col = [], pos = g.attributes.position;
+  for (let i = 0; i < pos.count; i++) { const t = (pos.getY(i) + 17) / 34; col.push(1, 1, 1, 0); pos.setX(i, pos.getX(i) + Math.sin(t * 5) * t * 1.2); }
+  const m = new THREE.MeshBasicMaterial({ color: 0xcfc4b0, transparent: true, opacity: .32, depthWrite: false, side: THREE.DoubleSide });
+  const smoke = new THREE.Mesh(g, m); smoke.position.y = 17; smoke.name = 'signal-smoke'; SIGNAL.add(smoke);
+  const fire = new THREE.PointLight(0xff9a40, 2.4, 14); fire.position.y = .8; SIGNAL.add(fire);
+  const ember = new THREE.Mesh(new THREE.ConeGeometry(.45, .9, 8), new THREE.MeshBasicMaterial({ color: 0xff8a2a })); ember.position.y = .45; SIGNAL.add(ember);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(7.4, 8, 48), new THREE.MeshBasicMaterial({ color: 0xe8c36a, transparent: true, opacity: .35, side: THREE.DoubleSide, depthWrite: false })); ring.rotation.x = -Math.PI / 2; ring.position.y = .08; SIGNAL.add(ring);
+}
+function updateSignal(dt) {
+  SIGNAL.visible = chapter === 'prologo' && state !== 'menu';
+  if (!SIGNAL.visible) return;
+  SIGNAL.position.set(ESCAPE.x, heightAt(ESCAPE.x, ESCAPE.z), ESCAPE.z);
+  SIGNAL.children[0].rotation.y += dt * .25; SIGNAL.children[1].intensity = 2 + Math.sin(performance.now() * .013) * .5;
+}
 
 /** One of Viriato's companions: follows him, joins the fight once the Romans are fighting. */
 function spawnAlly(i) {
@@ -874,7 +911,7 @@ const MISSIONS = [
   { m: 'III · O CENTURIÃO', t: () => 'Mata o centurião' },
 ];
 const patrolLeft = () => enemies.filter(e => e.group === 'patrol' && !e.dead).length;
-function setObjective() { if (chapter === 'prologo') { $('objm').textContent = 'PRÓLOGO · A TRAIÇÃO DE GALBA'; $('objt').textContent = 'Foge do cerco para a floresta, a sudeste'; return; } $('objm').textContent = MISSIONS[mission].m; $('objt').textContent = MISSIONS[mission].t(); }
+function setObjective() { if (chapter === 'prologo') { $('objm').textContent = 'PRÓLOGO · A TRAIÇÃO DE GALBA'; $('objt').textContent = `Foge pela brecha até ao fumo na floresta (${Math.round(Math.hypot(P.pos.x - ESCAPE.x, P.pos.z - ESCAPE.z))} m)`; return; } $('objm').textContent = MISSIONS[mission].m; $('objt').textContent = MISSIONS[mission].t(); }
 function showMsg(title, sub, dur = 3.2) { $('msg').innerHTML = ''; const s = document.createElement('span'); s.textContent = title; $('msg').appendChild(s); if (sub) { const sm = document.createElement('small'); sm.textContent = sub; $('msg').appendChild(sm); } $('msg').style.opacity = 1; missionMsgT = dur; }
 function feed(text) {
   const d = document.createElement('div'); d.textContent = text; $('feed').prepend(d);
@@ -1033,7 +1070,7 @@ let hitStopT = 0;
 function hitStop(t) { hitStopT = Math.max(hitStopT, t); }
 /** F: shield bash interrupts an enemy windup and knocks them back. */
 function bash() {
-  if (state !== 'play' || P.w === 2 || P.f.shieldHP <= 0 || P.f.stamina < 20 || P.f.phase !== 'idle' || P.bashCd > 0) return;
+  if (state !== 'play' || P.unarmed || P.w === 2 || P.f.shieldHP <= 0 || P.f.stamina < 20 || P.f.phase !== 'idle' || P.bashCd > 0) return;
   P.f.stamina -= 20; P.bashCd = .9; P.bashT = .25; SFX.thud();
   const f = flatFwd();
   for (const e of enemies) {
@@ -1236,6 +1273,7 @@ function updateProjectiles(dt) {
     } else {
       const c = V(P.pos.x, P.pos.y + 1.1 - P.crouch * .4, P.pos.z);
       if (segSphere(p.prev, p.pos, c, .55)) { damagePlayer(p.dmg, p.prev, true); done = true; }
+      if (!done && civs.length) for (const cv of civs) if (!cv.dead && !cv.gone && !cv.child && segSphere(p.prev, p.pos, V(cv.pos.x, cv.pos.y + 1, cv.pos.z), .5)) { killCiv(cv); done = true; break; }
     }
     if (!done) {
       if (landed || p.pos.y < heightAt(p.pos.x, p.pos.z) - .5) {
@@ -1493,11 +1531,29 @@ function updateEnemies(dt) {
     let speed = 0;
     if (state === 'dead') { e.state = e.state === 'march' ? 'march' : 'guard'; }
 
-    if (e.state === 'cordon') {   // the ring: hold the line facing inward, strike at whoever comes too close
-      const dh = Math.hypot(e.home.x - e.pos.x, e.home.z - e.pos.z);
-      if (dh > .25) speed = moveEnemy(e, e.home.x, e.home.z, Math.min(2.4, dh * 2), dt);
-      faceTo(e, MEADOW.x, MEADOW.z, dt, 3);
-      if (state === 'play' && (pd < 4.5 || e.hp < e.maxhp)) alert(e);
+    if (e.state === 'cordon') {   // the ring: hold the line; after the signal, cut down whoever runs within reach
+      if (betrayed && state === 'play' && (!e.victim || e.victim.dead || e.victim.gone)) e.victim = Math.hypot(e.pos.x - MEADOW.x, e.pos.z - MEADOW.z) < 48 ? nearestAdultCiv(e.pos, 20) : null;
+      if (e.huntIn > 0) e.huntIn -= dt;
+      const v = betrayed && state === 'play' && !(e.huntIn > 0) ? e.victim : null;
+      if (v) {
+        const dv = Math.hypot(v.pos.x - e.pos.x, v.pos.z - e.pos.z);
+        if (dv > 1.3) speed = moveEnemy(e, v.pos.x, v.pos.z, 4.6, dt);
+        faceTo(e, v.pos.x, v.pos.z, dt, 8);
+        if (dv < 1.9 && e.f.phase === 'idle') { C.beginAttack(e.f, C.randomDir(e.f.dir)); C.releaseAttack(e.f); }
+        if (e.f.phase === 'strike' && dv < 2.4) killCiv(v);
+      } else {
+        const dh = Math.hypot(e.home.x - e.pos.x, e.home.z - e.pos.z);
+        if (dh > .25) speed = moveEnemy(e, e.home.x, e.home.z, Math.min(2.4, dh * 2), dt);
+        faceTo(e, MEADOW.x, MEADOW.z, dt, 3);
+      }
+      if (e.pilaT != null && state === 'play' && (e.pilaT -= dt) <= 0) {
+        const tg = e.pilaAt === 'P' ? V(P.pos.x + P.vel.x * .35, P.pos.y + 1.1, P.pos.z + P.vel.z * .35)
+          : e.pilaAt && !e.pilaAt.dead && !e.pilaAt.gone ? V(e.pilaAt.pos.x + e.pilaAt.mv.x * .5, e.pilaAt.pos.y + 1.1, e.pilaAt.pos.z + e.pilaAt.mv.z * .5) : null;
+        e.pilaT = null; if (tg) { faceTo(e, tg.x, tg.z, 1, 99); spawnEnemyJavelin(V(e.pos.x, e.pos.y + 1.7, e.pos.z), tg, 14); }
+      }
+      for (const ev of C.tickFighter(e.f, dt)) if (ev.type === 'swing') enemySwing(e, ev);
+      if (e.alertIn != null && state === 'play' && (e.alertIn -= dt) <= 0) { e.alertIn = null; alert(e); }
+      if (state === 'play' && (pd < 3.5 || e.hp < e.maxhp)) alert(e);
     } else if (e.state === 'march' || e.state === 'guard') {
       if (e.state === 'march') {
         const tz = e.pos.z + e.dir * 3; speed = moveEnemy(e, roadX(tz) + (e.home.x - roadX(e.home.z)), tz, 1.7, dt);
@@ -1602,8 +1658,11 @@ function updatePlayer(dt) {
   const ls = ((keys.KeyD || keys.ArrowRight) ? 1 : 0) - ((keys.KeyA || keys.ArrowLeft) ? 1 : 0);
   const fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw), rx = Math.cos(P.yaw), rz = -Math.sin(P.yaw);
   const ml = Math.hypot(lf, ls);
-  const top = ml ? playerSpeed({ fwd: lf / ml, side: ls / ml, sprint: sprintKey, crouch: P.crouch > .5, f: P.f }) : 0;
-  const sprint = sprintKey && top > 7;
+  const mvArg = { fwd: lf / ml, side: ls / ml, sprint: sprintKey, crouch: P.crouch > .5, f: P.f };
+  const sprint = ml > 0 && sprintKey && playerSpeed(mvArg) > 7;
+  let slope = 0;
+  if (ml) { const dx = (fx * lf + rx * ls) / ml, dz = (fz * lf + rz * ls) / ml; slope = heightAt(P.pos.x + dx, P.pos.z + dz) - heightAt(P.pos.x, P.pos.z); }
+  const top = ml ? playerSpeed({ ...mvArg, slope }) : 0;
   const tx = ml ? (fx * lf + rx * ls) / ml * top : 0, tz = ml ? (fz * lf + rz * ls) / ml * top : 0;
   // momentum: quick to start, quick to stop, but not instant (footwork you can read)
   const nv = steer(P.vel, { x: tx, z: tz }, P.ground ? (ml ? 26 : 34) : 6, dt); P.vel.x = nv.x; P.vel.z = nv.z;
@@ -1618,7 +1677,10 @@ function updatePlayer(dt) {
     resolve(P.pos, .38);
     if (P.ground) { P.bob += dt * speed * 1.6; P.stepT -= dt * speed; if (P.stepT <= 0) { P.stepT = 2.4; SFX.step(); } }
   }
-  if (sprint) P.st = Math.max(0, P.st - dt * 16);
+  { // running tires a little, sprinting a lot; while moving fast the breath does not come back
+    const use = staminaUse({ speed, sprint });
+    if (use > 0) P.st = Math.max(0, P.st - dt * (use + (P.f.phase === 'idle' && !P.f.blocking ? C.STAMINA_REGEN : 0)));
+  }
   if (keys.Space && P.ground && P.st > 10) { P.vy = 6.4; P.ground = false; P.st -= 8; }
   P.vy -= 19 * dt; P.pos.y += P.vy * dt;
   const gh = heightAt(P.pos.x, P.pos.z);
@@ -1630,6 +1692,7 @@ function updatePlayer(dt) {
   if (P.cleanT > 0) { P.cleanT -= dt; if (P.cleanT <= 0) { P.f.stuckJavelins = 0; feed('Escudo limpo'); } }
   // press / release edges of the left button
   if (mouseL && !P.prevL && placing) { placeFlag(); P.prevL = true; }
+  else if (mouseL && !P.prevL && P.unarmed) { showPrompt('Estás desarmado. Foge!', 1); }
   else if (mouseL && !P.prevL) {
     if (P.w === 0) { P.charging = true; P.chargeT = 0; P.acc.x = P.intent.x; P.acc.y = P.intent.y; }
     else attack();
@@ -1652,8 +1715,8 @@ function updatePlayer(dt) {
     if (P.w !== 0) P.charging = false;
   }
   // defence: Q = falcata (direction is automatic), right button = caetra
-  P.f.passiveShield = P.w !== 2 && P.cleanT <= 0;
-  const wantBlock = keys.KeyQ && P.w === 0 ? 'sword' : (mouseR && P.w !== 2 && P.f.shieldHP > 0 && P.cleanT <= 0 ? 'shield' : null);
+  P.f.passiveShield = !P.unarmed && P.w !== 2 && P.cleanT <= 0;
+  const wantBlock = P.unarmed ? null : keys.KeyQ && P.w === 0 ? 'sword' : (mouseR && P.w !== 2 && P.f.shieldHP > 0 && P.cleanT <= 0 ? 'shield' : null);
   if (wantBlock !== P.f.blocking) { if (wantBlock) { if (C.beginBlock(P.f, wantBlock)) P.charging = false; } else C.endBlock(P.f); }
   // auto-aim the sword guard at the nearest enemy winding up
   let inc = null, incD = 4;
@@ -1695,10 +1758,10 @@ function updateCamera(dt) {
   P.kick = Math.max(0, P.kick - dt * 1.5);
   camera.rotation.set(P.pitch + shake + P.kick * .12, P.yaw, shake * .5 + P.kick * .05);
   // Viriato himself, posed by the same rig and blade arcs as the Romans
-  avatar.f = P.f; avatar.state = P.w === 0 ? 'chase' : 'idle'; avatar.crouch = P.crouch > .4; avatar.dead = state === 'dead'; avatar.hits = P.hitsTaken; avatar.yaw = P.yaw + Math.PI; avatar.mv.x = P.vel.x; avatar.mv.z = P.vel.z; avatar.throwT = P.throwT; avatar.throwKind = P.throwKind;
+  avatar.f = P.f; avatar.state = P.w === 0 && !P.unarmed ? 'chase' : 'idle'; avatar.crouch = P.crouch > .4; avatar.dead = state === 'dead'; avatar.hits = P.hitsTaken; avatar.yaw = P.yaw + Math.PI; avatar.mv.x = P.vel.x; avatar.mv.z = P.vel.z; avatar.throwT = P.throwT; avatar.throwKind = P.throwKind;
   const bob3 = setPose(avatar, dt);
   AV.root.position.set(P.pos.x, P.pos.y + bob3 - (AV.rig ? 0 : P.crouch * .3), P.pos.z); AV.root.rotation.y = avatar.yaw;
-  AV.root.visible = view === 'third'; AV_FAL.visible = P.w === 0;
+  AV.root.visible = view === 'third'; AV_FAL.visible = P.w === 0 && !P.unarmed; if (AV.root.userData.parma) AV.root.userData.parma.visible = !P.unarmed;
   const thrown = !P.throwPending && P.throwT > 0; // between release and drawing the next one
   AV_JAV.visible = P.w === 1 && P.dardos + (P.throwPending ? 1 : 0) > 0 && !thrown;
   AV_STONE.visible = P.w === 2 && P.pedras + (P.throwPending ? 1 : 0) > 0 && !thrown;
@@ -1711,8 +1774,8 @@ function updateCamera(dt) {
     camera.position.copy(cp);
   }
   // viewmodel
-  FAL.visible = P.w === 0; JAV.visible = P.w === 1 && (P.dardos > 0 || P.throwT > 0); SLG.visible = P.w === 2;
-  SHD.visible = P.w !== 2 && P.f.shieldHP > 0;
+  FAL.visible = P.w === 0 && !P.unarmed; JAV.visible = P.w === 1 && (P.dardos > 0 || P.throwT > 0); SLG.visible = P.w === 2;
+  SHD.visible = !P.unarmed && P.w !== 2 && P.f.shieldHP > 0;
   STUCK.forEach((m, i) => { m.visible = i < P.f.stuckJavelins; });
   const sx = Math.cos(P.bob) * .012, sy = Math.abs(Math.sin(P.bob)) * .014;
   if (P.w === 0) {
@@ -1805,7 +1868,8 @@ function drawCompass() {
   cctx.fillStyle = '#efe4d2'; cctx.fillRect(W / 2 - .5, 6, 1, 4);
 }
 function updateHUDWeapon() {
-  $('wname').textContent = WNAMES[P.w];
+  $('wname').textContent = P.unarmed ? 'Desarmado' : WNAMES[P.w];
+  $('wlist').style.visibility = P.unarmed ? 'hidden' : '';
   $('wammo').textContent = P.w === 0 ? '—' : P.w === 1 ? `${P.dardos} / 10` : `${P.pedras} / 30`;
   for (const s of $('wlist').children) s.classList.toggle('on', +s.dataset.w === P.w);
   $('cross').classList.toggle('melee', P.w === 0);
@@ -1858,19 +1922,28 @@ function startGame(intro = false) {
 const INTRO_P = 15;
 /** Prologue opening: a slow high circle over the field while the legions close their ring, then down to Viriato among his people. */
 function updateIntroPrologue(dt) {
-  const L = INTRO_P, t = clamp(introT / L, 0, 1);
-  setRing(ringRadius(smooth(.05, .78, t)));
+  const L = INTRO_P, t = clamp(introT / L, 0, 1), y0 = heightAt(MEADOW.x, MEADOW.z), R = ringRadius(smooth(.03, .8, t));
+  setRing(R);
   view = 'third'; updateCamera(dt); view = introView; AV.root.visible = true;
   introP1.copy(camera.position); introQ1.copy(camera.quaternion);
-  const oa = 2.2 + introT * .09, orad = lerp(32, 22, smooth(0, .7, t)), oh = lerp(15, 7, smooth(0, .7, t));
-  introP0.set(MEADOW.x + Math.cos(oa) * orad, heightAt(MEADOW.x, MEADOW.z) + oh, MEADOW.z + Math.sin(oa) * orad);
-  introQ0.setFromRotationMatrix(new THREE.Matrix4().lookAt(introP0, V(MEADOW.x, heightAt(MEADOW.x, MEADOW.z) + 1, MEADOW.z), V(0, 1, 0)));
-  const k = smooth(.74, 1, t);
-  camera.position.lerpVectors(introP0, introP1, k); camera.quaternion.slerpQuaternions(introQ0, introQ1, k);
-  if (introVeil) introVeil.style.opacity = String(clamp(1 - (introT - .3) / 3, 0, 1) * .8 + .2 * (1 - k));
-  if (!introTitled && introT > 1.2) { introTitled = true; showMsg('LUSITÂNIA · 150 A.C.', 'O pretor Sérvio Galba prometeu terras aos lusitanos que depusessem as armas.', 4.8); }
-  if (!introHorn && introT > 7) { introHorn = true; showMsg('A TRAIÇÃO DE GALBA', 'Entregaram as armas e foram divididos em três grupos. Então as legiões fecharam o cerco.', 5.5); }
-  if (introT >= L) endIntro();
+  const ea = Math.atan2(ESCAPE.z - MEADOW.z, ESCAPE.x - MEADOW.x), at = (a, r, h) => V(MEADOW.x + Math.cos(a) * r, 0, MEADOW.z + Math.sin(a) * r).setY(h);
+  const T = introT, look = (p, q) => { introP0.copy(p); introQ0.setFromRotationMatrix(new THREE.Matrix4().lookAt(p, q, V(0, 1, 0))); };
+  if (T < 4) {            // 1 · among the people, eye level, the first legionaries appear on the far rise
+    const a = ea + Math.PI; look(at(a, 1.5 + T * .25, y0 + 1.55), at(a, 34, y0 + 1.2));
+  } else if (T < 8.2) {   // 2 · behind the shields, low, the line steps forward
+    const a = ea + 2.2, r = R + 3.2 - (T - 4) * .15; look(at(a + .05, r, y0 + 1.05), at(a - .25, 0, y0 + 1.1));
+  } else if (T < 12) {    // 3 · from high above: the ring is shut
+    const a = ea + (T - 8.2) * .12; look(at(a, 6, y0 + 30 - (T - 8.2) * 1.5), at(a, 0, y0));
+  } else {                // 4 · down to Viriato as the trap closes
+    const k = smooth(12, L, T), a = ea + .46; look(at(a, 6, y0 + 24.3), at(a, 0, y0));
+    introP0.lerp(introP1, k); introQ0.slerp(introQ1, k);
+  }
+  camera.position.copy(introP0); camera.quaternion.copy(introQ0);
+  const cut = [0, 4, 8.2, 12].reduce((m, c) => Math.min(m, Math.abs(T - c)), 9);
+  if (introVeil) introVeil.style.opacity = String(Math.max(clamp(1 - (T - .2) / 2.2, 0, 1), clamp(1 - cut / .35, 0, 1) * (T > 1 ? .9 : 0)));   // fade in, and a dip to black at each cut
+  if (!introTitled && T > 1) { introTitled = true; showMsg('LUSITÂNIA · 150 A.C.', 'O pretor Sérvio Galba prometeu terras aos lusitanos que depusessem as armas.', 3); }
+  if (!introHorn && T > 4.6) { introHorn = true; showMsg('O CERCO', 'Entregaram as armas e foram divididos em três grupos. As legiões avançaram.', 5); }
+  if (T >= L) endIntro();
 }
 /** Opening shot: the camera drops from above the castro and settles behind Viriato, who stands at the gate looking out over the valley. */
 const introQ0 = new THREE.Quaternion(), introQ1 = new THREE.Quaternion(), introP0 = new THREE.Vector3(), introP1 = new THREE.Vector3();
@@ -1980,7 +2053,7 @@ function step(dt) {
     VM.visible = false;
   }
   if (state !== 'menu') VM.visible = view === 'first' && (state === 'play' || state === 'pause');
-  updateFires(dt); updateParticles(dt); updateTrails(dt);
+  updateFires(dt); updateParticles(dt); updateTrails(dt); updateSignal(dt);
 }
 const AV = soldier('lusitano', { scale: 1.04, outfit: 'lusitano_b', hair: ['hair_long', 'hair_beard'], hairColor: 0x2a1d14, cap: false }); scene.add(AV.root); AV.root.visible = false;
 let AV_FAL = null; AV.root.traverse(o => { if (o.name === 'falcata') AV_FAL = o; });

@@ -50,3 +50,25 @@ test('player speed: slower backwards and sideways, no sprinting mid-swing, slowe
   assert.ok(playerSpeed({ fwd: 1, side: 0, f: { phase: 'idle', blocking: 'shield' } }) < run * .65);
   assert.ok(playerSpeed({ fwd: 1, side: 0, crouch: true, f: idle }) < run * .6);
 });
+
+import { staminaUse } from '../src/locomotion.js';
+test('stamina: standing and walking cost nothing, running costs a little, sprinting a lot', () => {
+  assert.equal(staminaUse({ speed: 0, sprint: false }), 0);
+  assert.equal(staminaUse({ speed: 2.2, sprint: false }), 0);
+  const run = staminaUse({ speed: 4.4, sprint: false }), dash = staminaUse({ speed: 7.6, sprint: true });
+  assert.ok(run > 0 && run < 8, `run ${run}`);
+  assert.ok(dash >= 3 * run, `sprint ${dash}`);
+  // a full bar lasts roughly 5 s of sprinting and well over 15 s of running
+  assert.ok(100 / dash > 3.5 && 100 / dash < 7);
+  assert.ok(100 / run > 15);
+});
+
+test('player speed: a slope slows the sprint hard, plain running a little, downhill not at all', () => {
+  const idle = { phase: 'idle' };
+  const flatDash = playerSpeed({ fwd: 1, side: 0, sprint: true, f: idle }), flatRun = playerSpeed({ fwd: 1, side: 0, f: idle });
+  const upDash = playerSpeed({ fwd: 1, side: 0, sprint: true, f: idle, slope: .4 }), upRun = playerSpeed({ fwd: 1, side: 0, f: idle, slope: .4 });
+  assert.ok(upDash < flatDash * .6, `uphill sprint ${upDash}`);
+  assert.ok(upRun < flatRun && upRun > flatRun * .6, `uphill run ${upRun}`);
+  assert.ok(flatDash / upDash > flatRun / upRun, 'the sprint loses more than the run');
+  assert.equal(playerSpeed({ fwd: 1, side: 0, sprint: true, f: idle, slope: -.3 }), flatDash);
+});
