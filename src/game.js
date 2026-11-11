@@ -1603,7 +1603,7 @@ function setPose(e, dt) {
     const fx = Math.sin(e.yaw), fz = Math.cos(e.yaw);
     const tk = e.throwT > 0 ? { k: 1 - e.throwT, rel: e.throwKind === 'sling' ? .83 : .53 } : e.kind === 'velite' && e.atkT > 0 ? { k: 1 - e.atkT / .55, rel: .64 } : null;
     driveRig(THREE, e.m.rig, { speed: e.mv.x * fx + e.mv.z * fz, side: e.mv.x * fz - e.mv.z * fx, crouch: e.crouch, combat: e.state === 'chase', f: e.f, T: C,
-      throwK: tk ? clamp(tk.k * .33 / tk.rel, 0, 1) : -1, hit: e.hits, heavy: e.heavy, dead: e.dead }, dt);
+      throwK: tk ? clamp(tk.k * .33 / tk.rel, 0, 1) : -1, hit: e.hits, heavy: e.heavy, dead: e.dead, blockDir: e.blockDir || (e === avatar ? P.incomingDir : null) }, dt);
     return 0;
   }
   const m = e.m, f = e.f, k = Math.min(1, dt * 14), combat = e.state === 'chase';
@@ -2321,6 +2321,7 @@ return {
   get enemies() { return enemies; }, get allies() { return allies; }, setCompanions: n => { companions = n; }, forceDir: d => { forcedDir = d; }, get order() { return order; }, get placing() { return placing; }, flag: FLAG, flagAt, hurtAllyForTest: (a, d) => hurtAlly(a, d, a.pos.clone()), get mission() { return mission; }, get state() { return state; },
   get projectiles() { return projectiles; }, get pickups() { return pickups; },
   input: { mouse: (l, r) => { mouseL = l; mouseR = r; }, mouseMove: (dx, dy) => { C.nudgeIntent(P.intent, dx, dy); if (P.charging) { P.acc.x += dx; P.acc.y += dy; } if (P.f.phase === 'windup' && !P.f.released) { P.post.x += dx; P.post.y += dy; } } },
+  prompt: (t) => showPrompt(t, 1.2),
   studio: { pose: (e, dt) => { const b = setPose(e, dt); e.m.root.position.set(e.pos.x, e.pos.y + b, e.pos.z); e.m.root.rotation.y = e.yaw; }, freeze: () => { state = 'studio'; }, play: () => { state = 'play'; }, avatarEntity: () => avatar },
   avatar: AV, get view() { return view; }, avatarHand: () => throwOrigin(), trailCount: () => { let n = 0; for (const t of trails.values()) n += t.samples.length; return n; }, physicsOk: phys.ok, physCounts: () => phys.counts(), V3: THREE.Vector3, damageEnemyForTest: (e, d) => damageEnemy(e, d, false, e.pos.clone()), spawnEnemyJavelin, vm: { stuckVisible: () => STUCK.filter(m => m.visible).length, fal: FAL },
 };
@@ -2339,7 +2340,11 @@ export async function boot() {
   const game = await createGame({ chars, THREE, renderer, canvas, document, window, rapier, loader: new THREE.TextureLoader(), quality: (() => { try { return window.localStorage.getItem('viriato.quality') || 'medium'; } catch (_) { return 'medium'; } })() });
   if (!game.physicsOk) document.getElementById('physnote').classList.remove('hidden');
   let last = 0;
-  const frame = t => { const dt = Math.min(.05, (t - last) / 1000 || 0); last = t; game.step(dt); game.render(); requestAnimationFrame(frame); };
+  // tuning aids: F8 = slow motion (1×, ½×, ¼×); window.__moves / window.__combat = poses and timings, editable live in the console
+  let timeScale = 1;
+  window.addEventListener('keydown', e => { if (e.code !== 'F8') return; e.preventDefault(); timeScale = timeScale === 1 ? .5 : timeScale === .5 ? .25 : 1; game.prompt && game.prompt(`Velocidade ${timeScale === 1 ? 'normal' : timeScale === .5 ? '½×' : '¼×'}`); });
+  import('./moves.js').then(m => { window.__moves = m; }); import('./combat.js').then(m => { window.__combat = m; });
+  const frame = t => { const dt = Math.min(.05, (t - last) / 1000 || 0) * timeScale; last = t; game.step(dt); game.render(); requestAnimationFrame(frame); };
   requestAnimationFrame(frame);
   window.__game = game;
 }

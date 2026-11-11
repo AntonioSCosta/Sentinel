@@ -15,6 +15,7 @@ export function layerOf(bone, shielded) {
   return 'up';
 }
 
+import { attackPose, blockPose, MOVES, BLOCKS } from './moves.js';
 // Attack clips: clip time windows for windup → strike → recovery, chosen from the hand's measured path.
 export const ATK = {
   right: { clip: 'Sword_Regular_A', w: [0, .16], s: [.16, .3], r: [.3, .43] },   // cut from the right, rising across
@@ -264,6 +265,36 @@ function blendLayer(rig, L, target, dt, snap) {
  * Drive a rig from game state. s = { speed (signed, along facing), side (m/s, + = model's left), crouch, combat,
  *   f (fighter), T (combat timings), throwK (0..1 or <0), dead, hit (increments on each hit taken), heavy }.
  */
+/**
+ * Layer a move pose (moves.js) on the posed skeleton: each rotation is about the character's own axes
+ * (x = its left, y = up, z = forward in the rig root's frame), applied from the hips out so the arm rides the turning chest.
+ * The hips' turn is taken back out of the thighs so the feet stay planted. The touched bones are saved and restored next frame.
+ */
+const _q = {};
+function charQuat(THREE, rootQ, [pitch, yaw, roll], s = 1) {
+  const D = Math.PI / 180, e = _q.e || (_q.e = new THREE.Euler()), q = new THREE.Quaternion().setFromEuler(e.set(pitch * D * s, yaw * D * s, -roll * D * s, 'YXZ'));
+  return rootQ.clone().multiply(q).multiply(rootQ.clone().invert());
+}
+function rotateWorld(THREE, b, Rw) {
+  b.parent.updateWorldMatrix(true, false);
+  const pq = b.parent.getWorldQuaternion(new THREE.Quaternion());
+  b.quaternion.premultiply(pq.clone().invert().multiply(Rw).multiply(pq));
+  b.updateMatrixWorld(true);
+}
+export function applyPose(THREE, rig, pose) {
+  const B = rig.bones, saved = [], save = b => { if (b && !saved.some(s => s[0] === b)) saved.push([b, b.quaternion.clone()]); };
+  rig.root.updateWorldMatrix(true, false);
+  const rootQ = rig.root.getWorldQuaternion(new THREE.Quaternion());
+  if (pose.pelvis && B.pelvis) {
+    const R = charQuat(THREE, rootQ, pose.pelvis); save(B.pelvis); rotateWorld(THREE, B.pelvis, R);
+    const Ri = charQuat(THREE, rootQ, [0, pose.pelvis[1], 0]).invert();
+    for (const n of ['thigh_l', 'thigh_r']) if (B[n]) { save(B[n]); rotateWorld(THREE, B[n], Ri); }
+  }
+  if (pose.spine) for (const n of ['spine_01', 'spine_02', 'spine_03']) if (B[n]) { save(B[n]); rotateWorld(THREE, B[n], charQuat(THREE, rootQ, pose.spine, 1 / 3)); }
+  const map = { neck: 'neck_01', clavicle_r: 'clavicle_r', upperarm_r: 'upperarm_r', lowerarm_r: 'lowerarm_r', hand_r: 'hand_r' };
+  for (const [k, n] of Object.entries(map)) if (pose[k] && B[n]) { save(B[n]); rotateWorld(THREE, B[n], charQuat(THREE, rootQ, pose[k])); }
+  rig.poseSaved = saved;
+}
 export function driveRig(THREE, rig, s, dt) {
   const f = s.f || {}, lo = {}, up = {}, sh = {};
   if (s.dead) {
@@ -289,6 +320,15 @@ export function driveRig(THREE, rig, s, dt) {
     os.t += dt; if (os.t >= dur) rig.oneShot = null; else upper = { [os.clip]: { w: 1, time: os.t } };
     if (os.clip === 'Hit_Knockback' && rig.oneShot) lo[os.clip] = { w: 3, time: os.t };
   }
+  // authored Warband-style moves (moves.js): the body stays on its guard clip and the move is layered on after the mixer
+  const guardClip = rig.shielded ? { Idle_Shield_Loop: { w: 1, time: 1 } } : { Sword_Regular_A: { w: 1, time: 0 } };
+  let pose = null;
+  const inAttack = f.dir && (f.phase === 'windup' || f.phase === 'strike' || f.phase === 'recovery');
+  if (!upper && inAttack && MOVES[f.dir] && s.T) {
+    const T = s.T, d = f.dir, tm = { windup: T.WINDUP[d] * (f.tele || 1), strike: T.STRIKE_TIME[d], recovery: T.RECOVERY[d] };
+    pose = attackPose(d, f.phase, f.phase === 'recovery' ? tm.recovery - f.t : f.t, tm); upper = guardClip;
+  }
+  if (!upper && f.blocking === 'sword' && BLOCKS[s.blockDir]) { pose = blockPose(s.blockDir, f.blockT || 0); upper = guardClip; }
   if (!upper && f.dir && (f.phase === 'windup' || f.phase === 'strike' || f.phase === 'recovery') && ATK[f.dir]) {
     upper = { [ATK[f.dir].clip]: { w: 1, time: attackTime(f.dir, f.phase, f.t, s.T) } };
     if (sp < .3 && f.phase !== 'windup') lo[ATK[f.dir].clip] = { w: 1.5, time: attackTime(f.dir, f.phase, f.t, s.T) }; // step into it
@@ -307,6 +347,7 @@ export function driveRig(THREE, rig, s, dt) {
   // undo last frame's counter-twist first: the mixer skips bones whose animated value did not change
   // (a held guard pose), so a twist left on a bone would add up frame after frame and spin the chest
   const SP = ['spine_01', 'spine_02', 'spine_03'].map(n => rig.bones[n]).filter(Boolean);
+  if (rig.poseSaved) { for (const [b, q] of rig.poseSaved) b.quaternion.copy(q); rig.poseSaved = null; }   // undo last frame's move layer first
   if (rig.spineBase) { SP.forEach((b, i) => b.quaternion.copy(rig.spineBase[i])); rig.spineBase = null; }
   rig.mixer.update(dt);
   // legs turn toward travel; the spine turns back so the chest stays on the target. The turn is shared by
@@ -318,6 +359,7 @@ export function driveRig(THREE, rig, s, dt) {
       SP.forEach(b => twistWorldY(THREE, b, -rig.side / SP.length));
     }
   } else rig.body.rotation.y = 0;
+  if (pose) applyPose(THREE, rig, pose);
   if (rig.dyn) for (const f of rig.dyn) f();   // cloth that reacts to the pose (skirts)
 }
 
