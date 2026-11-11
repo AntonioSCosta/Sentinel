@@ -11,7 +11,7 @@ import { withTimeout } from './physics.js';
 import { sweepHit, capsuleOf, glance, bladeSegment, toWorld, bladeDir } from './swing.js';
 import { resolveQuality } from './quality.js';
 import { makeRig, driveRig } from './rig.js';
-import { followSlot, pickFoe, pickTarget, allyAct } from './ally.js';
+import { followSlot, pickFoe, pickTarget, allyAct, holdSlot, aimGround, allyLook } from './ally.js';
 
 /**
  * Builds the whole game. Rendering, DOM and window are injected so the game can run headless in tests.
@@ -478,17 +478,17 @@ function makeSoldier(kind) {
 
 /* Rigged soldier: the Quaternius body and animation clips, wearing the kit built above on its bones. */
 const HAND_BASIS = new THREE.Matrix4().makeBasis(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, -1), new THREE.Vector3(-1, 0, 0));
-function rigSoldier(kind) {
+function rigSoldier(kind, look = null) {
   const p = makeSoldier(kind), ud = p.root.userData, lus = kind === 'lusitano';
   const shield = ud.scutum || ud.parma;
   const white = p.mats[0].color.equals(MATS.wool_white.color);
-  const outfit = lus ? (rand() < .5 ? 'lusitano' : 'lusitano_b') : kind === 'velite' ? 'velite' : ud.armour === 'hamata' ? 'roman_mail' : white ? 'roman_white' : 'roman_red';
-  const hair = lus ? ['hair_long', 'hair_beard'] : kind === 'velite' ? ['hair_beard'] : [];
-  const rig = makeRig(THREE, chars.clone, chars, { outfit, hair, shielded: !!shield, tint: rr(.86, 1.05), hairColor: [0x2a1d14, 0x3b2a1e, 0x1c1410, 0x4a3524][Math.floor(rand() * 4)] });
+  const outfit = look ? look.outfit : lus ? (rand() < .5 ? 'lusitano' : 'lusitano_b') : kind === 'velite' ? 'velite' : ud.armour === 'hamata' ? 'roman_mail' : white ? 'roman_white' : 'roman_red';
+  const hair = look ? look.hair : lus ? ['hair_long', 'hair_beard'] : kind === 'velite' ? ['hair_beard'] : [];
+  const rig = makeRig(THREE, chars.clone, chars, { outfit, hair, shielded: !!shield, tint: rr(.86, 1.05), hairColor: look ? look.hairColor : [0x2a1d14, 0x3b2a1e, 0x1c1410, 0x4a3524][Math.floor(rand() * 4)] });
   // helmet / cap: everything on the old head except the skin
   const hk = new THREE.Group();
   for (const o of [...p.head.children]) if (!(o.isMesh && o.material === p.skin)) hk.add(o);
-  hk.position.set(0, 1.5, -.005); hk.scale.setScalar(.88); rig.attach('Head', hk);
+  hk.position.set(0, 1.5, -.005); hk.scale.setScalar(.88); if (!look || look.cap) rig.attach('Head', hk);
   // weapon in the right fist: blade out past the thumb, edges along the fingers
   const hand = p.elbows[1].children.at(-1), wpn = new THREE.Group(); wpn.name = 'weapon';
   for (const o of [...hand.children]) wpn.add(o);
@@ -512,7 +512,7 @@ function rigSoldier(kind) {
   const mats = [...new Set([...rig.mats, ...p.mats])];
   return { root: rig.root, rig, mats, weapon: wpn };
 }
-const soldier = kind => chars ? rigSoldier(kind) : makeSoldier(kind);
+const soldier = (kind, look) => { const m = chars ? rigSoldier(kind, look) : makeSoldier(kind); if (look) m.root.scale.setScalar(look.scale); return m; };
 
 /* =========================================================
    Viewmodel (first-person weapons)
@@ -590,6 +590,35 @@ const P = { f: C.createFighter(), pos: new THREE.Vector3(), vy: 0, yaw: 0, pitch
   atk: 0, cd: 0, kills: 0, shots: 0, hits: 0, heads: 0, time: 0, stepT: 0, bob: 0, swing: 0, throwT: 0, hurtT: 0 };
 let enemies = [], projectiles = [], pickups = [], allies = [], companions = 3;
 let forcedDir = null; // tests pin the blow direction
+// orders for the companions: 'follow' (Z), 'hold' at the flag (X, then click), 'charge' (T)
+let order = 'follow', placing = false; const flagAt = { x: 0, z: 0, yaw: 0 };
+const FLAG = new THREE.Group(), FLAG_MATS = [];
+{
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(.025, .03, 2.6, 6), new THREE.MeshStandardMaterial({ color: 0x6e5032, roughness: .8, transparent: true })); pole.position.y = 1.3;
+  const cloth = new THREE.Mesh(new THREE.PlaneGeometry(.8, .5), new THREE.MeshStandardMaterial({ color: 0xb02a1e, roughness: .9, side: THREE.DoubleSide, transparent: true, emissive: 0x30100a })); cloth.position.set(.42, 2.3, 0);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(.5, .62, 24), new THREE.MeshBasicMaterial({ color: 0xe8c36a, transparent: true, side: THREE.DoubleSide, depthWrite: false })); ring.rotation.x = -Math.PI / 2; ring.position.y = .06;
+  FLAG.add(pole, cloth, ring); FLAG_MATS.push(pole.material, cloth.material, ring.material); FLAG.visible = false; scene.add(FLAG);
+}
+function setFlagLook(preview) { for (const m of FLAG_MATS) m.opacity = preview ? .55 : 1; }
+function giveOrder(o) {
+  if (state !== 'play') return;
+  if (!allies.some(a => !a.dead)) { showPrompt('Não tens companheiros vivos', 1.2); return; }
+  if (o === 'hold') { placing = !placing; if (placing) showPrompt('Aponta e clica para pôr a bandeira (X cancela)', 2.5); else FLAG.visible = order === 'hold'; return; }
+  placing = false; order = o; FLAG.visible = false;
+  feed(o === 'follow' ? 'Ordem: sigam-me!' : 'Ordem: ao ataque!'); SFX.horn && o === 'charge' && SFX.grunt();
+}
+function aimPoint() { const d = V(0, 0, -1).applyQuaternion(camera.quaternion); return aimGround(camera.position, d, heightAt, 90); }
+function placeFlag() {
+  const g = aimPoint(); if (!g) { showPrompt('Aponta para o chão', 1); return false; }
+  flagAt.x = g.x; flagAt.z = g.z; flagAt.yaw = Math.atan2(g.x - P.pos.x, g.z - P.pos.z);
+  FLAG.position.set(g.x, g.y, g.z); FLAG.rotation.y = flagAt.yaw; FLAG.visible = true; setFlagLook(false);
+  placing = false; order = 'hold'; feed('Ordem: para a bandeira!'); return true;
+}
+function updateFlag() {
+  if (!placing) return;
+  const g = aimPoint(); FLAG.visible = !!g; setFlagLook(true);
+  if (g) { FLAG.position.set(g.x, g.y, g.z); FLAG.rotation.y = Math.atan2(g.x - P.pos.x, g.z - P.pos.z); }
+}
 let mission = 0, tentsBurnt = 0, missionMsgT = 0, alarm = false;
 Object.defineProperty(P, 'st', { get() { return P.f.stamina; }, set(v) { P.f.stamina = v; }, enumerable: false });
 Object.defineProperty(P, 'block', { get() { return P.f.blocking != null; }, enumerable: false });
@@ -600,7 +629,7 @@ function resetWorld() {
   // clear dynamic objects
   for (const e of enemies) { scene.remove(e.m.root); if (e.corpse) phys.removeCorpse(e.corpse); }
   for (const a of allies) scene.remove(a.m.root);
-  allies = [];
+  allies = []; order = 'follow'; placing = false; FLAG.visible = false;
   for (const p of projectiles) phys.remove(p.pid);
   for (const p of projectiles) scene.remove(p.mesh);
   for (const p of pickups) scene.remove(p.mesh);
@@ -646,7 +675,7 @@ function spawn(kind, x, z, group) {
 
 /** One of Viriato's companions: follows him, joins the fight once the Romans are fighting. */
 function spawnAlly(i) {
-  const m = soldier('lusitano'); scene.add(m.root);
+  const m = soldier('lusitano', allyLook(i)); scene.add(m.root);
   const s = followSlot(i, P.pos, flatFwd());
   const a = { kind: 'lusitano', ally: true, m, pos: new THREE.Vector3(s.x, heightAt(s.x, s.z), s.z), yaw: P.yaw + Math.PI, hp: 110, f: C.createFighter(), state: 'follow', i,
     vel: { x: 0, z: 0 }, mv: { x: 0, z: 0 }, aiT: rr(0, .3), blockLeft: 0, releaseAt: 0, stride: 0, ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, hits: 0, crouch: false, swingHits: new Set() };
@@ -724,6 +753,7 @@ window.addEventListener('keydown', e => {
   if (e.code === 'KeyF') bash();
   if (e.code === 'KeyV') view = view === 'third' ? 'first' : 'third';
   if (e.code === 'KeyR') cleanShield();
+  if (e.code === 'KeyZ') giveOrder('follow'); if (e.code === 'KeyX') giveOrder('hold'); if (e.code === 'KeyT') giveOrder('charge');
   if (e.code === 'Space') e.preventDefault();
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
@@ -918,7 +948,12 @@ function updateAllies(dt) {
     if (a.flash > 0) a.flash -= dt; a.ph += dt;
     const fl = Math.max(0, a.flash) * 4; for (const m of a.m.mats) m.emissive.setRGB(fl * .6, 0, 0);
     const near = Math.hypot(P.pos.x - a.pos.x, P.pos.z - a.pos.z) < 32;
-    const foe = state === 'play' && near ? pickFoe(a.pos, enemies, 22) : null;
+    const post = order === 'hold' ? holdSlot(a.i, flagAt, flagAt.yaw) : null;
+    // follow: fight what is already fighting near Viriato; hold: defend the post; charge: go for any Roman
+    const foe = state !== 'play' ? null : order === 'charge' ? pickFoe(a.pos, enemies, 60, true)
+      : order === 'hold' ? (Math.hypot(a.pos.x - post.x, a.pos.z - post.z) < 12 ? pickFoe(post, enemies, 7) : null)
+      : near ? pickFoe(a.pos, enemies, 22) : null;
+    if (foe && foe.state !== 'chase' && foe.state !== 'skirmish' && foe.pos.distanceTo(a.pos) < 10) alert(foe);
     let want = { x: 0, z: 0 };
     if (foe) {
       a.state = 'chase'; a.crouch = false;
@@ -940,9 +975,9 @@ function updateAllies(dt) {
     } else {
       a.state = 'follow'; if (a.f.blocking) C.endBlock(a.f); if (a.f.phase === 'windup') C.feint(a.f);
       C.tickFighter(a.f, dt);
-      a.crouch = P.crouch > .5;
-      const s = followSlot(a.i, P.pos, pf), dx = s.x - a.pos.x, dz = s.z - a.pos.z, d = Math.hypot(dx, dz);
-      if (d > 70) { a.pos.x = s.x; a.pos.z = s.z; a.vel.x = a.vel.z = 0; }
+      a.crouch = !post && P.crouch > .5;
+      const s = post || followSlot(a.i, P.pos, pf), dx = s.x - a.pos.x, dz = s.z - a.pos.z, d = Math.hypot(dx, dz);
+      if (d > 70 && !post) { a.pos.x = s.x; a.pos.z = s.z; a.vel.x = a.vel.z = 0; }
       else if (d > (a.moving ? .5 : 1.6)) {
         a.moving = true; const sp = Math.min(a.crouch ? 2.4 : sprinting || d > 9 ? 8 : 4.6, d * 2.2); want = { x: dx / d * sp, z: dz / d * sp };
         // blocked by a wall, hut or tree: slide round it for a moment
@@ -951,7 +986,7 @@ function updateAllies(dt) {
         if (a.detourT > 0) { a.detourT -= dt; want = { x: (-dz / d * a.detour * .9 + dx / d * .3) * sp, z: (dx / d * a.detour * .9 + dz / d * .3) * sp }; }
         faceTo(a, a.pos.x + want.x, a.pos.z + want.z, dt, 5);
       }
-      else { a.moving = false; faceTo(a, a.pos.x + pf.x, a.pos.z + pf.z, dt, 3); }
+      else { a.moving = false; if (post) faceTo(a, a.pos.x + Math.sin(flagAt.yaw), a.pos.z + Math.cos(flagAt.yaw), dt, 3); else faceTo(a, a.pos.x + pf.x, a.pos.z + pf.z, dt, 3); }
     }
     a.vel = steer(a.vel, want, 12, dt);
     a.pos.x += a.vel.x * dt; a.pos.z += a.vel.z * dt;
@@ -1424,7 +1459,8 @@ function updatePlayer(dt) {
   P.cd = Math.max(0, P.cd - dt); P.bashCd = Math.max(0, P.bashCd - dt); P.bashT = Math.max(0, P.bashT - dt);
   if (P.cleanT > 0) { P.cleanT -= dt; if (P.cleanT <= 0) { P.f.stuckJavelins = 0; feed('Escudo limpo'); } }
   // press / release edges of the left button
-  if (mouseL && !P.prevL) {
+  if (mouseL && !P.prevL && placing) { placeFlag(); P.prevL = true; }
+  else if (mouseL && !P.prevL) {
     if (P.w === 0) { P.charging = true; P.chargeT = 0; P.acc.x = P.intent.x; P.acc.y = P.intent.y; }
     else attack();
   }
@@ -1678,7 +1714,7 @@ $('sens2').addEventListener('input', e => { setSens(+e.target.value); $('sens').
 let menuT = 0;
 function step(dt) {
   if (hitStopT > 0) { hitStopT -= dt; dt *= .15; } // brief impact freeze
-  if (state === 'play') { updatePlayer(dt); updateEnemies(dt); updateAllies(dt); updateProjectiles(dt); updateCamera(dt); updateHUD(dt); }
+  if (state === 'play') { updatePlayer(dt); updateEnemies(dt); updateAllies(dt); updateProjectiles(dt); updateCamera(dt); updateFlag(); updateHUD(dt); }
   else if (state === 'dead' || state === 'won') {
     if (endT > 0) { endT -= dt; if (endT <= 0 && endArgs) { endScreen(...endArgs); endArgs = null; } }
     updateEnemies(dt); updateAllies(dt); updateProjectiles(dt);
@@ -1719,7 +1755,7 @@ $('start').disabled = false; $('start').textContent = 'COMEÇAR';
 return {
   start: d => { if (d != null) diff = d; startGame(); }, step, render: () => R.render(), setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
   P, supplyTents, heightAt, CAMP, scene, camera,
-  get enemies() { return enemies; }, get allies() { return allies; }, setCompanions: n => { companions = n; }, forceDir: d => { forcedDir = d; }, hurtAllyForTest: (a, d) => hurtAlly(a, d, a.pos.clone()), get mission() { return mission; }, get state() { return state; },
+  get enemies() { return enemies; }, get allies() { return allies; }, setCompanions: n => { companions = n; }, forceDir: d => { forcedDir = d; }, get order() { return order; }, get placing() { return placing; }, flag: FLAG, flagAt, hurtAllyForTest: (a, d) => hurtAlly(a, d, a.pos.clone()), get mission() { return mission; }, get state() { return state; },
   get projectiles() { return projectiles; }, get pickups() { return pickups; },
   input: { mouse: (l, r) => { mouseL = l; mouseR = r; }, mouseMove: (dx, dy) => { C.nudgeIntent(P.intent, dx, dy); if (P.charging) { P.acc.x += dx; P.acc.y += dy; } if (P.f.phase === 'windup' && !P.f.released) { P.post.x += dx; P.post.y += dy; } } },
   studio: { pose: (e, dt) => { const b = setPose(e, dt); e.m.root.position.set(e.pos.x, e.pos.y + b, e.pos.z); e.m.root.rotation.y = e.yaw; }, freeze: () => { state = 'studio'; }, play: () => { state = 'play'; }, avatarEntity: () => avatar },
@@ -1754,10 +1790,10 @@ export async function loadChars(THREE, base = 'assets/chars/') {
     const u8 = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
     return gl.parseAsync(u8.buffer, '');
   };
-  const [body, a1, a2, hl, hb] = await Promise.all(['body', 'anim_ual1', 'anim_ual2', 'hair_long', 'hair_beard'].map(get));
+  const [body, a1, a2, hl, hb, hz] = await Promise.all(['body', 'anim_ual1', 'anim_ual2', 'hair_long', 'hair_beard', 'hair_buzzed'].map(get));
   const tl = new THREE.TextureLoader(), textures = {};
-  await Promise.all(['roman_red', 'roman_white', 'roman_mail', 'velite', 'lusitano', 'lusitano_b'].map(async k => {
+  await Promise.all(['roman_red', 'roman_white', 'roman_mail', 'velite', 'lusitano', 'lusitano_b', 'lusitano_c', 'lusitano_d'].map(async k => {
     const t = await tl.loadAsync(base + 'body_' + k + '.jpg'); t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; textures[k] = t;
   }));
-  return { body: body.scene, clips: [...a1.animations, ...a2.animations], hair: { hair_long: hl.scene, hair_beard: hb.scene }, textures, split: [null, null], clone: SkeletonUtils.clone };
+  return { body: body.scene, clips: [...a1.animations, ...a2.animations], hair: { hair_long: hl.scene, hair_beard: hb.scene, hair_buzzed: hz.scene }, textures, split: [null, null], clone: SkeletonUtils.clone };
 }

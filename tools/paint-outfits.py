@@ -44,6 +44,8 @@ OUTFITS = {   # (upper, lower, sleeve) colours, or 'mail'
   'velite':      ((150, 118, 80), (150, 118, 80), (150, 118, 80)),     # undyed brown wool
   'lusitano':    ((206, 196, 170), (70, 52, 36), (206, 196, 170)),   # linen corslet over a dark wool tunic
   'lusitano_b':  ((92, 72, 48), (70, 52, 36), (92, 72, 48)),
+  'lusitano_c':  ((150, 104, 44), (150, 104, 44), (150, 104, 44)),   # ochre wool tunic
+  'lusitano_d':  ((58, 78, 56), (96, 84, 62), (58, 78, 56)),         # green tunic over undyed wool
 }
 base = np.asarray(skin, np.float32)
 for name, cols in OUTFITS.items():
