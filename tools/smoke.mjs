@@ -35,8 +35,12 @@ try {
   G.start(1); forcePlay(); god = true;
   check('the ambush mission has no camp garrison', !G.enemies.some(e => e.group === 'camp'));
   for (const e of G.enemies.filter(e => e.group === 'patrol')) if (!e.dead) { G.damageEnemyForTest(e, 999); st(2); }
-  st(200);
-  check('the ambush mission is won when the patrol falls', G.state === 'won');
+  st(5);
+  check('when the patrol falls the closing scene starts', G.state === 'outro');
+  let crouched = 0, reached = 0; for (let i = 0; i < 13 * 60 + 40; i++) { st(1); crouched = Math.max(crouched, G.allies.filter(a => a.crouch).length); reached = Math.max(reached, ...G.allies.map(a => a.reach || 0)); }
+  check(`Viriato's men crouch by the fallen Romans and strip them (${crouched} crouched, reach ${reached.toFixed(2)}, ${G.allies.length} men)`, crouched >= 3 && reached > .9);
+  check('some of the dead have lost their swords', G.enemies.some(e => e.dead && e.m.weapon && !e.m.weapon.visible) || !G.enemies[0].m.weapon);
+  check('the ambush mission is then won', G.state === 'won');
   G.start(1, 'acampamento'); forcePlay(); god = true;
   // mission flow only: melee itself is covered by tools/smoke-combat.mjs
   for (const e of G.enemies.filter(e => e.group === 'patrol')) if (!e.dead) { G.damageEnemyForTest(e, 999); st(2); }

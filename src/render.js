@@ -1,6 +1,22 @@
 // Renderer setup and post-processing per quality preset.
 import { QUALITY, resolveQuality } from './quality.js';
 
+/** Final grade: a little more contrast and colour in the mid-tones, cool shadows, warm lights, darkened corners. */
+export const GRADE = {
+  uniforms: { tDiffuse: { value: null }, contrast: { value: 1.08 }, saturation: { value: 1.1 }, vignette: { value: .26 } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float contrast, saturation, vignette; varying vec2 vUv;
+    void main() {
+      vec4 c = texture2D(tDiffuse, vUv); vec3 col = c.rgb;
+      float l = dot(col, vec3(.2126, .7152, .0722));
+      col = mix(vec3(l), col, saturation);
+      col = (col - .18) * contrast + .18;
+      col *= mix(vec3(.96, 1.0, 1.05), vec3(1.04, 1.0, .95), smoothstep(.05, .6, l));
+      vec2 d = vUv - .5; col *= 1.0 - vignette * smoothstep(.25, .85, dot(d, d) * 2.2);
+      gl_FragColor = vec4(max(col, 0.0), c.a);
+    }`,
+};
+
 /**
  * @param renderer real WebGLRenderer or a test stub (no post-processing without WebGL)
  * @param sun DirectionalLight whose shadow map size follows the preset
@@ -14,10 +30,10 @@ export async function createRender({ THREE, renderer, scene, camera, sun, grass,
     renderer.toneMappingExposure = 1.1;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     try {
-      const [{ EffectComposer }, { RenderPass }, { SSAOPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all([
+      const [{ EffectComposer }, { RenderPass }, { SSAOPass }, { UnrealBloomPass }, { OutputPass }, { ShaderPass }] = await Promise.all([
         import('three/addons/postprocessing/EffectComposer.js'), import('three/addons/postprocessing/RenderPass.js'),
         import('three/addons/postprocessing/SSAOPass.js'), import('three/addons/postprocessing/UnrealBloomPass.js'),
-        import('three/addons/postprocessing/OutputPass.js')]);
+        import('three/addons/postprocessing/OutputPass.js'), import('three/addons/postprocessing/ShaderPass.js')]);
       const w = renderer.domElement.clientWidth || 1280, h = renderer.domElement.clientHeight || 720;
       composer = new EffectComposer(renderer);
       composer.addPass(new RenderPass(scene, camera));
@@ -25,6 +41,7 @@ export async function createRender({ THREE, renderer, scene, camera, sun, grass,
       composer.addPass(ssaoPass);
       bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), .35, .4, .85);
       composer.addPass(bloomPass);
+      composer.addPass(new ShaderPass(GRADE));   // one cheap full-screen pass: the picture's final look
       composer.addPass(new OutputPass());
     } catch (err) { console.warn('Post-processing unavailable', err); composer = null; }
   }

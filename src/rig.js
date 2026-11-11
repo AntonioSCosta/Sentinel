@@ -163,7 +163,26 @@ export function shellGeometry(THREE, bm, { offset = .014, iters = 14 } = {}) {
   out.setIndex(outI); out.computeVertexNormals();
   return out;
 }
-export function makeRig(THREE, cloneSkinned, assets, { outfit = 'roman_red', hair = [], shielded = false, tint = 1, hairColor = 0x3b2a1e, female = false, palette = null } = {}) {
+/**
+ * An ordinary man's build on the warrior's body: narrower chest and shoulders, thinner arms. Bones run along +y, so
+ * x/z scale thins them; the neck is scaled back so the head keeps its size. (The clips carry no scale tracks.)
+ */
+export function slimBody(bones) {
+  const set = (n, x, z) => { if (bones[n]) bones[n].scale.set(x, 1, z); };
+  set('spine_01', .92, .9); set('neck_01', 1 / .92, 1 / .9);
+  set('upperarm_l', .86, .86); set('upperarm_r', .86, .86);
+}
+/** A small tiling weave (warp and weft threads with a little unevenness) to give plain cloth some grain. */
+export function weaveTexture(THREE) {
+  const n = 64, d = new Uint8Array(n * n * 4); let s = 7; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const over = ((x >> 1) + (y >> 1)) % 2, v = 205 + (over ? 26 : 0) + ((x % 2) ^ (y % 2) ? 8 : 0) + (r() - .5) * 26, i = (y * n + x) * 4;
+    d[i] = d[i + 1] = d[i + 2] = Math.max(0, Math.min(255, v)); d[i + 3] = 255;
+  }
+  const t = new THREE.DataTexture(d, n, n); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(14, 14); t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.needsUpdate = true;
+  return t;
+}
+export function makeRig(THREE, cloneSkinned, assets, { outfit = 'roman_red', hair = [], shielded = false, tint = 1, hairColor = 0x3b2a1e, female = false, palette = null, cloth = null, slim = false } = {}) {
   const root = new THREE.Group(); root.rotation.order = 'YXZ';
   female = female && !!assets.bodyF;
   const body = cloneSkinned(female ? assets.bodyF : assets.body); root.add(body);
@@ -184,7 +203,9 @@ export function makeRig(THREE, cloneSkinned, assets, { outfit = 'roman_red', hai
     let bm = null; body.traverse(o => { if (o.isSkinnedMesh && o.material.name === 'MI_Superhero_Male') bm = o; });
     if (bm) {
       const geo = assets.shellGeo || (assets.shellGeo = shellGeometry(THREE, bm));
-      const cm = new THREE.MeshStandardMaterial({ map: bm.material.map, color: bm.material.color.clone(), roughness: 1, metalness: 0, name: 'tunic' });
+      // plain woven cloth in the garment's colour — not the body texture, whose painted chest shows through as muscles
+      const cm = cloth != null ? new THREE.MeshStandardMaterial({ map: assets.weave || (assets.weave = weaveTexture(THREE)), color: new THREE.Color(cloth).multiplyScalar(tint), roughness: 1, metalness: 0, name: 'tunic' })
+        : new THREE.MeshStandardMaterial({ map: bm.material.map, color: bm.material.color.clone(), roughness: 1, metalness: 0, name: 'tunic' });
       const sh = new THREE.SkinnedMesh(geo, cm); sh.name = 'tunic'; sh.castShadow = true; sh.frustumCulled = false;
       bm.parent.add(sh); sh.bind(bm.skeleton, bm.bindMatrix); mats.push(cm);
     }
@@ -271,6 +292,12 @@ function blendLayer(rig, L, target, dt, snap) {
  * The hips' turn is taken back out of the thighs so the feet stay planted. The touched bones are saved and restored next frame.
  */
 const _q = {};
+/** A move scaled toward the base animation: body offsets and arm weight times k. */
+export function fadePose(p, k) {
+  const out = {}; for (const n of ['pelvis', 'spine', 'neck']) if (p[n]) out[n] = p[n].map(v => v * k);
+  if (p.arm) out.arm = { ...p.arm, w: p.arm.w * k };
+  return out;
+}
 function charQuat(THREE, rootQ, [pitch, yaw, roll], s = 1) {
   const D = Math.PI / 180, e = _q.e || (_q.e = new THREE.Euler()), q = new THREE.Quaternion().setFromEuler(e.set(pitch * D * s, yaw * D * s, -roll * D * s, 'YXZ'));
   return rootQ.clone().multiply(q).multiply(rootQ.clone().invert());
@@ -293,7 +320,42 @@ export function applyPose(THREE, rig, pose) {
   if (pose.spine) for (const n of ['spine_01', 'spine_02', 'spine_03']) if (B[n]) { save(B[n]); rotateWorld(THREE, B[n], charQuat(THREE, rootQ, pose.spine, 1 / 3)); }
   const map = { neck: 'neck_01', clavicle_r: 'clavicle_r', upperarm_r: 'upperarm_r', lowerarm_r: 'lowerarm_r', hand_r: 'hand_r' };
   for (const [k, n] of Object.entries(map)) if (pose[k] && B[n]) { save(B[n]); rotateWorld(THREE, B[n], charQuat(THREE, rootQ, pose[k])); }
+  if (pose.arm && pose.arm.w > 0 && B.upperarm_r && B.lowerarm_r && B.hand_r) { for (const n of ['upperarm_r', 'lowerarm_r', 'hand_r']) save(B[n]); solveArm(THREE, rig, pose.arm); }
   rig.poseSaved = saved;
+}
+/**
+ * Put the sword hand at `arm.hand` with the blade along `arm.blade` (character frame: x = his right, y = up, z = forward,
+ * origin at the feet). Shoulder and elbow are solved as a two-bone chain bent toward `arm.pole`; each bone is swung by
+ * the shortest arc from where the base animation has it, so no twist is added. `arm.w` blends base → solved.
+ */
+export function solveArm(THREE, rig, arm) {
+  const V = THREE.Vector3, Q = THREE.Quaternion, B = rig.bones, U = B.upperarm_r, L = B.lowerarm_r, H = B.hand_r;
+  const base = [U, L, H].map(b => b.quaternion.clone());
+  const toWorld = v => rig.root.localToWorld(new V(-v[0], v[1], v[2])), o = rig.root.getWorldPosition(new V());
+  const dirWorld = v => toWorld(v).sub(o).normalize(), wp = b => b.getWorldPosition(new V());
+  U.updateWorldMatrix(true, true);
+  const S = wp(U), E = wp(L), W = wp(H), l1 = S.distanceTo(E), l2 = E.distanceTo(W);
+  const toT = toWorld(arm.hand).sub(S), d = Math.min(Math.max(toT.length(), Math.abs(l1 - l2) + .02), (l1 + l2) * .995), ax = toT.normalize();
+  let pole = dirWorld(arm.pole || [.6, -1, 0]); pole.addScaledVector(ax, -pole.dot(ax));
+  if (pole.lengthSq() < 1e-4) { pole = new V(0, -1, 0); pole.addScaledVector(ax, -pole.dot(ax)); if (pole.lengthSq() < 1e-4) pole.set(1, 0, 0); }
+  pole.normalize();
+  const a = (l1 * l1 - l2 * l2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+  const elbow = S.clone().addScaledVector(ax, a).addScaledVector(pole, h), hand = S.clone().addScaledVector(ax, d);
+  rotateWorld(THREE, U, new Q().setFromUnitVectors(E.sub(S).normalize(), elbow.clone().sub(S).normalize()));
+  const E2 = wp(L), W2 = wp(H);
+  rotateWorld(THREE, L, new Q().setFromUnitVectors(W2.sub(E2).normalize(), hand.sub(E2).normalize()));
+  const wpn = rig.weaponObj || (rig.weaponObj = H.children.find(c => c.name === 'weapon') || null);
+  if (wpn && arm.blade) {
+    const bT = dirWorld(arm.blade), wq = () => wpn.getWorldQuaternion(new Q());
+    rotateWorld(THREE, H, new Q().setFromUnitVectors(new V(0, -1, 0).applyQuaternion(wq()), bT));
+    if (arm.edge) {   // roll about the blade so the cutting edge leads the way it travels
+      const e0 = new V(rig.edgeSign || 1, 0, 0).applyQuaternion(wq()), eT = dirWorld(arm.edge);
+      e0.addScaledVector(bT, -e0.dot(bT)); eT.addScaledVector(bT, -eT.dot(bT));
+      if (e0.lengthSq() > 1e-4 && eT.lengthSq() > 1e-4) rotateWorld(THREE, H, new Q().setFromUnitVectors(e0.normalize(), eT.normalize()));
+    }
+  }
+  if (arm.w < 1) [U, L, H].forEach((b, i) => { const q = b.quaternion.clone(); b.quaternion.copy(base[i]).slerp(q, arm.w); });
+  U.updateMatrixWorld(true);
 }
 export function driveRig(THREE, rig, s, dt) {
   const f = s.f || {}, lo = {}, up = {}, sh = {};
@@ -328,7 +390,13 @@ export function driveRig(THREE, rig, s, dt) {
     const T = s.T, d = f.dir, tm = { windup: T.WINDUP[d] * (f.tele || 1), strike: T.STRIKE_TIME[d], recovery: T.RECOVERY[d] };
     pose = attackPose(d, f.phase, f.phase === 'recovery' ? tm.recovery - f.t : f.t, tm); upper = guardClip;
   }
-  if (!upper && f.blocking === 'sword' && BLOCKS[s.blockDir]) { pose = blockPose(s.blockDir, f.blockT || 0); upper = guardClip; }
+  if (!upper && f.blocking === 'sword') { pose = blockPose(BLOCKS[s.blockDir] ? s.blockDir : 'left', f.blockT || 0); upper = guardClip; }
+  // reaching down to something on the ground (stripping the fallen): trunk bent over it, right hand going down to it
+  if (!pose && !upper && s.reach > 0) pose = { spine: [22 * s.reach, 8 * s.reach, 0], neck: [10 * s.reach, 0, 0], arm: { hand: [.16, .34, .46], pole: [.9, .2, -.4], w: s.reach } };
+  // a move cut short (hit, stagger, feint) lets go of the body over a few frames instead of snapping
+  if (pose) { rig.lastPose = pose; rig.poseK = 1; }
+  else if (rig.lastPose && (rig.poseK = (rig.poseK || 0) - dt / .12) > 0) pose = fadePose(rig.lastPose, rig.poseK);
+  else rig.lastPose = null;
   if (!upper && f.dir && (f.phase === 'windup' || f.phase === 'strike' || f.phase === 'recovery') && ATK[f.dir]) {
     upper = { [ATK[f.dir].clip]: { w: 1, time: attackTime(f.dir, f.phase, f.t, s.T) } };
     if (sp < .3 && f.phase !== 'windup') lo[ATK[f.dir].clip] = { w: 1.5, time: attackTime(f.dir, f.phase, f.t, s.T) }; // step into it

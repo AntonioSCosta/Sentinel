@@ -196,3 +196,17 @@ test('a shield is hacked apart by repeated strong blows, and then no longer cove
   d.passiveShield = true; d.stamina = 100;
   assert.equal(C.resolveHit(d, { dir: 'left', power: 1, fromAngle: 0, baseDamage: 20 }).result, 'hit');
 });
+
+test('a shield carried in front stops missiles: raised it covers head and a wide arc, merely carried only the body from the front', () => {
+  const up = C.createFighter(); C.beginBlock(up, 'shield');
+  assert.equal(C.missileBlocked(up, { fromAngle: 70, head: true }), true);
+  assert.equal(C.missileBlocked(up, { fromAngle: 100 }), false);
+  const carried = C.createFighter();
+  assert.equal(C.missileBlocked(carried, { fromAngle: 30 }), true);
+  assert.equal(C.missileBlocked(carried, { fromAngle: 30, head: true }), false, 'the head shows above a carried shield');
+  assert.equal(C.missileBlocked(carried, { fromAngle: 80 }), false, 'from the flank');
+  assert.equal(C.missileBlocked(carried, { fromAngle: 10, aware: false }), false, 'a man taken by surprise');
+  const swinging = C.createFighter(); C.beginAttack(swinging, 'up'); C.releaseAttack(swinging); C.tickFighter(swinging, .6);
+  assert.equal(swinging.phase, 'strike'); assert.equal(C.missileBlocked(swinging, { fromAngle: 0 }), false, 'open while striking');
+  assert.equal(C.missileBlocked(C.createFighter({ shieldHP: 0 }), { fromAngle: 0 }), false);
+});

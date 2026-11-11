@@ -10,7 +10,7 @@ import { createRender } from './render.js';
 import { withTimeout } from './physics.js';
 import { sweepHit, capsuleOf, glance, bladeSegment, toWorld, bladeDir } from './swing.js';
 import { resolveQuality } from './quality.js';
-import { makeRig, driveRig } from './rig.js';
+import { makeRig, driveRig, weaveTexture, slimBody } from './rig.js';
 import { followSlot, pickFoe, pickTarget, allyAct, holdSlot, aimGround, allyLook } from './ally.js';
 import { JAVELINS, throwPower, allyThrows, veliteState } from './missiles.js';
 
@@ -43,7 +43,7 @@ scene.add(new THREE.HemisphereLight(0xc9dcff, 0x5a4630, .62));
 const sun = new THREE.DirectionalLight(0xffdcae, 1.0);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
-Object.assign(sun.shadow.camera, { left: -70, right: 70, top: 70, bottom: -70, near: 1, far: 300 });
+Object.assign(sun.shadow.camera, { left: -46, right: 46, top: 46, bottom: -46, near: 1, far: 300 });   // the mist hides the distance: spend the shadow map on what is near
 sun.shadow.bias = -.0006;
 scene.add(sun); scene.add(sun.target);
 const SUN_DIR = new THREE.Vector3(-.55, .62, .56).normalize();
@@ -89,6 +89,21 @@ const DOT = makeDotTex();
   }
 }
 
+// ground mist: a few slow wisps lying among the trunks, always round the camera (not on the lowest preset)
+const WISPS = [];
+if (quality !== 'low') {
+  const wm = new THREE.SpriteMaterial({ map: DOT, color: 0xdfe6e4, transparent: true, opacity: .13, depthWrite: false, fog: false });
+  setSeed(911);
+  for (let i = 0; i < 16; i++) { const sp = new THREE.Sprite(wm); sp.scale.set(rr(16, 30), rr(3.2, 5.5), 1); sp.renderOrder = 2; scene.add(sp); WISPS.push({ sp, x: rr(-55, 55), z: rr(-55, 55), h: rr(.7, 2.2), vx: rr(.15, .5), vz: rr(-.2, .2) }); }
+}
+function updateWisps(dt) {
+  const cx = camera.position.x, cz = camera.position.z, R = 55, wrap = v => ((v + R) % (2 * R) + 2 * R) % (2 * R) - R;
+  for (const w of WISPS) {
+    w.x = wrap(w.x + w.vx * dt - cx + (w.cx ?? cx)); w.z = wrap(w.z + w.vz * dt - cz + (w.cz ?? cz)); w.cx = cx; w.cz = cz;
+    const x = cx + w.x, z = cz + w.z, d = Math.hypot(w.x, w.z);
+    w.sp.position.set(x, heightAt(x, z) + w.h, z); w.sp.material.opacity = .13; w.sp.visible = d > 9;   // never a sheet across the lens
+  }
+}
 const phys = await createPhysics({ RAPIER: rapier, heightAt, half: WORLD });
 const MATS = await loadMaterials({ THREE, loader, quality, anisotropy: renderer.capabilities ? renderer.capabilities.getMaxAnisotropy() : 4 });
 const FOL = await loadFoliage({ THREE, loader, document, anisotropy: renderer.capabilities ? renderer.capabilities.getMaxAnisotropy() : 4 });
@@ -131,14 +146,16 @@ const MAT = (name, extra) => { const m = MATS[name].clone(); if (extra) Object.a
    ========================================================= */
 const dummy = new THREE.Object3D();
 const CELL = 50;   // m: scenery is batched per map square, so squares behind the camera or lost in the mist are not drawn at all
-function instanced(geo, mat, list, shadow = true, { chunk = true, name = '', depth = null } = {}) {
+function instanced(geo, mat, list, shadow = true, { chunk = true, name = '', depth = null, vary = 0, warm = 0 } = {}) {
+  const tintC = new THREE.Color(), hash = (x, z, k) => { const v = Math.sin(x * 12.9898 + z * 78.233 + k * 37.719) * 43758.5453; return v - Math.floor(v); };
   const cells = new Map();
   for (const t of list) { const k = chunk ? Math.floor(t.x / CELL) + ',' + Math.floor(t.z / CELL) : ''; if (!cells.has(k)) cells.set(k, []); cells.get(k).push(t); }
   let last = null;
   for (const part of cells.values()) {
     const im = new THREE.InstancedMesh(geo, mat, part.length);
-    part.forEach((t, i) => { dummy.position.set(t.x, t.y, t.z); dummy.rotation.set(t.rx || 0, t.ry || 0, t.rz || 0); dummy.scale.set(t.sx || t.s || 1, t.sy || t.s || 1, t.sz || t.s || 1); dummy.updateMatrix(); im.setMatrixAt(i, dummy.matrix); });
-    im.instanceMatrix.needsUpdate = true; im.castShadow = shadow; im.receiveShadow = true; im.name = name; if (depth) im.customDepthMaterial = depth;
+    part.forEach((t, i) => { dummy.position.set(t.x, t.y, t.z); dummy.rotation.set(t.rx || 0, t.ry || 0, t.rz || 0); dummy.scale.set(t.sx || t.s || 1, t.sy || t.s || 1, t.sz || t.s || 1); dummy.updateMatrix(); im.setMatrixAt(i, dummy.matrix);
+      if (vary) { const l = 1 - vary + 2 * vary * hash(t.x, t.z, 1), w = warm * (hash(t.x, t.z, 2) - .5); im.setColorAt(i, tintC.setRGB(l * (1 + w), l, l * (1 - w * 1.6))); } });   // no two trees quite the same green
+    im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; im.castShadow = shadow; im.receiveShadow = true; im.name = name; if (depth) im.customDepthMaterial = depth;
     im.computeBoundingSphere(); scene.add(im); last = im;
   }
   return last;
@@ -205,14 +222,14 @@ setSeed(777);
     (() => { const g = new THREE.CylinderGeometry(.1, .2, 2.4, 5, 1, true); g.translate(0, 1.2, 0); g.rotateZ(.6); g.translate(.2, 3, 0); return g; })(),
     (() => { const g = new THREE.CylinderGeometry(.1, .2, 2.2, 5, 1, true); g.translate(0, 1.1, 0); g.rotateZ(-.55); g.rotateY(2.1); g.translate(-.1, 3, .1); return g; })(),
   ]);
-  instanced(pineTrunk, MAT('bark_pine'), pines);
-  instanced(oakTrunk, MAT('bark_oak'), oaks);
-  const leafy = (name, geo, mat, depth, list) => instanced(geo, mat, list, true, { name, depth });
+  instanced(pineTrunk, MAT('bark_pine'), pines, true, { vary: .14 });
+  instanced(oakTrunk, MAT('bark_oak'), oaks, true, { vary: .14 });
+  const leafy = (name, geo, mat, depth, list) => instanced(geo, mat, list, true, { name, depth, vary: .2, warm: .22 });
   leafy('pine-canopy', canopyGeo({ cards: 23, rx: 2.2, ry: 2.5, cy: 7.2, w: 2.1, h: 1.9, seed: 5, flat: 0 }), FOL.pine, FOL.pineDepth, pines);
   leafy('oak-canopy', canopyGeo({ cards: 22, rx: 3.1, ry: 2.0, cy: 5.3, w: 2.8, h: 2.8, seed: 9 }), FOL.oak, FOL.oakDepth, oaks);
   leafy('shrubs', canopyGeo({ cards: 7, rx: .85, ry: .5, cy: .55, w: 1.3, h: 1.2, seed: 13 }), FOL.shrub, FOL.shrubDepth, shrubs);
   { const bm = FOL.shrub.clone(); bm.color = new THREE.Color(0xe6cf3a); leafy('broom', canopyGeo({ cards: 6, rx: .75, ry: .55, cy: .6, w: 1.1, h: 1.1, seed: 21 }), bm, FOL.shrubDepth, broom); }
-  { const gm = MAT('terrain_rock', { flatShading: true }); gm.color = new THREE.Color(0x8d8e8c); instanced(new THREE.IcosahedronGeometry(1, 0), gm, rocks); }   // grey granite
+  { const gm = MAT('terrain_rock', { flatShading: true }); gm.color = new THREE.Color(0x8d8e8c); instanced(new THREE.IcosahedronGeometry(1, 0), gm, rocks, true, { vary: .16, warm: .08 }); }   // grey granite
   const gg = new THREE.PlaneGeometry(.8, .55); gg.translate(0, .27, 0);
   const gg2 = gg.clone(); gg2.rotateY(Math.PI / 2);
   const grassGeo = mergeGeos([gg, gg2]);
@@ -549,7 +566,11 @@ function rigSoldier(kind, look = null) {
   const outfit = look ? look.outfit : lus ? (rand() < .5 ? 'lusitano' : 'lusitano_b') : kind === 'velite' ? 'velite' : ud.armour === 'hamata' ? 'roman_mail' : white ? 'roman_white' : 'roman_red';
   let hair = look ? look.hair : lus ? ['hair_long', 'hair_beard'] : kind === 'velite' ? ['hair_long', 'hair_beard'] : [];
   if (hair.includes('hair_long') && !hair.includes('hair_buzzed')) hair = ['hair_buzzed', ...hair];   // the long cut leaves the crown bare: a close-cropped layer underneath covers it
-  const rig = makeRig(THREE, chars.clone, chars, { female: !!(look && look.female), palette: look && look.palette, outfit, hair, shielded: !!shield, tint: rr(.86, 1.05), hairColor: look ? look.hairColor : [0x2a1d14, 0x3b2a1e, 0x1c1410, 0x4a3524][Math.floor(rand() * 4)] });
+  // one garment, one cloth: the tunic over the chest and the skirt below the belt share colour and weave
+  if (!chars.weave) chars.weave = weaveTexture(THREE);
+  const cloth = outfit === 'roman_mail' ? null : (look && look.palette && look.palette.dress) || { lusitano: 0x7a5a36, lusitano_b: 0x5c4630, lusitano_c: 0x96682c, lusitano_d: 0x605440, roman_red: 0x9a2a20, roman_white: 0xd8d0bc, velite: 0x5c4630 }[outfit] || 0x6b4a2e;
+  const tint = rr(.86, 1.05);
+  const rig = makeRig(THREE, chars.clone, chars, { female: !!(look && look.female), palette: look && look.palette, outfit, hair, shielded: !!shield, cloth, tint, hairColor: look ? look.hairColor : [0x2a1d14, 0x3b2a1e, 0x1c1410, 0x4a3524][Math.floor(rand() * 4)] });
   // helmet / cap: everything on the old head except the skin
   const hk = new THREE.Group();
   for (const o of [...p.head.children]) if (!(o.isMesh && o.material === p.skin)) hk.add(o);
@@ -625,14 +646,15 @@ function rigSoldier(kind, look = null) {
     panels = { bones: [pel, th[0], th[1], F, Bk], inverses: [sk.boneInverses[I('pelvis')], sk.boneInverses[I('thigh_l')], sk.boneInverses[I('thigh_r')], inv, inv.clone()] };
     return panels;
   };
-  const skirt = (color, { rTop = .2, rBot = .25, y0 = 1.04, y1 = .56, folds = 14, amp = .05, mat = null, zs = .9 } = {}) => {
+  const skirt = (color, { rTop = .2, rBot = .25, y0 = 1.09, y1 = .56, folds = 14, amp = .05, mat = null, zs = .9, waist = .8 } = {}) => {
     if (!fsm) return;
-    const m = mat || new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 1, side: THREE.DoubleSide }); extraMats.push(m);
+    const m = mat || new THREE.MeshStandardMaterial({ color: 0xffffff, map: chars.weave || null, vertexColors: true, roughness: 1, side: THREE.DoubleSide }); extraMats.push(m);
     const H = y0 - y1, g = new THREE.CylinderGeometry(rTop, rBot, H, 36, 10, true), pos = g.attributes.position;
-    const HIP = .93, KNEE = .53, base = new THREE.Color(color), col = [], si = [], sw = [];
+    const HIP = .93, KNEE = .53, base = new THREE.Color(color).multiplyScalar(mat ? 1 : tint), col = [], si = [], sw = [];
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i), z = pos.getZ(i), t = 1 - (pos.getY(i) + H / 2) / H, y = y0 - t * H, a = Math.atan2(z, x), r = Math.hypot(x, z) || 1;
-      const k = 1 + amp * t * Math.sin(a * folds + t * 2) + amp * .4 * t * Math.sin(a * folds * 2.3);
+      const cinch = lerp(waist, 1, smooth(0, .3, t));   // gathered at the waist under the belt, swelling over the hips: it hangs from the body instead of standing off it
+      const k = (1 + amp * t * Math.sin(a * folds + t * 2) + amp * .4 * t * Math.sin(a * folds * 2.3)) * cinch;
       pos.setXYZ(i, x * k, y, z * k * zs);
       const long = y1 < .4, leg = smooth(1.0, .8, y) * (long ? .6 : .97), cz = z / r;   // follows the thigh from just under the hip; long dresses swing less (no sail)
       const wf = smooth(.3, .85, cz), wb = smooth(.3, .85, -cz), side = 1 - wf - wb, wl = (1 + clamp(x / .05, -1, 1)) / 2;
@@ -659,12 +681,13 @@ function rigSoldier(kind, look = null) {
     mesh.quaternion.premultiply(rig.root.getWorldQuaternion(new THREE.Quaternion()).invert());
     rig.attach('upperarm_' + side, mesh);
   };
-  if (lus) skirt((look && look.palette && look.palette.dress) || { lusitano: 0x46341f, lusitano_b: 0x5c4630, lusitano_c: 0x96682c, lusitano_d: 0x605440 }[outfit] || 0x46341f, look && look.dress ? { rTop: .19, rBot: .33, y1: .2, amp: .07, folds: 16 } : {});   // wool saia to mid-thigh
+  if (lus) skirt(cloth, look && look.dress ? { rTop: .19, rBot: .33, y1: .2, amp: .07, folds: 16 } : {});   // wool saia to mid-thigh
   else if (kind !== 'velite') {   // Roman tunic to the knee, a short mail skirt over it for the hamata
     const col = outfit === 'roman_white' ? 0xd8d0bc : 0x9a2a20;
-    skirt(col, { rTop: .2, rBot: .24, y0: 1.04, y1: .52, amp: .03, zs: .86 });
+    skirt(col, { rTop: .2, rBot: .24, y1: .52, amp: .03, zs: .86 });
     if (outfit === 'roman_mail') { const mm = MATS.mail.clone(); if (mm.map) { mm.map = mm.map.clone(); mm.map.repeat.set(2.6, 1); mm.map.wrapS = mm.map.wrapT = THREE.RepeatWrapping; mm.map.needsUpdate = true; } mm.side = THREE.DoubleSide; mm.color.setHex(0xb4b4b4); mm.roughness = .75; skirt(0xffffff, { rTop: .2, rBot: .25, y0: 1.04, y1: .74, amp: .02, mat: mm, folds: 8, zs: .84 }); }
   } else { skirt(0x5c4630, { rTop: .19, rBot: .27, y1: .68 }); }
+  if (look && look.unarmed && !look.female) slimBody(rig.bones);   // the people of the villages are not built like warriors (done last: everything is already fitted to the body)
   Object.assign(rig.root.userData, ud);
   const mats = [...new Set([...rig.mats, ...p.mats, bMat, gMat, sMat, ...extraMats])];
   return { root: rig.root, rig, mats, weapon: wpn, shield };
@@ -805,8 +828,16 @@ function updateFallen(dt) {
     if (s.mesh.position.y <= g) { s.mesh.position.y = g; s.mesh.quaternion.copy(FLAT); s.done = true; }
   }
 }
+/* The marching pack (sarcina) each man of the patrol carried: it falls beside him, and is what the ambushers come for. */
+const packs = [];
+function dropPack(e) {
+  const src = chars && chars.props && chars.props.sack; if (!src || e.pack) return;
+  const g = src.clone(true), a = rr(0, TAU), x = e.pos.x + Math.sin(a) * .75, z = e.pos.z + Math.cos(a) * .75;
+  g.scale.setScalar(4.6); g.position.set(x, heightAt(x, z), z); g.rotation.y = rr(0, TAU); scene.add(g); packs.push(g); e.pack = g;
+}
 function resetWorld() {
-  for (const s of fallen) scene.remove(s.mesh); fallen.length = 0;
+  for (const g of packs) scene.remove(g); packs.length = 0;
+  for (const s of fallen) scene.remove(s.mesh); fallen.length = 0; loot = null;
   scene.fog.density = FOG_BASE;
   if (typeof avatar !== 'undefined') { avatar.shieldLost = false; if (AV.shield) AV.shield.visible = true; }
   // clear dynamic objects
@@ -1072,7 +1103,66 @@ function startOutro() {
   outroCam.column = caught; outroCam.w = w; outroCam.q = q;
   outroCam.base = V(P.pos.x, 0, P.pos.z).addScaledVector(u, -2.6).addScaledVector(n, 1.3); outroCam.base.y = heightAt(outroCam.base.x, outroCam.base.z) + 1.6;
 }
+/* Ambush won: Viriato's men come out of the scrub and strip the fallen patrol of its arms and rations. */
+const LOOT_LEN = 13;
+let loot = null;
+function startLoot() {
+  state = 'outro'; outroT = 0; outroSaid = 0; introView = view;
+  $('hud').classList.add('intro'); $('msg').style.opacity = 0; missionMsgT = 0;
+  releaseAll(); C.endBlock(P.f); C.feint(P.f); P.charging = false; P.aimT = null; P.vel.x = P.vel.z = 0; order = 'follow'; FLAG.visible = false;
+  const dead = enemies.filter(e => e.dead), c = V(0, 0, 0);
+  for (const e of dead) c.add(e.pos); if (dead.length) c.multiplyScalar(1 / dead.length); else c.copy(P.pos);
+  c.y = heightAt(c.x, c.z);
+  // at least three men for the work: those who fought, and others who had stayed hidden above the road
+  let k = allies.length; while (allies.filter(a => !a.dead).length < 3 && k < 8) { const a = spawnAlly(k++), ang = Math.atan2(AMBUSH.x - c.x, AMBUSH.z - c.z) + rr(-.5, .5); a.pos.set(c.x + Math.sin(ang) * 13, 0, c.z + Math.cos(ang) * 13); a.pos.y = heightAt(a.pos.x, a.pos.z); }
+  const free = [...dead], pickNear = p => { let b = null, bd = 1e9; for (const e of free) { const d = e.pos.distanceTo(p); if (d < bd) { bd = d; b = e; } } if (b) free.splice(free.indexOf(b), 1); return b; };
+  const men = allies.filter(a => !a.dead).map(a => { if (a.f.blocking) C.endBlock(a.f); C.feint(a.f); a.state = 'follow'; a.throwPending = 0; a.throwT = 0; return { a, body: pickNear(a.pos), at: 0 }; });
+  loot = { c, men, mine: pickNear(P.pos), mineAt: 0, a0: Math.atan2(P.pos.x - c.x, P.pos.z - c.z) + .9 };
+}
+/** Walk `pos` toward the fallen man and stop beside him. → true once there. */
+function lootWalk(ent, body, sp, dt) {
+  if (!body) { ent.mv.x = ent.mv.z = 0; return false; }
+  const dx = body.pos.x - ent.pos.x, dz = body.pos.z - ent.pos.z, d = Math.hypot(dx, dz) || 1, near = d < 1.05;
+  const v = near ? 0 : Math.min(sp, (d - .9) * 3 + .6);
+  ent.pos.x += dx / d * v * dt; ent.pos.z += dz / d * v * dt; resolve(ent.pos, .35); ent.pos.y = heightAt(ent.pos.x, ent.pos.z);
+  ent.mv.x = lerp(ent.mv.x, dx / d * v, Math.min(1, dt * 8)); ent.mv.z = lerp(ent.mv.z, dz / d * v, Math.min(1, dt * 8));
+  return near;
+}
+function updateLoot(dt) {
+  outroT += dt; const T = outroT, L = loot;
+  if (missionMsgT > 0) { missionMsgT -= dt; if (missionMsgT <= 0) $('msg').style.opacity = 0; }
+  for (const m of L.men) {
+    const a = m.a, there = lootWalk(a, m.body, 3.2, dt) || (!m.body && T > 2);
+    if (m.body) faceTo(a, m.body.pos.x, m.body.pos.z, dt, 6);
+    if (there) m.at += dt;
+    a.crouch = m.at > .25; a.reach = m.at > .8 ? .5 - .5 * Math.cos((m.at - .8) * 2.6) : 0;   // down beside him, hands going over belt, purse and blade
+    if (m.at > 3.2 && m.body) { if (m.body.m.weapon) m.body.m.weapon.visible = false; if (m.body.pack) m.body.pack.visible = false; }   // gladius and pack change hands
+    const fa = a.m.root.getObjectByName('falcata'), dj = a.m.root.getObjectByName('dardo'); if (fa) fa.visible = !a.crouch; if (dj) dj.visible = false;
+    a.vel.x = a.vel.z = 0; C.tickFighter(a.f, dt); a.flash = 0; for (const mt of a.m.mats) mt.emissive.setRGB(0, 0, 0);
+    const bob = setPose(a, dt); a.m.root.position.set(a.pos.x, a.pos.y + bob, a.pos.z); a.m.root.rotation.y = a.yaw;
+  }
+  // Viriato goes to one of the fallen himself
+  { const there = lootWalk({ pos: P.pos, mv: P.vel }, L.mine, 2.6, dt); if (there) L.mineAt += dt;
+    if (L.mine) { const dx = L.mine.pos.x - P.pos.x, dz = L.mine.pos.z - P.pos.z; P.yaw = wrapA(P.yaw + clamp(wrapA(Math.atan2(-dx, -dz) - P.yaw), -dt * 5, dt * 5)); }
+    P.pitch = 0; P.crouch = lerp(P.crouch, L.mineAt > .3 ? 1 : 0, Math.min(1, dt * 6)); avatar.reach = L.mineAt > 1 ? .5 - .5 * Math.cos((L.mineAt - 1) * 2.4) : 0;
+    if (L.mineAt > 3.4 && L.mine) { if (L.mine.m.weapon) L.mine.m.weapon.visible = false; if (L.mine.pack) L.mine.pack.visible = false; } }
+  view = 'third'; updateCamera(dt); view = introView; VM.visible = false; AV.root.visible = true; if (AV_FAL) AV_FAL.visible = L.mineAt < .3 && !P.unarmed;
+  // the camera circles the road slowly, closing in
+  const ang = L.a0 + T * .11, r = lerp(10.5, 7, smooth(0, LOOT_LEN, T)), cam = V(L.c.x + Math.sin(ang) * r, 0, L.c.z + Math.cos(ang) * r);
+  cam.y = Math.max(heightAt(cam.x, cam.z) + 1.6, L.c.y + lerp(3.8, 2.8, smooth(0, LOOT_LEN, T)));   // high enough to see over the roadside rocks
+  camera.position.copy(cam); camera.lookAt(L.c.x, L.c.y + .7, L.c.z);
+  sun.position.copy(L.c).addScaledVector(SUN_DIR, 120); sun.target.position.copy(L.c);
+  if (outroSaid < 1 && T > 1.2) { outroSaid = 1; showMsg('A PATRULHA CAIU', '', 2.6); }
+  if (outroSaid < 2 && T > 5) { outroSaid = 2; showMsg('', 'Gládios, dardos, escudos e pão: tudo o que a patrulha trazia muda de mãos.', 3.4); }
+  if (outroSaid < 3 && T > 9.2) { outroSaid = 3; showMsg('', 'A cada emboscada, os homens de Viriato ficavam mais bem armados.', 3.2); }
+  if (T >= LOOT_LEN) {
+    for (const m of L.men) { m.a.crouch = false; m.a.reach = 0; } avatar.reach = 0; P.crouch = 0; loot = null;
+    $('hud').classList.remove('intro'); state = 'won'; SFX.horn(); endT = .05;
+    endArgs = ['VITÓRIA', 'A patrulha caiu', 'Nenhum romano voltou ao acampamento. A notícia da emboscada vai correr os vales.'];
+  }
+}
 function updateOutro(dt) {
+  if (loot) return updateLoot(dt);
   outroT += dt; const T = outroT, { u } = outroCam;
   if (missionMsgT > 0) { missionMsgT -= dt; if (missionMsgT <= 0) $('msg').style.opacity = 0; }
   // he keeps running, deeper and deeper among the trees, until the wood swallows him
@@ -1089,6 +1179,7 @@ function updateOutro(dt) {
   camera.position.copy(cam);
   const tgt = V(P.pos.x, P.pos.y + 1.2, P.pos.z).lerp(V(C0.x, C0.y + 1, C0.z), turn);
   camera.lookAt(tgt);
+  sun.position.copy(tgt).addScaledVector(SUN_DIR, 120); sun.target.position.copy(tgt);   // shadows where the camera looks
   if (outroSaid < 1 && T > 3) { outroSaid = 1; showMsg('VIRIATO ESCAPOU', '', 2.6); }
   if (outroSaid < 2 && T > 8.6) { outroSaid = 2; showMsg('', 'Galba matou ou vendeu como escravos milhares de lusitanos.', 3.2); }
   if (outroSaid < 3 && T > 11.9) { outroSaid = 3; showMsg('', 'Dos que fugiram, um voltaria com um exército.', 3); }
@@ -1163,7 +1254,7 @@ function feed(text) {
 }
 function checkMission() {
   if (chapter === 'prologo') return;
-  if (mission === 0 && patrolLeft() === 0 && chapter !== 'acampamento') { win(); return; }   // the ambush is the whole mission; the camp waits for a later one
+  if (mission === 0 && patrolLeft() === 0 && chapter !== 'acampamento') { if (state === 'play') startLoot(); return; }   // the ambush is the whole mission; the camp waits for a later one
   if (mission === 0 && patrolLeft() === 0) {
     mission = 1; setObjective();
     showMsg('A patrulha caiu', 'O acampamento romano fica a norte, ao fundo da estrada.');
@@ -1408,7 +1499,7 @@ function updateAllies(dt) {
       a.throwT = Math.max(0, a.throwT - dt / .6);
       { const dj = a.m.root.getObjectByName('dardo'), fa = a.m.root.getObjectByName('falcata'); if (dj) dj.visible = a.throwPending > 0; if (fa) fa.visible = !(a.throwPending > 0); }
       const throwing = a.throwPending > 0 || a.throwT > .45;
-      if (a.f.phase === 'idle') { const wb = a.blockLeft > 0; if (wb && !a.f.blocking) { C.beginBlock(a.f, C.guardFor(a.f)); a.blockDir = foe.f.dir === 'thrust' || !foe.f.dir ? 'left' : foe.f.dir; } else if (!wb && a.f.blocking) C.endBlock(a.f); }
+      if (a.f.phase === 'idle') { const wb = a.blockLeft > 0; if (wb && !a.f.blocking) { C.beginBlock(a.f, C.guardFor(a.f)); a.blockDir = foe.f.dir || 'left'; } else if (!wb && a.f.blocking) C.endBlock(a.f); }
       if (a.f.shieldHP <= 0) dropShield(a);
       if (a.aiT <= 0 && a.f.phase === 'idle' && !throwing) {
         a.aiT = .3;
@@ -1518,8 +1609,10 @@ function updateProjectiles(dt) {
         const toProj = V(p.prev.x - ex, 0, p.prev.z - ez).normalize();
         const ef = V(Math.sin(e.yaw), 0, Math.cos(e.yaw));
         const fromAngle = deg(Math.acos(clamp(ef.dot(toProj), -1, 1)));
-        if (e.f.blocking === 'shield' && fromAngle <= C.SHIELD_ARC) {
-          SFX.clank(spatial(p.pos)); burst('spark', p.pos, 8); feed('Bloqueado pelo escudo');
+        if (!e.shieldLost && C.missileBlocked(e.f, { fromAngle, head: isHead, aware: e.state !== 'march' && e.state !== 'guard' })) {
+          SFX.thud(spatial(p.pos)); burst('dust', p.pos, 6); if (!byAlly) feed('Bloqueado pelo escudo');
+          e.f.shieldHP = Math.max(0, e.f.shieldHP - (p.type === 'javelin' ? 14 : 4)); if (e.f.shieldHP <= 0) dropShield(e);   // javelins ruin a shield
+          alert(e);
           if (p.type === 'javelin' && !byAlly) addPickup('dardo1', ex + toProj.x * 1.2, ez + toProj.z * 1.2);
           done = true; break;
         }
@@ -1567,7 +1660,7 @@ function damageEnemy(e, dmg, head, where, special, byAlly) {
   SFX.flesh(); alert(e);
   if (!byAlly) { hitmT = .18; $('hitm').className = head ? 'head' : ''; $('hitm').style.opacity = 1; if (head) P.heads++; }
   if (e.hp <= 0) {
-    e.dead = true; e.deadT = 0; if (!byAlly) P.kills++; SFX.die(spatial(e.pos));
+    e.dead = true; e.deadT = 0; if (!byAlly) P.kills++; SFX.die(spatial(e.pos)); if (e.group === 'patrol') dropPack(e);
     { const d = V(e.pos.x - P.pos.x, 0, e.pos.z - P.pos.z).normalize(); e.corpse = phys.addCorpse(e.pos, e.yaw, { x: d.x, y: .3, z: d.z }); }
     const name = { legio: 'Legionário', velite: 'Vélite', centurion: 'Centurião' }[e.kind];
     feed(`${name} abatido${byAlly ? ' por um companheiro' : special ? ' — ' + special : head ? ' — na cabeça' : ''}`);
@@ -1664,7 +1757,7 @@ function setPose(e, dt) {
   if (e.m.rig) {
     const fx = Math.sin(e.yaw), fz = Math.cos(e.yaw);
     const tk = e.throwT > 0 ? { k: 1 - e.throwT, rel: e.throwKind === 'sling' ? .83 : .53 } : e.kind === 'velite' && e.atkT > 0 ? { k: 1 - e.atkT / .55, rel: .64 } : null;
-    driveRig(THREE, e.m.rig, { speed: e.mv.x * fx + e.mv.z * fz, side: e.mv.x * fz - e.mv.z * fx, crouch: e.crouch, combat: e.state === 'chase', f: e.f, T: C,
+    driveRig(THREE, e.m.rig, { speed: e.mv.x * fx + e.mv.z * fz, side: e.mv.x * fz - e.mv.z * fx, crouch: e.crouch, combat: e.state === 'chase', f: e.f, T: C, reach: e.reach || 0,
       throwK: tk ? clamp(tk.k * .33 / tk.rel, 0, 1) : -1, hit: e.hits, heavy: e.heavy, dead: e.dead, blockDir: e.blockDir || (e === avatar ? P.incomingDir : null) }, dt);
     return 0;
   }
@@ -1858,7 +1951,7 @@ function updateEnemies(dt) {
       if (e.f.phase === 'idle') {
         const want = e.blockLeft > 0 || (!T.ally && pd > 3.5 && P.w !== 0);
         const g = C.guardFor(e.f), wantG = g === 'shield' ? want : e.blockLeft > 0;   // a sword is no cover against missiles
-        if (wantG && !e.f.blocking) { C.beginBlock(e.f, g); e.blockDir = tf.dir === 'thrust' || !tf.dir ? 'left' : tf.dir; } else if (!wantG && e.f.blocking) C.endBlock(e.f);
+        if (wantG && !e.f.blocking) { C.beginBlock(e.f, g); e.blockDir = tf.dir || 'left'; } else if (!wantG && e.f.blocking) C.endBlock(e.f);
       }
       if (e.f.shieldHP <= 0) dropShield(e);
       if (e.aiT <= 0 && state === 'play' && e.f.phase === 'idle') {
@@ -2366,7 +2459,7 @@ function step(dt) {
     VM.visible = false;
   }
   if (state !== 'menu') VM.visible = view === 'first' && (state === 'play' || state === 'pause');
-  updateFires(dt); updateParticles(dt); updateTrails(dt); updateSignal(dt);
+  updateFires(dt); updateParticles(dt); updateTrails(dt); updateSignal(dt); updateWisps(dt);
 }
 const AV = soldier('lusitano', { scale: 1.04, outfit: 'lusitano_b', hair: ['hair_long', 'hair_beard'], hairColor: 0x2a1d14, cap: false }); scene.add(AV.root); AV.root.visible = false;
 let AV_FAL = null; AV.root.traverse(o => { if (o.name === 'falcata') AV_FAL = o; });
@@ -2433,10 +2526,11 @@ export async function loadChars(THREE, base = 'assets/chars/') {
     const u8 = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
     return gl.parseAsync(u8.buffer, '');
   };
-  const [body, a1, a2, hl, hb, hz, bf, hr] = await Promise.all(['body', 'anim_ual1', 'anim_ual2', 'hair_long', 'hair_beard', 'hair_buzzed', 'body_f', 'horse'].map(get));
+  const [body, a1, a2, hl, hb, hz, bf, hr, pr] = await Promise.all(['body', 'anim_ual1', 'anim_ual2', 'hair_long', 'hair_beard', 'hair_buzzed', 'body_f', 'horse'].map(get).concat(get('props').catch(() => null)));
+  const props = {}; if (pr) for (const sc of pr.scenes) { sc.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.material.metalness = 0; o.material.roughness = 1; } }); props[sc.name] = sc; }   // CC0 props (KayKit): sack, barrel, crates, tent…
   const tl = new THREE.TextureLoader(), textures = {};
   await Promise.all(['roman_red', 'roman_white', 'roman_mail', 'velite', 'lusitano', 'lusitano_b', 'lusitano_c', 'lusitano_d'].map(async k => {
     const t = await tl.loadAsync(base + 'body_' + k + '.jpg'); t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; textures[k] = t;
   }));
-  return { body: body.scene, bodyF: bf.scene, horse: { scene: hr.scene, clip: hr.animations[0] }, clips: [...a1.animations, ...a2.animations], hair: { hair_long: hl.scene, hair_beard: hb.scene, hair_buzzed: hz.scene }, textures, split: [null, null], clone: SkeletonUtils.clone };
+  return { props, body: body.scene, bodyF: bf.scene, horse: { scene: hr.scene, clip: hr.animations[0] }, clips: [...a1.animations, ...a2.animations], hair: { hair_long: hl.scene, hair_beard: hb.scene, hair_buzzed: hz.scene }, textures, split: [null, null], clone: SkeletonUtils.clone };
 }

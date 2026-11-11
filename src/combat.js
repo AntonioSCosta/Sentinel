@@ -35,6 +35,18 @@ export function createFighter(opts = {}) {
     blocking: null, blockT: 0, sinceBlock: 99, parryOk: true, ...opts };
 }
 
+/**
+ * Does the shield a fighter carries stop a missile? Raised, it covers him head to knee over a wide arc.
+ * Merely carried by a man on his guard, it still covers his body from the front — not his head, and not while he
+ * is striking, reeling, or taken by surprise.
+ */
+export function missileBlocked(f, { fromAngle, head = false, aware = true }) {
+  if (!(f.shieldHP > 0)) return false;
+  const ang = Math.abs(fromAngle);
+  if (f.blocking === 'shield') return ang <= SHIELD_ARC;
+  if (!aware || f.phase === 'strike' || f.phase === 'staggered') return false;
+  return !head && ang <= PASSIVE_ARC + 10;
+}
 /** What a fighter raises to guard: the shield while it holds, his own sword once it is broken or lost. */
 export const guardFor = f => f.shieldHP > 0 ? 'shield' : 'sword';
 

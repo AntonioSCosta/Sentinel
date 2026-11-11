@@ -93,3 +93,48 @@ test('paintBody: a dress over the body, skin on the head and hands, short tunics
   assert.ok(c(2)[0] > c(2)[2], 'hand is skin'); assert.ok(c(3)[0] > c(3)[2], 'short tunic: bare shin');
   assert.ok(m.material.vertexColors); assert.notEqual(m.geometry, g, 'the shared geometry is not repainted');
 });
+
+// --- sword arm solved from a hand position and a blade direction ---
+import { applyPose } from '../src/rig.js';
+function armRig() {
+  const root = new THREE.Object3D(), mk = (n, p, x, y, z) => { const b = new THREE.Bone(); b.name = n; b.position.set(x, y, z); p.add(b); return b; };
+  const U = mk('upperarm_r', root, -.17, 1.42, 0), L = mk('lowerarm_r', U, 0, -.27, 0), H = mk('hand_r', L, 0, -.25, 0);   // arm hanging; character's right is world −x when facing +z
+  const wpn = new THREE.Group(); wpn.name = 'weapon'; H.add(wpn); root.updateMatrixWorld(true);
+  return { root, bones: { upperarm_r: U, lowerarm_r: L, hand_r: H }, wpn };
+}
+const wp = o => o.getWorldPosition(new THREE.Vector3());
+const local = v => new THREE.Vector3(-v[0], v[1], v[2]);   // character frame (x = his right) → world for a root facing +z
+test('the sword arm reaches the hand target and points the blade where asked', () => {
+  const r = armRig(), hand = [.3, 1.5, .35], blade = [0, .6, .8];
+  applyPose(THREE, r, { arm: { hand, blade, pole: [.6, -1, 0], w: 1 } });
+  assert.ok(wp(r.bones.hand_r).distanceTo(local(hand)) < .01, 'hand on target');
+  const b = new THREE.Vector3(0, -1, 0).applyQuaternion(r.wpn.getWorldQuaternion(new THREE.Quaternion()));
+  assert.ok(b.dot(local(blade).normalize()) > .999, 'blade along the asked direction');
+  assert.ok(wp(r.bones.lowerarm_r).y < 1.5, 'elbow below the hand line (pole points down)');
+});
+test('an out-of-reach target stretches the arm toward it without breaking', () => {
+  const r = armRig(); applyPose(THREE, r, { arm: { hand: [.17, 1.42, 3], blade: [0, 0, 1], pole: [0, -1, 0], w: 1 } });
+  const h = wp(r.bones.hand_r); assert.ok(Number.isFinite(h.x + h.y + h.z));
+  assert.ok(h.z > .49 && h.z < .53 && Math.abs(h.y - 1.42) < .03, `straight forward (${h.z.toFixed(2)})`);
+});
+test('weight blends the arm between the base animation and the move; the pose is undone from poseSaved', () => {
+  const r = armRig(), q0 = r.bones.upperarm_r.quaternion.clone();
+  applyPose(THREE, r, { arm: { hand: [.3, 1.5, .35], blade: [0, 1, 0], pole: [0, -1, 0], w: 0 } });
+  assert.ok(r.bones.upperarm_r.quaternion.angleTo(q0) < 1e-6);
+  applyPose(THREE, r, { arm: { hand: [.3, 1.5, .35], blade: [0, 1, 0], pole: [0, -1, 0], w: .5 } });
+  const half = r.bones.upperarm_r.quaternion.angleTo(q0);
+  for (const [b, q] of r.poseSaved) b.quaternion.copy(q);
+  applyPose(THREE, r, { arm: { hand: [.3, 1.5, .35], blade: [0, 1, 0], pole: [0, -1, 0], w: 1 } });
+  const full = r.bones.upperarm_r.quaternion.angleTo(q0);
+  assert.ok(half > .1 && Math.abs(half - full / 2) < .02);
+});
+
+test('a civilian build narrows chest and arms but leaves the head its size', async () => {
+  const { slimBody } = await import('../src/rig.js');
+  const mk = () => ({ scale: { x: 1, y: 1, z: 1, set(x, y, z) { this.x = x; this.y = y; this.z = z; } } });
+  const b = { spine_01: mk(), neck_01: mk(), upperarm_l: mk(), upperarm_r: mk() };
+  slimBody(b);
+  assert.ok(b.spine_01.scale.x < 1 && b.upperarm_r.scale.x < 1 && b.upperarm_l.scale.z < 1);
+  assert.ok(Math.abs(b.spine_01.scale.x * b.neck_01.scale.x - 1) < 1e-9 && Math.abs(b.spine_01.scale.z * b.neck_01.scale.z - 1) < 1e-9);
+  assert.equal(b.spine_01.scale.y, 1);
+});
