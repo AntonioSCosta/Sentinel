@@ -171,3 +171,15 @@ test('blocking a blow costs little stamina: a dozen blocks before the arm gives 
   const d = C.createFighter(); C.beginBlock(d, 'shield');
   for (let i = 0; i < 12; i++) assert.notEqual(C.resolveHit(d, { dir: 'left', power: 1, fromAngle: 0, baseDamage: 20 }).result, 'hit', `block ${i}`);
 });
+
+test('a slower telegraph (tele) holds the blow back: Roman wind-ups are readable', () => {
+  const f = C.createFighter({ tele: 1.6 }); C.beginAttack(f, 'left'); C.releaseAttack(f);
+  let t = 0; while (f.phase === 'windup' && t < 3) { C.tickFighter(f, 1 / 120); t += 1 / 120; }
+  assert.ok(t >= C.WINDUP.left * 1.6 - .01, `struck after ${t}`);
+});
+test('a clean hit makes even an idle fighter flinch, so he cannot answer at once', () => {
+  const d = C.createFighter();
+  const r = C.resolveHit(d, { dir: 'left', power: 1, fromAngle: 120, baseDamage: 20 });
+  assert.equal(r.result, 'hit'); assert.equal(d.phase, 'staggered');
+  assert.equal(C.beginAttack(d, 'up'), false);
+});

@@ -80,7 +80,7 @@ export function tickFighter(f, dt) {
   if (f.phase === 'windup') {
     f.t += dt;
     if (!f.released && f.t > OVERHOLD) f.stamina = Math.max(0, f.stamina - 10 * dt);
-    if (f.released && f.t >= WINDUP[f.dir]) {
+    if (f.released && f.t >= WINDUP[f.dir] * (f.tele || 1)) {   // tele > 1: a slower, readable wind-up
       ev.push({ type: 'strike', dir: f.dir, power: f.power });
       f.phase = 'strike'; f.t = 0;
     }
@@ -106,7 +106,7 @@ export function resolveHit(def, { dir, power, fromAngle, baseDamage, kind = 'mel
   const raw = baseDamage * (DMG[dir] ?? 1) * power;
   const ang = Math.abs(fromAngle);
   const out = { result: 'hit', damage: raw, staminaCost: 0, attackerStagger: 0 };
-  const interrupt = () => { if (def.phase === 'windup' || def.phase === 'strike') stagger(def, FLINCH); };
+  const interrupt = () => { if (def.phase === 'windup' || def.phase === 'strike') stagger(def, FLINCH); else if (def.phase === 'idle') stagger(def, FLINCH * .8); };   // every clean hit makes the man reel
 
   if (def.blocking === 'sword' && ang <= SWORD_ARC && kind === 'melee') {
     if (def.blockT <= PARRY_WINDOW && def.parryOk) return { result: 'parried', damage: 0, staminaCost: 0, attackerStagger: .8 };

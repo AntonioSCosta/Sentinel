@@ -17,7 +17,7 @@ export default async function ({ G, THREE, st, key, check, forcePlay, setGod }) 
   fresh(); e = legioAhead(); e.state = 'chase'; e.yaw = 0; e.aiT = 99;
   C.beginAttack(e.f, 'left'); e.releaseAt = 0; C.releaseAttack(e.f);
   // contact comes part-way through the arc: raise the guard ~0.08 s before the blade arrives
-  st(Math.round((C.WINDUP.left + C.STRIKE_TIME.left * .4 - .08) * 60)); key('KeyQ'); st(20); key('KeyQ', false);
+  st(Math.round((C.WINDUP.left * (e.f.tele || 1) + C.STRIKE_TIME.left * .4 - .08) * 60)); key("KeyQ"); st(20); key("KeyQ", false);   // Roman wind-ups are slower (tele)
   check('Q just before impact parries and staggers the legionary', e.f.phase === 'staggered' && G.P.lastDefense === 'parried');
   // (c) shield blocks a frontal blow: no damage, shield wears
   fresh(); setGod(false); e = legioAhead(); e.state = 'chase'; e.yaw = 0; e.aiT = 99; G.P.hp = 100;

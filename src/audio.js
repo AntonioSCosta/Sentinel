@@ -122,17 +122,15 @@ export const SFX = {
   // metal on metal: blade on blade, blade on a boss or helmet
   clank: (v = 1) => { if (!ok()) return; metal({ f0: R(520, 820), vol: .2 * v, decay: R(.7, 1.1) }); thump({ f: 160, f2: 90, dur: .08, vol: .2 * v }); },
   // javelin leaving the hand
-  throwJ: () => { if (!ok()) return; const t = now(); hiss({ t, dur: .35, f: 380, f2: 1400, q: 2, vol: .22, a: .05, send: .1 }); voice({ t, p0: 150, p1: 120, dur: .18, vol: .05, vowel: 'u', breath: .6 }); },
+  throwJ: () => { if (!ok()) return; const t = now(); hiss({ t, dur: .35, f: 380, f2: 1400, q: 2, vol: .22, a: .05, send: .1 }); hiss({ t, dur: .12, type: 'lowpass', f: 500, vol: .08, buf: pink, send: 0 }); },
   // sling: the whirl and the crack of the release
   sling: () => { if (!ok()) return; const t = now(); for (let i = 0; i < 3; i++) hiss({ t: t + i * .07, dur: .06, f: 900, q: 3, vol: .1, send: .02 }); hiss({ t: t + .22, dur: .05, type: 'highpass', f: 2500, vol: .25, send: .2 }); hiss({ t: t + .22, dur: .2, f: 1500, f2: 3200, q: 2, vol: .12, send: .1 }); },
   // a blow on wood and hide (shield), or a body hitting the ground
   thud: (v = 1) => { if (!ok()) return; const t = now(); thump({ t, f: 95, f2: 42, dur: .2, vol: .55 * v }); hiss({ t, dur: .09, f: 420, q: 1.4, vol: .3 * v, buf: pink, send: .15 }); hiss({ t, dur: .03, f: 2200, q: 1, vol: .12 * v, send: .05 }); },
-  // Viriato hurt
-  hurt: () => { if (!ok()) return; voice({ p0: R(170, 200), p1: R(110, 130), dur: R(.22, .3), vol: .3, vowel: R(0, 1) < .5 ? 'a' : 'e', breath: .35 }); SFX.flesh(.6); },
-  // effort or a blow taken
-  grunt: (v = 1) => { if (!ok()) return; voice({ p0: R(120, 150), p1: R(85, 100), dur: R(.16, .26), vol: .24 * v, vowel: R(0, 1) < .5 ? 'u' : 'o', breath: .45 }); },
-  // a death cry; high = a woman's or a child's voice
-  die: (v = 1, high = 1) => { if (!ok()) return; voice({ p0: R(190, 240), p1: R(70, 95), dur: R(.55, .85), vol: .32 * v, vowel: 'a', breath: .3, shake: .04, high, send: .3 }); },
+  // no synthesised voices (they never sounded human): pain is the blow itself, effort is the body moving
+  hurt: () => { if (!ok()) return; SFX.flesh(.8); hiss({ dur: .14, type: 'lowpass', f: 600, vol: .12, buf: pink, send: 0 }); },
+  grunt: () => {},
+  die: (v = 1) => { if (!ok()) return; SFX.thud(.6 * v); },
   // picking something up: leather, cloth, a knock of wood
   pick: () => { if (!ok()) return; const t = now(); hiss({ t, dur: .08, f: 2400, q: .8, vol: .12, send: 0 }); hiss({ t: t + .07, dur: .1, f: 1300, q: .8, vol: .1, send: 0 }); thump({ t: t + .05, f: 260, f2: 160, dur: .05, vol: .12 }); },
   // a footfall on earth and grass
@@ -151,11 +149,11 @@ export const SFX = {
   },
   // fire catching: a low roar with crackles
   fire: () => { if (!ok()) return; const t = now(); hiss({ t, dur: 1.4, type: 'lowpass', f: 380, vol: .35, a: .3, buf: pink, send: .2 }); for (let i = 0; i < 14; i++) hiss({ t: t + R(0, 1.4), dur: .015, type: 'highpass', f: R(2000, 5000), vol: R(.05, .15), send: .1 }); },
-  // the legions' shout as they charge: many throats, ragged, rolling round the valley
+  // the legions as they charge: pila beaten on shields and the tramp of many feet, rolling round the valley
   warcry: (v = 1) => {
     if (!ok()) return; const t = now();
-    for (let i = 0; i < 16; i++) voice({ t: t + R(0, .5), p0: R(120, 170), p1: R(95, 130), dur: R(.7, 1.3), vol: R(.05, .09) * v, vowel: ['a', 'o', 'e'][i % 3], breath: .5, shake: .02, send: .55 });
-    hiss({ t, dur: 1.2, type: 'bandpass', f: 700, q: .5, vol: .06 * v, a: .15, buf: pink, send: .4 });
+    for (let i = 0; i < 6; i++) for (let k = 0; k < 7; k++) { const tt = t + i * .42 + R(0, .06); thump({ t: tt, f: R(95, 130), f2: 50, dur: .16, vol: .09 * v, send: .5 }); hiss({ t: tt, dur: .06, f: R(500, 900), q: 1.2, vol: .05 * v, buf: pink, send: .5 }); }
+    for (let i = 0; i < 40; i++) hiss({ t: t + R(0, 2.6), dur: .07, type: 'lowpass', f: R(400, 800), vol: R(.02, .05) * v, buf: pink, send: .3 });
   },
   // a javelin passing close
   jav: (v = 1) => { if (!ok()) return; hiss({ dur: .25, f: 700, f2: 2600, q: 3, vol: .2 * v, a: .08, send: .1 }); },

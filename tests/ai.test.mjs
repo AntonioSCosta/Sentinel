@@ -7,9 +7,10 @@ const legio = () => ({ kind: 'legio', fighter: createFighter() });
 const idle = createFighter();
 const ctx = o => ({ dist: 1.5, playerFighter: idle, difficulty: 1, attackersNow: 0, rng: () => .5, ...o });
 
-test('respects the simultaneous attacker limit (2 normal, 3 hard)', () => {
-  assert.equal(decide(legio(), ctx({ attackersNow: 2 })), 'circle');
-  assert.match(decide(legio(), ctx({ attackersNow: 2, difficulty: 2 })), /^attack:/);
+test('one attacker at a time (two on hard), like a Warband duel: the rest circle', () => {
+  assert.equal(decide(legio(), ctx({ attackersNow: 1 })), 'circle');
+  assert.match(decide(legio(), ctx({ attackersNow: 1, difficulty: 2 })), /^attack:/);
+  assert.equal(decide(legio(), ctx({ attackersNow: 2, difficulty: 2 })), 'circle');
 });
 test('reads the player windup and blocks', () => {
   const pf = createFighter(); beginAttack(pf, 'left');
@@ -34,4 +35,10 @@ test('only engaged soldiers close in; the rest wait their turn in the ring', () 
   assert.equal(decide(legio(), ctx({ dist: 1.5, engaged: false })), 'circle');
   assert.equal(decide(legio(), ctx({ dist: 3.5, engaged: true })), 'approach');
   assert.equal(decide(legio(), ctx({ dist: 9, engaged: false })), 'approach', 'far away: still come closer to the ring');
+});
+
+test('a staggered player is still fought one at a time (no pile-on)', () => {
+  const stag = { phase: 'staggered' };
+  assert.equal(decide(legio(), ctx({ attackersNow: 1, playerFighter: stag })), 'circle');
+  assert.match(decide(legio(), ctx({ attackersNow: 0, playerFighter: stag })), /^attack:/);
 });

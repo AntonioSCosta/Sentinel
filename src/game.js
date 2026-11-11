@@ -779,7 +779,7 @@ function spawn(kind, x, z, group) {
   const stats = { legio: { hp: 100, sp: 3.9, dmg: 13 }, velite: { hp: 65, sp: 3.7, dmg: 15 }, centurion: { hp: 460, sp: 4.4, dmg: 24 } }[kind];
   const e = { kind, m, pos: new THREE.Vector3(x, heightAt(x, z), z), hp: stats.hp, maxhp: stats.hp, sp: stats.sp, dmg: stats.dmg,
     state: group === 'patrol' ? 'march' : group === 'boss' ? 'chase' : 'guard', group, yaw: Math.PI, home: new THREE.Vector3(x, 0, z),
-    dir: -1, aware: 0, atkT: 0, f: C.createFighter({ shieldHP: kind === 'velite' ? 0 : 220, stamina: kind === 'centurion' ? 140 : 100 }), aiT: rr(0, .3), act: 'approach', vel: { x: 0, z: 0 }, dodgeRoll: 1, mv: { x: 0, z: 0 }, releaseAt: 0, feintAt: 0, blockLeft: 0, slowT: 0, cd: rr(.5, 1.5), ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, wander: null, wT: 0, strafe: rand() < .5 ? 1 : -1, moving: 0, barkT: 0 };
+    dir: -1, aware: 0, atkT: 0, f: C.createFighter({ shieldHP: kind === 'velite' ? 0 : 220, stamina: kind === 'centurion' ? 140 : 100, tele: kind === 'velite' ? 1.4 : kind === 'centurion' ? 1.5 : 1.7 }), aiT: rr(0, .3), act: 'approach', vel: { x: 0, z: 0 }, dodgeRoll: 1, mv: { x: 0, z: 0 }, releaseAt: 0, feintAt: 0, blockLeft: 0, slowT: 0, cd: rr(.5, 1.5), ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, wander: null, wT: 0, strafe: rand() < .5 ? 1 : -1, moving: 0, barkT: 0 };
   if (group === 'patrol') { e.yaw = 0; e.dir = 1; } // marching south (+z)
   enemies.push(e); return e;
 }
@@ -1275,6 +1275,7 @@ function enemySwing(e, ev) {
   const fromAngle = deg(Math.acos(clamp(flatFwd().dot(dd.clone().negate()), -1, 1)));
   const res = C.resolveHit(P.f, { dir: ev.dir, power: ev.power * glance(r.p), fromAngle, baseDamage: e.dmg * DIFF[diff].dmg });
   P.lastDefense = res.result;
+  if (res.result === 'blocked' || res.result === 'parried') clog(res.result === 'parried' ? 'Aparo perfeito' : 'Bloqueado', '#a8c8e0');
   const spark = V(r.at.x, r.at.y, r.at.z);
   if (res.result === 'parried') { C.stopBlade(e.f); C.stagger(e.f, res.attackerStagger); SFX.clank(); burst('spark', spark, 14); showPrompt('Aparo perfeito!', .8); hitStop(.08); return; }
   if (res.result === 'blocked') { C.stopBlade(e.f); SFX.clank(); burst('spark', spark, 8); P.shake = .18; P.push = { x: dd.x * 1.5, z: dd.z * 1.5 }; return; }
@@ -1459,7 +1460,16 @@ function updateProjectiles(dt) {
    Damage
    ========================================================= */
 let hitmT = 0, dmgT = 0;
+const CLOG = []; let clogEl = null;
+/** Bottom-left combat log: 'Golpe: 26 de dano', 'Recebeste 8 de dano'… fades out on its own. */
+function clog(text, color = '#e8dcc4') {
+  if (!clogEl) { clogEl = document.createElement('div'); clogEl.id = 'clog'; clogEl.style.cssText = 'position:absolute;left:18px;bottom:178px;font:15px/1.35 Georgia,serif;text-shadow:0 1px 2px #000;pointer-events:none'; ($('hud') || document.body).appendChild(clogEl); }
+  CLOG.push({ text, color, t: 4 }); if (CLOG.length > 6) CLOG.shift(); drawClog();
+}
+function drawClog() { if (clogEl) clogEl.innerHTML = CLOG.map(l => `<div style="color:${l.color};opacity:${Math.min(1, l.t)}">${l.text}</div>`).join(''); }
+function tickClog(dt) { if (!CLOG.length) return; for (const l of CLOG) l.t -= dt; while (CLOG.length && CLOG[0].t <= 0) CLOG.shift(); drawClog(); }
 function damageEnemy(e, dmg, head, where, special, byAlly) {
+  if (!byAlly && dmg > 0) clog(`${head ? 'Golpe na cabeça' : 'Golpe'}: ${Math.round(dmg)} de dano`, '#f0d9a0');
   e.hp -= dmg; e.flash = .15; e.hits = (e.hits || 0) + 1; e.heavy = dmg >= 45; burst('blood', where, head ? 14 : 8);
   SFX.flesh(); alert(e);
   if (!byAlly) { hitmT = .18; $('hitm').className = head ? 'head' : ''; $('hitm').style.opacity = 1; if (head) P.heads++; }
@@ -1482,14 +1492,14 @@ function damagePlayer(dmg, from, ranged) {
     const fromAngle = deg(Math.acos(clamp(flatFwd().dot(dd), -1, 1)));
     const res = C.resolveHit(P.f, { dir: 'left', power: 1, fromAngle, baseDamage: dmg * DIFF[diff].dmg, kind: 'javelin' });
     P.lastDefense = res.result;
-    if (res.result === 'blocked') { SFX.thud(); P.shake = .15; if (res.stuck) showPrompt('Dardo cravado no escudo — R para arrancar', 1.4); return; }
+    if (res.result === 'blocked') { SFX.thud(); P.shake = .15; clog('Dardo bloqueado', '#a8c8e0'); if (res.stuck) showPrompt('Dardo cravado no escudo — R para arrancar', 1.4); return; }
     hurtPlayer(res.damage, from); return;
   }
   hurtPlayer(dmg * DIFF[diff].dmg, from);
 }
 function hurtPlayer(dmg, from) {
   if (state !== 'play') return;
-  SFX.hurt(); P.hurtT = .35; P.hp -= dmg;
+  SFX.hurt(); P.hurtT = .35; P.hp -= dmg; clog(`Recebeste ${Math.round(dmg)} de dano`, '#e88a78');
   const d = V(from.x - P.pos.x, 0, from.z - P.pos.z).normalize();
   const f = flatFwd(), r = V(Math.cos(P.yaw), 0, -Math.sin(P.yaw));
   $('dmg').style.transform = `rotate(${Math.atan2(d.dot(r), d.dot(f))}rad)`; $('dmg').style.opacity = 1; dmgT = .8;
@@ -1758,7 +1768,7 @@ function updateEnemies(dt) {
       }
       if (e.aiT <= 0 && state === 'play' && e.f.phase === 'idle') {
         e.aiT = e.kind === 'centurion' ? .18 : .26; e.dodgeRoll = rand(); if (rand() < .12) e.strafe *= -1;
-        const attackersNow = enemies.filter(o => o !== e && !o.dead && o.kind !== 'velite' && o.f.phase === 'windup').length;
+        const attackersNow = enemies.filter(o => o !== e && !o.dead && o.kind !== 'velite' && (o.T && o.T.ally) === (e.T && e.T.ally) && o.state === 'chase' && (o.f.phase === 'windup' || o.f.phase === 'strike' || o.f.phase === 'recovery' || /^attack/.test(o.act || ''))).length;   // anyone already swinging, or about to, at the same target
         e.act = decide({ kind: e.kind, fighter: e.f }, { dist: td, playerFighter: tf, difficulty: diff, attackersNow, rng: rand, engaged: engaged.has(e) || !!T.ally });
         if (e.act.startsWith('attack:')) { const dir = e.act.slice(7); C.endBlock(e.f); if (C.beginAttack(e.f, dir)) { e.releaseAt = C.WINDUP[dir] + rr(0, .25) * (e.kind === 'centurion' ? .4 : 1); e.feintAt = 0; } }
         else if (e.act === 'block') e.blockLeft = rr(.5, .9);
@@ -1949,7 +1959,7 @@ function updateCamera(dt) {
     const dir = fwd3(), right = V(Math.cos(P.yaw), 0, -Math.sin(P.yaw));
     const pivot = V(P.pos.x, P.pos.y + 1.6 - P.crouch * .5, P.pos.z);
     // over the right shoulder, Viriato left of centre so his sword arm and the foe are both in view
-    const cp = pivot.addScaledVector(dir, -3).addScaledVector(right, .95).add(V(0, .3, 0));
+    const cp = pivot.addScaledVector(dir, -2.15).addScaledVector(right, .7).add(V(0, .22, 0));   // close over the shoulder, as in Warband
     const gh = heightAt(cp.x, cp.z) + .4; if (cp.y < gh) cp.y = gh;
     camera.position.copy(cp);
   }
@@ -2229,7 +2239,7 @@ function step(dt) {
   if (hitStopT > 0) { hitStopT -= dt; dt *= .15; } // brief impact freeze
   if (state === 'outro') { updateEnemies(dt); updateCivs(dt); updateRiders(dt); updateProjectiles(dt); updateOutro(dt); }
   else if (state === 'intro') { updateAllies(dt); updateEnemies(dt); updateCivs(dt); updateRiders(dt); updateProjectiles(dt); updateIntro(dt); }
-  else if (state === 'play') { updatePlayer(dt); updateEnemies(dt); updateAllies(dt); updateProjectiles(dt); updateCivs(dt); updateRiders(dt); updateCamera(dt); updateFlag(); updateHUD(dt); if (chapter === 'prologo') checkPrologue(); }
+  else if (state === 'play') { updatePlayer(dt); updateEnemies(dt); updateAllies(dt); updateProjectiles(dt); updateCivs(dt); updateRiders(dt); updateCamera(dt); tickClog(dt); updateFlag(); updateHUD(dt); if (chapter === 'prologo') checkPrologue(); }
   else if (state === 'dead' || state === 'won') {
     if (endT > 0) { endT -= dt; if (endT <= 0 && endArgs) { endScreen(...endArgs); endArgs = null; } }
     updateEnemies(dt); updateAllies(dt); updateCivs(dt); updateProjectiles(dt);

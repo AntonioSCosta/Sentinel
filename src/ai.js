@@ -16,10 +16,10 @@ export function decide(enemy, { dist, playerFighter, difficulty, attackersNow, r
   if (!engaged && dist < 6) return 'circle'; // not your turn: hold the ring, don't heap onto the player
   if (dist >= REACH) return 'approach';
   const pick = () => 'attack:' + DIRS[Math.min(DIRS.length - 1, Math.floor(rng() * DIRS.length))];
-  if (playerFighter.phase === 'staggered') return pick();
   if (playerFighter.phase === 'windup' && enemy.kind !== 'velite' && rng() < BLOCK_CHANCE[difficulty]) return 'block';
-  const limit = difficulty === 2 ? 3 : 2;
+  const limit = difficulty === 2 ? 2 : 1;   // one at a time, as in a Warband melee; two on hard
   if (attackersNow >= limit) return 'circle';
+  if (playerFighter.phase === 'staggered') return pick();
   if (difficulty === 2 && rng() < FEINT_CHANCE) return 'feint';
   return pick();
 }
