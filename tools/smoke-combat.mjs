@@ -9,7 +9,7 @@ export default async function ({ G, THREE, st, key, check, forcePlay, setGod }) 
   };
   // (a) charged overhead from behind kills an unaware legionary
   fresh();
-  let e = legioAhead(); e.state = 'guard'; e.yaw = Math.PI; e.wander = null; e.wT = 99; // facing away (+z is away? enemy faces +z when yaw=0) -> yaw=PI faces -z, away from player
+  let e = legioAhead(); e.state = 'guard'; e.yaw = Math.PI; e.wander = { x: e.pos.x, z: e.pos.z }; e.wT = 99;   // standing where he is // facing away (+z is away? enemy faces +z when yaw=0) -> yaw=PI faces -z, away from player
   key('KeyC'); st(15); key('Digit1'); G.forceDir('up'); G.input.mouse(true, false); st(49); G.forceDir(null); G.input.mouse(false, false); st(60);
   key('KeyC', false);
   check('charged overhead from behind kills unaware legionary (' + [e.state, e.hp | 0, e.yaw.toFixed(2), G.P.f.phase, e.pos.distanceTo(G.P.pos).toFixed(2)] + ')', e.dead);
@@ -34,6 +34,12 @@ export default async function ({ G, THREE, st, key, check, forcePlay, setGod }) 
   }
   check('three javelins stuck in the shield', G.P.f.stuckJavelins === 3 && G.vm.stuckVisible() === 3);
   G.input.mouse(false, false);
+  // (e) a legionary whose scutum is hacked apart drops it and parries with his gladius
+  fresh(); e = legioAhead(1.5); e.state = 'chase'; e.aware = 1; e.yaw = 0; e.f.shieldHP = 0; e.aiT = 99; e.blockLeft = 2; st(3);
+  check('a broken shield falls and is gone for good', e.shieldLost && !(e.m.shield || e.m.root.userData.scutum).visible && !C.beginBlock(C.createFighter({ shieldHP: 0 }), 'shield'));
+  check(`without it he guards with his own sword (${e.f.blocking})`, e.f.blocking === 'sword');
+  { const hp = e.hp; e.f.stamina = 100; e.blockLeft = 2; G.forceDir('right'); G.input.mouse(true, false); st(8); G.input.mouse(false, false); for (let i = 0; i < 70; i++) { e.blockLeft = 2; e.aiT = 99; st(1); } G.forceDir(null);
+    check(`and the sword stops a cut from the front (hp ${hp} → ${e.hp})`, e.hp === hp); }
   // (f) crouched charged backstab kills, wherever the legionary stands (12 trials)
   let misses = 0;
   for (let trial = 0; trial < 12; trial++) {

@@ -49,18 +49,42 @@ export const BLOCK_VS_RIGHT = {
  * dropping from above the head to the front of the waist.
  */
 export const OVERHEAD = {
+  windup: {   // elbow high beside the head, blade hanging back behind the right shoulder, chest open
+    pelvis: [0, -12, 0], spine: [-8, -6, 0], neck: [6, 6, 0],
+    clavicle_r: [0, 0, 20], upperarm_r: [-150, -10, 20], lowerarm_r: [0, 0, 80], hand_r: [-35, 0, 0],
+  },
+  mid: {      // arm thrown forward at head height, nearly straight: the blade is coming over the top
+    pelvis: [5, 0, 0], spine: [8, 8, 0], neck: [-4, -4, 0],
+    clavicle_r: [0, 6, 8], upperarm_r: [-165, 32, 6], lowerarm_r: [16, 38, 3], hand_r: [45, 68, 26],
+  },
+  follow: {   // cut carried down to hip height in front, arm long, shoulders following it down and a little left
+    pelvis: [8, 8, 0], spine: [14, 20, 0], neck: [-10, -12, 0],
+    clavicle_r: [0, 10, 0], upperarm_r: [-74, 44, 4], lowerarm_r: [14, 2, -32], hand_r: [102, -17, 30],
+  },
+};
+
+/**
+ * LEFT-TO-RIGHT CUT (combat.js dir 'left'): a backhand. The sword is carried across the body to the left shoulder,
+ * chest turned left; the hips lead the turn back to the right and the arm opens out flat across the front.
+ */
+export const LEFT_CUT = {
   windup: {
-    pelvis: [0, -15, 0], spine: [-6, 10, 0], neck: [4, 5, 0],
-    clavicle_r: [0, 0, 18], upperarm_r: [-140, 0, 15], lowerarm_r: [0, 0, 70], hand_r: [-30, 0, 0],
+    pelvis: [0, 14, 0], spine: [-4, 34, 4], neck: [0, -24, 0],
+    clavicle_r: [0, 20, 0], upperarm_r: [-107, 90, 0], lowerarm_r: [-122, 34, 15], hand_r: [81, -43, -60],
   },
   mid: {
-    pelvis: [10, 0, 0], spine: [18, 15, 0], neck: [-10, -8, 0],
-    clavicle_r: [0, 8, 6], upperarm_r: [-85, 10, 10], lowerarm_r: [-10, 0, 15], hand_r: [10, 0, 0],
+    pelvis: [4, -6, 0], spine: [8, -4, 0], neck: [0, 2, 0],
+    clavicle_r: [0, 4, 0], upperarm_r: [-130, 10, 0], lowerarm_r: [33, 35, -23], hand_r: [75, 68, 0],
   },
   follow: {
-    pelvis: [14, 8, 0], spine: [24, 30, 0], neck: [-16, -18, 0],
-    clavicle_r: [0, 12, 0], upperarm_r: [-35, 15, 5], lowerarm_r: [-25, 0, 10], hand_r: [20, 0, 0],
+    pelvis: [6, -22, 0], spine: [10, -44, -4], neck: [0, 28, 0],
+    clavicle_r: [0, -16, 6], upperarm_r: [-98, -46, 60], lowerarm_r: [35, 50, 7], hand_r: [8, 81, -38],
   },
+};
+/** BLOCK AGAINST A CUT FROM THE ATTACKER'S LEFT (it arrives on the defender's right): blade upright on the right side. */
+export const BLOCK_VS_LEFT = {
+  pelvis: [0, -6, 0], spine: [2, -14, -2], neck: [0, 10, 0],
+  clavicle_r: [0, -6, 0], upperarm_r: [-91, -35, 0], lowerarm_r: [17, 23, 16], hand_r: [30, 28, 25],
 };
 
 /** BLOCK AGAINST AN OVERHEAD: sword held flat above the head, hilt over the right shoulder, point to the left. */
@@ -69,8 +93,8 @@ export const BLOCK_VS_UP = {
   clavicle_r: [0, 6, 14], upperarm_r: [-120, 45, 0], lowerarm_r: [-40, 20, 0], hand_r: [0, -130, 0],
 };
 
-export const MOVES = { right: RIGHT_CUT, up: OVERHEAD };
-export const BLOCKS = { right: BLOCK_VS_RIGHT, up: BLOCK_VS_UP };   // keyed by the INCOMING attack direction
+export const MOVES = { right: RIGHT_CUT, up: OVERHEAD, left: LEFT_CUT };
+export const BLOCKS = { right: BLOCK_VS_RIGHT, up: BLOCK_VS_UP, left: BLOCK_VS_LEFT };   // keyed by the INCOMING attack direction
 export const BLOCK_IN = .12;    // s to bring the guard up (kept inside the parry window, combat.js PARRY_WINDOW)
 export const HOLD_OVERDRAW = .12; // extra draw (fraction of the windup pose) reached after holding a charged blow ~1 s
 

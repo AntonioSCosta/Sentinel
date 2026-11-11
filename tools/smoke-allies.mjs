@@ -5,7 +5,7 @@ export default async function ({ G, st, key, check, forcePlay, setGod }) {
   key('KeyW'); st(240); key('KeyW', false); st(90);
   check('they follow him (' + G.allies.map(a => a.pos.distanceTo(G.P.pos).toFixed(1)) + ')', G.allies.every(a => a.pos.distanceTo(G.P.pos) < 7));
   st(300); const start = G.allies.map(a => a.pos.clone()); st(120);
-  check('and stand still when he stops', G.allies.every((a, i) => a.pos.distanceTo(start[i]) < .3));
+  check('and stand still when he stops (' + G.allies.map((a, i) => a.pos.distanceTo(start[i]).toFixed(2) + ':' + a.state + ':' + a.pos.distanceTo(G.P.pos).toFixed(1)) + ')', G.allies.every((a, i) => a.pos.distanceTo(start[i]) < .3));
   // unaware Romans nearby: companions do not start the fight
   const es = G.enemies.filter(e => e.kind === 'legio' && !e.dead).slice(0, 2);
   for (const o of G.enemies) if (!es.includes(o)) { o.pos.x += 500; o.home.x += 500; }

@@ -183,3 +183,16 @@ test('a clean hit makes even an idle fighter flinch, so he cannot answer at once
   assert.equal(r.result, 'hit'); assert.equal(d.phase, 'staggered');
   assert.equal(C.beginAttack(d, 'up'), false);
 });
+
+test('a fighter guards with the shield while it holds, and with the sword once it is broken', () => {
+  assert.equal(C.guardFor(C.createFighter()), 'shield');
+  assert.equal(C.guardFor(C.createFighter({ shieldHP: 0 })), 'sword');
+});
+test('a shield is hacked apart by repeated strong blows, and then no longer covers its bearer', () => {
+  const d = C.createFighter({ shieldHP: 70 }); let n = 0;
+  while (d.shieldHP > 0 && n < 40) { d.stamina = 100; C.beginBlock(d, 'shield'); C.resolveHit(d, { dir: 'up', power: 1.6, fromAngle: 0, baseDamage: 20 }); n++; }
+  assert.ok(n >= 3 && n <= 8, `broken after ${n} full-power overheads`);
+  assert.equal(C.beginBlock(d, 'shield'), false);
+  d.passiveShield = true; d.stamina = 100;
+  assert.equal(C.resolveHit(d, { dir: 'left', power: 1, fromAngle: 0, baseDamage: 20 }).result, 'hit');
+});

@@ -321,7 +321,7 @@ export function driveRig(THREE, rig, s, dt) {
     if (os.clip === 'Hit_Knockback' && rig.oneShot) lo[os.clip] = { w: 3, time: os.t };
   }
   // authored Warband-style moves (moves.js): the body stays on its guard clip and the move is layered on after the mixer
-  const guardClip = rig.shielded ? { Idle_Shield_Loop: { w: 1, time: 1 } } : { Sword_Regular_A: { w: 1, time: 0 } };
+  const guardClip = rig.shielded && !rig.bareArm ? { Idle_Shield_Loop: { w: 1, time: 1 } } : { Sword_Regular_A: { w: 1, time: 0 } };
   let pose = null;
   const inAttack = f.dir && (f.phase === 'windup' || f.phase === 'strike' || f.phase === 'recovery');
   if (!upper && inAttack && MOVES[f.dir] && s.T) {

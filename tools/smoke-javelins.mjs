@@ -21,5 +21,5 @@ export default async function ({ G, st, check, forcePlay, setGod }) {
   const gl = v.m.root.getObjectByName('gladius'), pil = v.m.root.getObjectByName('pilum');
   check('he now holds a gladius, not a javelin', gl && gl.visible && pil && !pil.visible);
   let swung = false; for (let i = 0; i < 900 && !swung; i++) { st(1); if (v.f.phase === 'windup' || v.f.phase === 'strike') swung = true; }
-  check('and swings it', swung);
+  check(`and swings it (${v.state},${v.act},${v.f.phase},d=${v.pos.distanceTo(G.P.pos).toFixed(1)},blk=${v.f.blocking})`, swung);
 }

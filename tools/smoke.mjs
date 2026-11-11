@@ -33,6 +33,11 @@ try {
   G.P.pos.set(pe.pos.x, pe.pos.y, pe.pos.z + 2.2); G.P.yaw = 0;
   for (const w of [0, 1, 2]) { key('Digit' + (w + 1)); key('Digit' + (w + 1), false); for (let k = 0; k < 6; k++) { G.input.mouse(true, false); st(70); G.input.mouse(false, false); st(5); } }
   G.start(1); forcePlay(); god = true;
+  check('the ambush mission has no camp garrison', !G.enemies.some(e => e.group === 'camp'));
+  for (const e of G.enemies.filter(e => e.group === 'patrol')) if (!e.dead) { G.damageEnemyForTest(e, 999); st(2); }
+  st(200);
+  check('the ambush mission is won when the patrol falls', G.state === 'won');
+  G.start(1, 'acampamento'); forcePlay(); god = true;
   // mission flow only: melee itself is covered by tools/smoke-combat.mjs
   for (const e of G.enemies.filter(e => e.group === 'patrol')) if (!e.dead) { G.damageEnemyForTest(e, 999); st(2); }
   check('patrol killed', G.enemies.filter(e => e.group === 'patrol' && !e.dead).length === 0);
@@ -48,7 +53,7 @@ try {
   G.damagePlayer(500, G.P.pos.clone().add(new THREE.Vector3(1, 0, 0)), false); st(200);
   check('death', G.state === 'dead' && doc.getElementById('endt').textContent.length > 0);
   // extra scenario hooks for later tasks
-  for (const mod of ['./smoke-prologue.mjs', './smoke-combat.mjs', './smoke-models.mjs', './smoke-pause.mjs', './smoke-review.mjs', './smoke-anim.mjs', './smoke-armour.mjs', './smoke-foliage.mjs', './smoke-shieldhand.mjs', './smoke-thirdperson.mjs', './smoke-throw.mjs', './smoke-allies.mjs', './smoke-javelins.mjs']) { const extra = await import(mod);
+  for (const mod of ['./smoke-prologue.mjs', './smoke-combat.mjs', './smoke-models.mjs', './smoke-pause.mjs', './smoke-review.mjs', './smoke-anim.mjs', './smoke-armour.mjs', './smoke-foliage.mjs', './smoke-shieldhand.mjs', './smoke-thirdperson.mjs', './smoke-throw.mjs', './smoke-allies.mjs', './smoke-javelins.mjs'].filter(m => !process.env.SMOKE_ONLY || m.includes(process.env.SMOKE_ONLY))) { const extra = await import(mod);
   const ctx = { G, THREE, win, doc, st, key, check, forcePlay, setGod: v => { god = v; } };
   await extra.default(ctx); if (extra.chargeOnly) await extra.chargeOnly(ctx); }
 } catch (e) { console.log('EXCEPTION', e.stack); checks.push(['no exception', false]); }

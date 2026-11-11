@@ -21,6 +21,7 @@ export const SWORD_BLOCK_COST = 10;
 export const JAVELIN_SHIELD_PENALTY = .15; // extra shield cost per stuck javelin
 export const MAX_STUCK = 3;
 export const STAMINA_REGEN = 40;      // per s while idle or blocking-free
+export const SHIELD_WEAR = 8;          // shield points lost per blocked blow at power 1 (x direction multiplier)
 export const OVERHOLD = 1.5;          // holding a charge longer than this drains stamina
 
 export function dirFromMouse(dx, dy) {
@@ -33,6 +34,9 @@ export function createFighter(opts = {}) {
   return { stamina: 100, shieldHP: 100, stuckJavelins: 0, phase: 'idle', dir: null, t: 0, released: false, power: .5,
     blocking: null, blockT: 0, sinceBlock: 99, parryOk: true, ...opts };
 }
+
+/** What a fighter raises to guard: the shield while it holds, his own sword once it is broken or lost. */
+export const guardFor = f => f.shieldHP > 0 ? 'shield' : 'sword';
 
 export const chargePower = t => .6 + Math.min(1, t / FULL_CHARGE);
 
@@ -124,14 +128,14 @@ export function resolveHit(def, { dir, power, fromAngle, baseDamage, kind = 'mel
     const cost = SHIELD_COST * power * (1 + def.stuckJavelins * JAVELIN_SHIELD_PENALTY);
     if (def.stamina < cost) { def.stamina = 0; endBlock(def); stagger(def, .7); return { result: 'guardBroken', damage: raw * .5, staminaCost: cost, attackerStagger: 0 }; }
     def.stamina -= cost;
-    def.shieldHP = Math.max(0, def.shieldHP - 6 * (DMG[dir] ?? 1) * power);
+    def.shieldHP = Math.max(0, def.shieldHP - SHIELD_WEAR * (DMG[dir] ?? 1) * power);
     if (def.shieldHP <= 0) endBlock(def);
     return { result: 'blocked', damage: 0, staminaCost: cost, attackerStagger: 0 };
   }
   if (def.passiveShield && !def.blocking && def.phase === 'idle' && def.shieldHP > 0 && ang <= PASSIVE_ARC && kind === 'melee') {
     const cost = SHIELD_COST * PASSIVE_COST * power;
     if (def.stamina >= cost) {
-      def.stamina -= cost; def.shieldHP = Math.max(0, def.shieldHP - 5 * (DMG[dir] ?? 1) * power);
+      def.stamina -= cost; def.shieldHP = Math.max(0, def.shieldHP - SHIELD_WEAR * .8 * (DMG[dir] ?? 1) * power);
       return { result: 'blocked', damage: 0, staminaCost: cost, attackerStagger: 0 };
     }
   }

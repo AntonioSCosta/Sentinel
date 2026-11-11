@@ -30,9 +30,10 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 const FOG = 0xb7c2bf;   // the damp blue-grey haze of the Beira hills
-scene.fog = new THREE.FogExp2(FOG, .005);
+scene.fog = new THREE.FogExp2(FOG, .013);   // thick hill mist: nothing is seen past ~150 m, so nothing is drawn past it either
 scene.background = new THREE.Color(FOG);
-const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, .05, 900);
+const FOG_BASE = scene.fog.density;
+const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, .05, 210);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
 window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); if (R) R.resize(window.innerWidth, window.innerHeight); });
@@ -49,12 +50,12 @@ const SUN_DIR = new THREE.Vector3(-.55, .62, .56).normalize();
 
 // sky dome
 {
-  const g = new THREE.SphereGeometry(700, 32, 16);
+  const g = new THREE.SphereGeometry(190, 32, 16);
   const pos = g.attributes.position, cols = [];
-  const top = new THREE.Color(0x4a78ad), hor = new THREE.Color(0xcfd8d6), low = new THREE.Color(0x8f9a86), c = new THREE.Color();
+  const top = new THREE.Color(0x7f9bb5), hor = new THREE.Color(FOG), low = new THREE.Color(0x8f9a86), c = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
-    const y = pos.getY(i) / 700;
-    if (y > 0) c.copy(hor).lerp(top, Math.pow(y, .55)); else c.copy(hor).lerp(low, Math.min(1, -y * 4));
+    const y = pos.getY(i) / 190;
+    if (y > 0) c.copy(hor).lerp(top, Math.pow(y, 1.7));   // the mist reaches well up the sky else c.copy(hor).lerp(low, Math.min(1, -y * 4));
     // warm glow toward the sun
     const v = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize();
     const s = Math.max(0, v.dot(SUN_DIR)); c.lerp(new THREE.Color(0xffe2b0), Math.pow(s, 8) * .6);
@@ -82,8 +83,8 @@ const DOT = makeDotTex();
   const mist = new THREE.SpriteMaterial({ map: DOT, color: 0xd3d9d8, transparent: true, opacity: .62, depthWrite: false, fog: false });
   setSeed(424);
   for (let i = 0; i < 110; i++) {
-    const a = rand() * TAU, r = 160 + rand() * 80, sp = new THREE.Sprite(mist);
-    sp.position.set(Math.cos(a) * r, 46 + rand() * 34, Math.sin(a) * r); sp.scale.set(70 + rand() * 70, 18 + rand() * 22, 1); sp.renderOrder = 1;
+    const a = rand() * TAU, r = 105 + rand() * 75, sp = new THREE.Sprite(mist);
+    sp.position.set(Math.cos(a) * r, 34 + rand() * 30, Math.sin(a) * r); sp.scale.set(60 + rand() * 60, 16 + rand() * 20, 1); sp.renderOrder = 1;
     scene.add(sp);
   }
 }
@@ -129,11 +130,18 @@ const MAT = (name, extra) => { const m = MATS[name].clone(); if (extra) Object.a
    Vegetation, rocks, castro, Roman camp
    ========================================================= */
 const dummy = new THREE.Object3D();
-function instanced(geo, mat, list, shadow = true) {
-  const im = new THREE.InstancedMesh(geo, mat, list.length);
-  list.forEach((t, i) => { dummy.position.set(t.x, t.y, t.z); dummy.rotation.set(t.rx || 0, t.ry || 0, t.rz || 0); dummy.scale.set(t.sx || t.s || 1, t.sy || t.s || 1, t.sz || t.s || 1); dummy.updateMatrix(); im.setMatrixAt(i, dummy.matrix); });
-  im.instanceMatrix.needsUpdate = true; im.castShadow = shadow; im.receiveShadow = true;
-  scene.add(im); return im;
+const CELL = 50;   // m: scenery is batched per map square, so squares behind the camera or lost in the mist are not drawn at all
+function instanced(geo, mat, list, shadow = true, { chunk = true, name = '', depth = null } = {}) {
+  const cells = new Map();
+  for (const t of list) { const k = chunk ? Math.floor(t.x / CELL) + ',' + Math.floor(t.z / CELL) : ''; if (!cells.has(k)) cells.set(k, []); cells.get(k).push(t); }
+  let last = null;
+  for (const part of cells.values()) {
+    const im = new THREE.InstancedMesh(geo, mat, part.length);
+    part.forEach((t, i) => { dummy.position.set(t.x, t.y, t.z); dummy.rotation.set(t.rx || 0, t.ry || 0, t.rz || 0); dummy.scale.set(t.sx || t.s || 1, t.sy || t.s || 1, t.sz || t.s || 1); dummy.updateMatrix(); im.setMatrixAt(i, dummy.matrix); });
+    im.instanceMatrix.needsUpdate = true; im.castShadow = shadow; im.receiveShadow = true; im.name = name; if (depth) im.customDepthMaterial = depth;
+    im.computeBoundingSphere(); scene.add(im); last = im;
+  }
+  return last;
 }
 const MEADOW = { x: 82, z: -122 }, ESCAPE = { x: 134, z: -156 };   // prologue: Galba's killing field and the forest it flees to
 const AMBUSH = { x: roadX(34) + 17, z: 34 };                          // ambush: Viriato's hide in the scrub above the road
@@ -141,19 +149,19 @@ setSeed(777);
 {
   const pines = [], oaks = [], rocks = [], grass = [], shrubs = [];
   const blocked = (x, z, m) => Math.abs(x - roadX(z)) < 7 + m || inCamp(x, z, 12 + m) || Math.hypot(x - CASTRO.x, z - CASTRO.z) < 16 + m || Math.hypot(x - MEADOW.x, z - MEADOW.z) < 30 + m;
-  const DENS = { low: .45, medium: .8, high: 1 }[quality] || .8, TREES = Math.round(3000 * DENS);
-  for (let n = 0; n < 16000 && pines.length + oaks.length < TREES; n++) {
+  const DENS = { low: .45, medium: .8, high: 1 }[quality] || .8, TREES = Math.round(4200 * DENS);
+  for (let n = 0; n < 26000 && pines.length + oaks.length < TREES; n++) {
     const x = rr(-WORLD + 8, WORLD - 8), z = rr(-WORLD + 8, WORLD - 8);
     if (blocked(x, z, 0)) continue;
     const forest = vnoise(x * .025 + 40, z * .025);
-    if (rand() > .2 + forest * 1.5) continue;
+    if (rand() > .3 + forest * 1.5) continue;
     const y = heightAt(x, z), s = rr(.8, 1.35);
     if (y > 52) continue;
     if (y > 22 || rand() < .3) pines.push({ x, y, z, s, ry: rr(0, TAU) }); else oaks.push({ x, y, z, s, ry: rr(0, TAU) });
     addCol(x, z, .45 * s);
   }
   // mountains: three more trees for every one already on the slopes (4x in all), thinning out toward the bare peaks
-  { const mtn = pines.length + oaks.length ? [...pines, ...oaks].filter(t => t.y > 12).length : 0, want = Math.round(3200 * DENS) + mtn * 0;   // pine and oak woods climbing the slopes
+  { const mtn = pines.length + oaks.length ? [...pines, ...oaks].filter(t => t.y > 12).length : 0, want = Math.round(4200 * DENS) + mtn * 0;   // pine and oak woods climbing the slopes
     for (let n = 0, added = 0; n < want * 12 && added < want; n++) {
       const x = rr(-WORLD + 8, WORLD - 8), z = rr(-WORLD + 8, WORLD - 8);
       if (blocked(x, z, 0)) continue;
@@ -199,7 +207,7 @@ setSeed(777);
   ]);
   instanced(pineTrunk, MAT('bark_pine'), pines);
   instanced(oakTrunk, MAT('bark_oak'), oaks);
-  const leafy = (name, geo, mat, depth, list) => { const im = instanced(geo, mat, list); im.name = name; im.customDepthMaterial = depth; return im; };
+  const leafy = (name, geo, mat, depth, list) => instanced(geo, mat, list, true, { name, depth });
   leafy('pine-canopy', canopyGeo({ cards: 23, rx: 2.2, ry: 2.5, cy: 7.2, w: 2.1, h: 1.9, seed: 5, flat: 0 }), FOL.pine, FOL.pineDepth, pines);
   leafy('oak-canopy', canopyGeo({ cards: 22, rx: 3.1, ry: 2.0, cy: 5.3, w: 2.8, h: 2.8, seed: 9 }), FOL.oak, FOL.oakDepth, oaks);
   leafy('shrubs', canopyGeo({ cards: 7, rx: .85, ry: .5, cy: .55, w: 1.3, h: 1.2, seed: 13 }), FOL.shrub, FOL.shrubDepth, shrubs);
@@ -208,7 +216,7 @@ setSeed(777);
   const gg = new THREE.PlaneGeometry(.8, .55); gg.translate(0, .27, 0);
   const gg2 = gg.clone(); gg2.rotateY(Math.PI / 2);
   const grassGeo = mergeGeos([gg, gg2]);
-  GRASS = instanced(grassGeo, makeGrassMaterial(THREE, document), grass, false); GRASS.name = 'grass';
+  GRASS = instanced(grassGeo, makeGrassMaterial(THREE, document), grass, false, { chunk: false, name: 'grass' });
 }
 /**
  * A crown made of crossed leaf cards scattered in an ellipsoid. Normals point outward from the crown centre,
@@ -659,7 +667,7 @@ function rigSoldier(kind, look = null) {
   } else { skirt(0x5c4630, { rTop: .19, rBot: .27, y1: .68 }); }
   Object.assign(rig.root.userData, ud);
   const mats = [...new Set([...rig.mats, ...p.mats, bMat, gMat, sMat, ...extraMats])];
-  return { root: rig.root, rig, mats, weapon: wpn };
+  return { root: rig.root, rig, mats, weapon: wpn, shield };
 }
 const soldier = (kind, look) => { const m = chars ? rigSoldier(kind, look) : makeSoldier(kind); if (look) m.root.scale.setScalar(look.scale); return m; };
 
@@ -776,7 +784,31 @@ Object.defineProperty(P, 'block', { get() { return P.f.blocking != null; }, enum
 const keys = {}; let mouseL = false, mouseR = false;
 let view = 'third'; // M&B-style over-the-shoulder by default; V toggles first person
 
+/* Broken shields: hacked apart, they drop where their bearer stands and stay there, useless. */
+const fallen = [];
+function dropShield(ent, mine = false) {
+  if (ent.shieldLost) return; ent.shieldLost = true;
+  const sh = ent.m && (ent.m.shield || ent.m.root.userData.scutum || ent.m.root.userData.parma); if (ent.m && ent.m.rig) ent.m.rig.bareArm = true;
+  if (!sh || !sh.visible) return;
+  sh.updateWorldMatrix(true, false);
+  const c = sh.clone(); sh.matrixWorld.decompose(c.position, c.quaternion, c.scale); scene.add(c); sh.visible = false;
+  fallen.push({ mesh: c, vy: 1.5, t: 0, spin: rr(-3, 3) });
+  SFX.thud(mine ? 1 : spatial(c.position)); burst('dust', c.position, 5);
+  if (mine) { showPrompt('O escudo partiu-se! Apara com a falcata (BOTÃO DIREITO ou Q)', 2.4); clog('Escudo partido', '#e08a6a'); } else if (!ent.ally) feed('Escudo romano partido');
+}
+const FLAT = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+function updateFallen(dt) {
+  for (const s of fallen) {
+    if (s.done) continue;
+    s.t += dt; s.vy -= 14 * dt; s.mesh.position.y += s.vy * dt; s.mesh.rotateZ(s.spin * dt); s.mesh.quaternion.slerp(FLAT, Math.min(1, dt * 3));
+    const g = heightAt(s.mesh.position.x, s.mesh.position.z) + .06;
+    if (s.mesh.position.y <= g) { s.mesh.position.y = g; s.mesh.quaternion.copy(FLAT); s.done = true; }
+  }
+}
 function resetWorld() {
+  for (const s of fallen) scene.remove(s.mesh); fallen.length = 0;
+  scene.fog.density = FOG_BASE;
+  if (typeof avatar !== 'undefined') { avatar.shieldLost = false; if (AV.shield) AV.shield.visible = true; }
   // clear dynamic objects
   for (const e of enemies) { scene.remove(e.m.root); if (e.corpse) phys.removeCorpse(e.corpse); }
   for (const a of allies) scene.remove(a.m.root);
@@ -804,17 +836,19 @@ function resetWorld() {
   // patrol on the road, marching south
   const col = ['legio', 'legio', 'velite', 'legio', 'legio', 'velite', 'legio', 'legio'];
   col.forEach((k, i) => { const z = -18 - i * 3.2; spawn(k, roadX(z) + (i % 2 ? 1 : -1), z, 'patrol'); });
-  // camp garrison
-  const guards = [[-10, 0], [10, -2], [-3, -10], [12, 14], [-12, 16], [3, 14]];
+  // camp garrison (kept for a later chapter: the ambush mission ends on the road)
+  const guards = chapter !== 'acampamento' ? [] : [[-10, 0], [10, -2], [-3, -10], [12, 14], [-12, 16], [3, 14]];
   for (const [ox, oz] of guards) spawn('legio', CAMP.x + ox, CAMP.z + oz, 'camp');
-  spawn('legio', CAMP.x - 3, CAMP.z + CAMP.half + 2, 'camp'); spawn('legio', CAMP.x + 3, CAMP.z + CAMP.half + 2, 'camp');
-  spawn('velite', CAMP.x - 9, CAMP.z + CAMP.half + 6, 'camp'); spawn('velite', CAMP.x + 9, CAMP.z + CAMP.half + 5, 'camp');
-  spawn('velite', CAMP.x, CAMP.z - 6, 'camp');
+  if (chapter === 'acampamento') {
+    spawn('legio', CAMP.x - 3, CAMP.z + CAMP.half + 2, 'camp'); spawn('legio', CAMP.x + 3, CAMP.z + CAMP.half + 2, 'camp');
+    spawn('velite', CAMP.x - 9, CAMP.z + CAMP.half + 6, 'camp'); spawn('velite', CAMP.x + 9, CAMP.z + CAMP.half + 5, 'camp');
+    spawn('velite', CAMP.x, CAMP.z - 6, 'camp');
+  }
   // pickups
   addPickup('dardos', AMBUSH.x + 2.5, AMBUSH.z + 1.5); addPickup('pedras', AMBUSH.x + 3, AMBUSH.z - 1.5); addPickup('odre', AMBUSH.x + .5, AMBUSH.z + 3);
   const route = [[roadX(70) + 14, 70], [roadX(20) - 16, 20], [roadX(-40) + 15, -40], [roadX(-80) - 14, -80], [roadX(-100) + 18, -100]];
   route.forEach(([x, z], i) => addPickup(i % 2 ? 'odre' : 'dardos', x, z));
-  addPickup('pedras', roadX(-60) - 20, -60); addPickup('odre', CAMP.x + 20, CAMP.z + CAMP.half + 10);
+  addPickup('pedras', roadX(-60) - 20, -60); if (chapter === 'acampamento') addPickup('odre', CAMP.x + 20, CAMP.z + CAMP.half + 10);
   setObjective();
 }
 
@@ -824,7 +858,7 @@ function spawn(kind, x, z, group) {
   const stats = { legio: { hp: 100, sp: 3.9, dmg: 13 }, velite: { hp: 65, sp: 3.7, dmg: 15 }, centurion: { hp: 460, sp: 4.4, dmg: 24 } }[kind];
   const e = { kind, m, pos: new THREE.Vector3(x, heightAt(x, z), z), hp: stats.hp, maxhp: stats.hp, sp: stats.sp, dmg: stats.dmg,
     state: group === 'patrol' ? 'march' : group === 'boss' ? 'chase' : 'guard', group, yaw: Math.PI, home: new THREE.Vector3(x, 0, z),
-    dir: -1, aware: 0, atkT: 0, f: C.createFighter({ shieldHP: kind === 'velite' ? 0 : 220, stamina: kind === 'centurion' ? 140 : 100, tele: kind === 'velite' ? 1.4 : kind === 'centurion' ? 1.5 : 1.7 }), aiT: rr(0, .3), act: 'approach', vel: { x: 0, z: 0 }, dodgeRoll: 1, mv: { x: 0, z: 0 }, releaseAt: 0, feintAt: 0, blockLeft: 0, slowT: 0, cd: rr(.5, 1.5), ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, wander: null, wT: 0, strafe: rand() < .5 ? 1 : -1, moving: 0, barkT: 0, jav: kind === 'velite' ? JAVELINS.velite : 0 };
+    dir: -1, aware: 0, atkT: 0, f: C.createFighter({ shieldHP: kind === 'velite' ? 35 : kind === 'centurion' ? 120 : 70, stamina: kind === 'centurion' ? 140 : 100, tele: kind === 'velite' ? 1.4 : kind === 'centurion' ? 1.5 : 1.7 }), aiT: rr(0, .3), act: 'approach', vel: { x: 0, z: 0 }, dodgeRoll: 1, mv: { x: 0, z: 0 }, releaseAt: 0, feintAt: 0, blockLeft: 0, slowT: 0, cd: rr(.5, 1.5), ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, wander: null, wT: 0, strafe: rand() < .5 ? 1 : -1, moving: 0, barkT: 0, jav: kind === 'velite' ? JAVELINS.velite : 0 };
   if (group === 'patrol') { e.yaw = 0; e.dir = 1; } // marching south (+z)
   enemies.push(e); return e;
 }
@@ -1049,6 +1083,7 @@ function updateOutro(dt) {
   const col = outroCam.column, C0 = V(0, 0, 0);
   if (col.length) { for (const c of col) C0.add(c.pos); C0.multiplyScalar(1 / col.length); } else C0.set(MEADOW.x, heightAt(MEADOW.x, MEADOW.z), MEADOW.z);
   const rise = smooth(4.6, 9.5, T), drift = smooth(9, OUTRO_LEN, T), turn = smooth(5, 9.2, T);
+  scene.fog.density = FOG_BASE * (1 - .5 * rise);   // above the trees the mist thins and the field shows
   const cam = outroCam.base.clone(); cam.y += rise * 17;
   cam.addScaledVector(V(C0.x - cam.x, 0, C0.z - cam.z), drift * .6); cam.y = lerp(cam.y, Math.max(C0.y + 7, heightAt(cam.x, cam.z) + 4), drift);   // glide out over the field toward the column
   camera.position.copy(cam);
@@ -1128,6 +1163,7 @@ function feed(text) {
 }
 function checkMission() {
   if (chapter === 'prologo') return;
+  if (mission === 0 && patrolLeft() === 0 && chapter !== 'acampamento') { win(); return; }   // the ambush is the whole mission; the camp waits for a later one
   if (mission === 0 && patrolLeft() === 0) {
     mission = 1; setObjective();
     showMsg('A patrulha caiu', 'O acampamento romano fica a norte, ao fundo da estrada.');
@@ -1372,7 +1408,8 @@ function updateAllies(dt) {
       a.throwT = Math.max(0, a.throwT - dt / .6);
       { const dj = a.m.root.getObjectByName('dardo'), fa = a.m.root.getObjectByName('falcata'); if (dj) dj.visible = a.throwPending > 0; if (fa) fa.visible = !(a.throwPending > 0); }
       const throwing = a.throwPending > 0 || a.throwT > .45;
-      if (a.f.phase === 'idle') { const wb = a.blockLeft > 0 && a.f.shieldHP > 0; if (wb && !a.f.blocking) C.beginBlock(a.f, 'shield'); else if (!wb && a.f.blocking) C.endBlock(a.f); }
+      if (a.f.phase === 'idle') { const wb = a.blockLeft > 0; if (wb && !a.f.blocking) { C.beginBlock(a.f, C.guardFor(a.f)); a.blockDir = foe.f.dir === 'thrust' || !foe.f.dir ? 'left' : foe.f.dir; } else if (!wb && a.f.blocking) C.endBlock(a.f); }
+      if (a.f.shieldHP <= 0) dropShield(a);
       if (a.aiT <= 0 && a.f.phase === 'idle' && !throwing) {
         a.aiT = .3;
         const act = allyAct({ dist: d, foePhase: foe.f.phase, rng: rand });
@@ -1390,10 +1427,13 @@ function updateAllies(dt) {
       a.crouch = !post && P.crouch > .5;
       const s = post || followSlot(a.i, P.pos, pf), dx = s.x - a.pos.x, dz = s.z - a.pos.z, d = Math.hypot(dx, dz);
       if (d > 70 && !post) { a.pos.x = s.x; a.pos.z = s.z; a.vel.x = a.vel.z = 0; }
+      a.restT = d < 4 ? (a.restT || 0) - dt : 0;   // his place is taken by a tree or a rock: near enough, he stays put
+      if (d > 70 && !post) {} else if (a.restT > 0) { a.moving = false; a.stuckT = 0; }
       else if (d > (a.moving ? .5 : 1.6)) {
         a.moving = true; const sp = Math.min(a.crouch ? 2.4 : sprinting || d > 9 ? 8 : 4.6, d * 2.2); want = { x: dx / d * sp, z: dz / d * sp };
         // blocked by a wall, hut or tree: slide round it for a moment
         if (sp > 1.5 && Math.hypot(a.mv.x, a.mv.z) < .6) a.stuckT = (a.stuckT || 0) + dt; else a.stuckT = 0;
+        if (a.stuckT > .5 && d < 4) { a.restT = 999; a.stuckT = 0; }
         if (a.stuckT > .5) { a.detourT = 1.3; a.detour = a.detour ? -a.detour : (a.i % 2 ? 1 : -1); a.stuckT = 0; }
         if (a.detourT > 0) { a.detourT -= dt; want = { x: (-dz / d * a.detour * .9 + dx / d * .3) * sp, z: (dx / d * a.detour * .9 + dz / d * .3) * sp }; }
         faceTo(a, a.pos.x + want.x, a.pos.z + want.z, dt, 5);
@@ -1419,6 +1459,7 @@ function allyRelease(a, foe) {
   spawnProj('javelin', from, V((to.x - from.x) / t, (to.y - from.y) / t + .5 * 11 * t, (to.z - from.z) / t), 'ally', .75); SFX.jav(spatial(from));
 }
 function use() {
+  if (chapter !== 'acampamento') return;
   for (const t of supplyTents) {
     if (t.burnt) continue;
     if (Math.hypot(t.x - P.pos.x, t.z - P.pos.z) < 5) {
@@ -1816,8 +1857,10 @@ function updateEnemies(dt) {
       // raise the scutum against missiles while closing in, or when the AI chose to block
       if (e.f.phase === 'idle') {
         const want = e.blockLeft > 0 || (!T.ally && pd > 3.5 && P.w !== 0);
-        if (want && !e.f.blocking) C.beginBlock(e.f, 'shield'); else if (!want && e.f.blocking) C.endBlock(e.f);
+        const g = C.guardFor(e.f), wantG = g === 'shield' ? want : e.blockLeft > 0;   // a sword is no cover against missiles
+        if (wantG && !e.f.blocking) { C.beginBlock(e.f, g); e.blockDir = tf.dir === 'thrust' || !tf.dir ? 'left' : tf.dir; } else if (!wantG && e.f.blocking) C.endBlock(e.f);
       }
+      if (e.f.shieldHP <= 0) dropShield(e);
       if (e.aiT <= 0 && state === 'play' && e.f.phase === 'idle') {
         e.aiT = e.kind === 'centurion' ? .18 : .26; e.dodgeRoll = rand(); if (rand() < .12) e.strafe *= -1;
         const attackersNow = enemies.filter(o => o !== e && !o.dead && (o.T && o.T.ally) === (e.T && e.T.ally) && o.state === 'chase' && (o.f.phase === 'windup' || o.f.phase === 'strike' || o.f.phase === 'recovery' || /^attack/.test(o.act || ''))).length;   // anyone already swinging, or about to, at the same target
@@ -1834,6 +1877,10 @@ function updateEnemies(dt) {
         const fw = footwork({ dist: td, sp: e.sp * slow * (e.f.blocking ? .6 : 1) * (td > 25 ? 1.15 : 1), act: e.act, strafe: e.strafe,
           difficulty: diff, rng: () => e.dodgeRoll, self: e.f, player: tf });
         const fx = (T.pos.x - e.pos.x) / (td || 1), fz = (T.pos.z - e.pos.z) / (td || 1);
+        // a tree or a rock in the way: after a moment of pushing against it, step round it
+        if (td > 3 && fw.forward > 1.5 && Math.hypot(e.mv.x, e.mv.z) < .5) e.stuckT = (e.stuckT || 0) + dt; else e.stuckT = 0;
+        if (e.stuckT > .4) { e.tries = (e.tries || 0) + 1; e.roundT = .9 + .5 * e.tries; if (e.tries % 2 || !e.round) e.round = e.round ? -e.round : e.strafe; e.stuckT = 0; }   // same side twice, a longer way round each time
+        if (e.roundT > 0) { e.roundT -= dt; fw.strafe = e.round * e.sp; fw.forward = e.roundT > .5 * (.9 + .5 * e.tries) ? -.4 : fw.forward * .5; } else if (Math.hypot(e.mv.x, e.mv.z) > 2) e.tries = 0;
         e.vel = steer(e.vel, { x: fx * fw.forward + fz * fw.strafe, z: fz * fw.forward - fx * fw.strafe }, 9, dt);
         e.pos.x += e.vel.x * dt; e.pos.z += e.vel.z * dt;
         speed = Math.hypot(e.vel.x, e.vel.z);
@@ -1957,7 +2004,8 @@ function updatePlayer(dt) {
   }
   // defence: Q = falcata (direction is automatic), right button = caetra
   P.f.passiveShield = !P.unarmed && P.w !== 2 && P.cleanT <= 0;
-  const wantBlock = P.unarmed ? null : keys.KeyQ && P.w === 0 ? 'sword' : (mouseR && P.w !== 2 && P.f.shieldHP > 0 && P.cleanT <= 0 ? 'shield' : null);
+  const wantBlock = P.unarmed ? null : keys.KeyQ && P.w === 0 ? 'sword' : mouseR && P.w !== 2 && P.f.shieldHP > 0 && P.cleanT <= 0 ? 'shield' : mouseR && P.w === 0 && P.f.shieldHP <= 0 ? 'sword' : null;   // shield gone: the right button raises the falcata
+  if (P.f.shieldHP <= 0 && !P.unarmed) dropShield(avatar, true);
   if (wantBlock !== P.f.blocking) { if (wantBlock) { if (C.beginBlock(P.f, wantBlock)) P.charging = false; } else C.endBlock(P.f); }
   // auto-aim the sword guard at the nearest enemy winding up
   let inc = null, incD = 4;
@@ -1986,7 +2034,7 @@ function updatePlayer(dt) {
   }
   // E prompt
   let pr = '';
-  for (const t of supplyTents) if (!t.burnt && Math.hypot(t.x - P.pos.x, t.z - P.pos.z) < 5) pr = '<b>[E]</b> Incendiar os mantimentos';
+  if (chapter === 'acampamento') for (const t of supplyTents) if (!t.burnt && Math.hypot(t.x - P.pos.x, t.z - P.pos.z) < 5) pr = '<b>[E]</b> Incendiar os mantimentos';
   if (promptT > 0) { promptT -= dt; } else $('prompt').innerHTML = pr;
 }
 let promptT = 0;
@@ -2002,10 +2050,10 @@ function updateCamera(dt) {
   camera.rotation.set(P.pitch + shake + P.kick * .12, P.yaw, shake * .5 + P.kick * .05);
   // Viriato himself, posed by the same rig and blade arcs as the Romans
   avatar.f = P.f; avatar.state = P.w === 0 && !P.unarmed ? 'chase' : 'idle'; avatar.crouch = P.crouch > .4; avatar.dead = state === 'dead'; avatar.hits = P.hitsTaken; avatar.yaw = P.yaw + Math.PI; avatar.mv.x = P.vel.x; avatar.mv.z = P.vel.z; avatar.throwT = P.throwT; avatar.throwKind = P.throwKind;
-  if (AV.rig) AV.rig.bareArm = !!P.unarmed;   // no shield in the prologue: the left arm swings free
+  if (AV.rig) AV.rig.bareArm = !!P.unarmed || !!avatar.shieldLost;   // no shield in the prologue: the left arm swings free
   const bob3 = setPose(avatar, dt);
   AV.root.position.set(P.pos.x, P.pos.y + bob3 - (AV.rig ? 0 : P.crouch * .3), P.pos.z); AV.root.rotation.y = avatar.yaw;
-  AV.root.visible = view === 'third'; AV_FAL.visible = P.w === 0 && !P.unarmed; if (AV.root.userData.parma) AV.root.userData.parma.visible = !P.unarmed;
+  AV.root.visible = view === 'third'; AV_FAL.visible = P.w === 0 && !P.unarmed; if (AV.shield) AV.shield.visible = !P.unarmed && !avatar.shieldLost;
   const thrown = !P.throwPending && P.aimT == null && P.throwT > 0; // between release and drawing the next one
   AV_JAV.visible = P.w === 1 && P.dardos + (P.throwPending ? 1 : 0) > 0 && !thrown;
   AV_STONE.visible = P.w === 2 && P.pedras + (P.throwPending ? 1 : 0) > 0 && !thrown;
@@ -2148,7 +2196,6 @@ function updateHUD(dt) {
 let introT = 0, introView = 'third';
 const INTRO_LEN = 9.5;
 let introVeil = null, introTitled = false, introHorn = false;
-const FOG_BASE = scene.fog.density;
 function startGame(intro = false) {
   initAudio();
   intro = intro === true; nextChapter = null; $('next').classList.add('hidden');
@@ -2267,14 +2314,15 @@ function endScreen(kicker, title, text) {
 }
 let endT = 0, endArgs = null;
 function die() { avatar.deadT = 0; avatar.f = P.f; C.endBlock(P.f); state = 'dead'; SFX.die(); endT = 2.8; endArgs = ['CAÍDO EM COMBATE', 'Viriato tombou', 'Tenta de novo.']; }
-function win() { state = 'won'; SFX.horn(); endT = 1.8; endArgs = ['VITÓRIA', 'Os montes são lusitanos', 'A patrulha caiu, os mantimentos arderam e o centurião está morto.']; }
+function win() { state = 'won'; SFX.horn(); endT = 1.8; endArgs = chapter === 'acampamento' ? ['VITÓRIA', 'Os montes são lusitanos', 'A patrulha caiu, os mantimentos arderam e o centurião está morto.'] : ['VITÓRIA', 'A patrulha caiu', 'Nenhum romano voltou ao acampamento. A notícia da emboscada vai correr os vales.']; }
 
 $('start').addEventListener('click', () => startGame(!navigator.webdriver));
 $('again').addEventListener('click', () => startGame(false));
 $('next').addEventListener('click', () => { if (!nextChapter) return; setChapter(nextChapter); startGame(true); });
 const BRIEF = {
   prologo: ['LUSITÂNIA · 150 A.C.', 'Prólogo. O pretor Sérvio Galba promete terras aos lusitanos que entreguem as armas. Viriato está entre os que as entregaram.'],
-  emboscada: ['LUSITÂNIA · 147 A.C.', 'Três anos depois de Galba, Roma volta aos vales. Uma patrulha desce a estrada do vale e o acampamento que a abastece fica a norte. Embosca-os, queima os mantimentos e derruba o centurião.'],
+  emboscada: ['LUSITÂNIA · 147 A.C.', 'Três anos depois de Galba, Roma volta aos vales. Uma patrulha desce a estrada do vale. Viriato e os seus esperam-na escondidos no mato. Não deixes nenhum voltar.'],
+  acampamento: ['LUSITÂNIA · 147 A.C.', 'O acampamento romano a norte: os mantimentos e o centurião.'],
 };
 function setChapter(c) {
   chapter = c; for (const o of document.querySelectorAll('[data-ch]')) o.setAttribute('aria-pressed', o.dataset.ch === c ? 'true' : 'false');
@@ -2297,7 +2345,7 @@ function step(dt) {
   if (hitStopT > 0) { hitStopT -= dt; dt *= .15; } // brief impact freeze
   if (state === 'outro') { updateEnemies(dt); updateCivs(dt); updateRiders(dt); updateProjectiles(dt); updateOutro(dt); }
   else if (state === 'intro') { updateAllies(dt); updateEnemies(dt); updateCivs(dt); updateRiders(dt); updateProjectiles(dt); updateIntro(dt); }
-  else if (state === 'play') { updatePlayer(dt); updateEnemies(dt); updateAllies(dt); updateProjectiles(dt); updateCivs(dt); updateRiders(dt); updateCamera(dt); tickClog(dt); updateFlag(); updateHUD(dt); if (chapter === 'prologo') checkPrologue(); }
+  else if (state === 'play') { updatePlayer(dt); updateEnemies(dt); updateAllies(dt); updateProjectiles(dt); updateFallen(dt); updateCivs(dt); updateRiders(dt); updateCamera(dt); tickClog(dt); updateFlag(); updateHUD(dt); if (chapter === 'prologo') checkPrologue(); }
   else if (state === 'dead' || state === 'won') {
     if (endT > 0) { endT -= dt; if (endT <= 0 && endArgs) { endScreen(...endArgs); endArgs = null; } }
     updateEnemies(dt); updateAllies(dt); updateCivs(dt); updateProjectiles(dt);

@@ -42,3 +42,9 @@ test('a staggered player is still fought one at a time (no pile-on)', () => {
   assert.equal(decide(legio(), ctx({ attackersNow: 1, playerFighter: stag })), 'circle');
   assert.match(decide(legio(), ctx({ attackersNow: 0, playerFighter: stag })), /^attack:/);
 });
+
+test('a velite who has drawn his sword can parry too', async () => {
+  const { decide } = await import('../src/ai.js');
+  const act = decide({ kind: 'velite', fighter: { phase: 'idle' } }, { dist: 1, playerFighter: { phase: 'windup' }, difficulty: 2, attackersNow: 0, rng: () => 0 });
+  assert.equal(act, 'block');
+});
