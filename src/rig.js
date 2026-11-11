@@ -244,7 +244,7 @@ export function driveRig(THREE, rig, s, dt) {
   if (rig.shielded) {
     if (rig.bareArm) sh[L0.clip] = { w: 1, rate: L0.rate };   // shield put away: the left arm moves with the body
     else sh.Idle_Shield_Loop = { w: 1, time: 1 };
-    if (rig.oneShot && /Shield_Break|Knockback/.test(rig.oneShot.clip)) sh[rig.oneShot.clip] = { w: 2, time: rig.oneShot.t };
+    if (rig.oneShot && /Shield_Break|Knockback|Shield_OneShot/.test(rig.oneShot.clip)) sh[rig.oneShot.clip] = { w: 2, time: rig.oneShot.t };
   }
   blendLayer(rig, 'lo', lo, dt); blendLayer(rig, 'up', up, dt); if (rig.shielded) blendLayer(rig, 'sh', sh, dt);
   // undo last frame's counter-twist first: the mixer skips bones whose animated value did not change
