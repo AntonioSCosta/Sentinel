@@ -21,3 +21,7 @@ Todas as texturas abaixo são do Poly Haven e estão sob licença **CC0** (domí
 ## Personagens e animações (CC0)
 - Corpo e cabelos: **Universal Base Characters** — Quaternius (CC0 1.0). Texturas do corpo repintadas como túnicas.
 - Animações: **Universal Animation Library 1 e 2** — Quaternius (CC0 1.0). https://quaternius.com
+
+## Cavalo
+
+`assets/chars/horse.glb.js` — cavalo animado (galope) dos exemplos do three.js (`examples/models/gltf/Horse.glb`, repositório sob licença MIT), modelo original do projeto ro.me (mirada).

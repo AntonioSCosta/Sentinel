@@ -711,6 +711,7 @@ function updateFlag() {
   if (g) { FLAG.position.set(g.x, g.y, g.z); FLAG.rotation.y = Math.atan2(g.x - P.pos.x, g.z - P.pos.z); }
 }
 let mission = 0, tentsBurnt = 0, missionMsgT = 0, alarm = false;
+let riders = [];
 let chapter = 'prologo', civs = [], betrayed = false, betrayT = 0, envoy = null, elder = null;   // 'prologo' = Galba's massacre (150 BC), 'emboscada' = the ambush campaign
 Object.defineProperty(P, 'st', { get() { return P.f.stamina; }, set(v) { P.f.stamina = v; }, enumerable: false });
 Object.defineProperty(P, 'block', { get() { return P.f.blocking != null; }, enumerable: false });
@@ -721,7 +722,8 @@ function resetWorld() {
   // clear dynamic objects
   for (const e of enemies) { scene.remove(e.m.root); if (e.corpse) phys.removeCorpse(e.corpse); }
   for (const a of allies) scene.remove(a.m.root);
-  for (const c of civs) scene.remove(c.m.root); civs = []; betrayed = false; betrayT = 0;
+  for (const c of civs) scene.remove(c.m.root); civs = [];
+  for (const r of riders) { scene.remove(r.horse); scene.remove(r.m.root); } riders = []; betrayed = false; betrayT = 0;
   allies = []; order = 'follow'; placing = false; FLAG.visible = false;
   for (const p of projectiles) phys.remove(p.pid);
   for (const p of projectiles) scene.remove(p.mesh);
@@ -812,22 +814,63 @@ function resetPrologue() {
     const e = spawn('legio', MEADOW.x + Math.cos(ang) * RING_R0, MEADOW.z + Math.sin(ang) * RING_R0, 'cordon');
     e.ang = ang; e.state = 'cordon'; e.yaw = Math.atan2(-Math.cos(ang), -Math.sin(ang));
   }
+  if (chars && chars.horse) { spawnRider(0, 1); spawnRider(Math.PI, 1); }   // two riders of the cavalry
 }
 function armEnvoy(on) {
   if (!envoy) return;
   if (envoy.m.weapon) envoy.m.weapon.visible = on; if (envoy.m.rig) envoy.m.rig.bareArm = !on;
   const sh = envoy.m.root.userData.scutum || envoy.m.root.userData.parma; if (sh) sh.visible = on;
 }
+/* Cavalry: two riders sweep in with the legions, circle the field cutting down whoever runs, then flank the captives. */
+const SADDLE = .62;
+function spawnRider(ang, dir) {
+  const h = chars.horse, hg = h.scene.clone(true); hg.scale.setScalar(.0095);
+  hg.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.material = o.material.clone(); o.material.color.setHex(0x8f7464); } });   // a darker bay
+  const grp = new THREE.Group(); grp.add(hg); scene.add(grp);
+  const mixer = new THREE.AnimationMixer(hg), act = mixer.clipAction(h.clip); act.play();
+  const m = soldier('legio'); scene.add(m.root);
+  const r = { kind: 'legio', m, f: C.createFighter(), state: 'chase', crouch: true, mv: { x: 0, z: 0 }, yaw: 0, stride: 0, ph: 0, flash: 0, dead: false, deadT: 0, hits: 0,
+    pos: V(MEADOW.x + Math.cos(ang) * 70, 0, MEADOW.z + Math.sin(ang) * 70), horse: grp, mixer, act, ang, dir, hitCd: 0, i: riders.length };
+  riders.push(r); return r;
+}
+function updateRiders(dt) {
+  for (const r of riders) {
+    r.hitCd -= dt;
+    const waiting = state === 'intro' && introT < 10.6;
+    r.horse.visible = r.m.root.visible = !waiting;
+    let tx, tz, sp;
+    if (state === 'outro' && outroCam && outroCam.column && outroCam.column.length) {   // walking beside the column on the far side
+      const col = outroCam.column, C0 = V(0, 0, 0); for (const c of col) C0.add(c.pos); C0.multiplyScalar(1 / col.length);
+      const t = C0.addScaledVector(outroCam.q, -4.2).addScaledVector(outroCam.w, r.i ? 4 : -4); tx = t.x; tz = t.z; sp = 2.2;
+    } else if (waiting) { tx = r.pos.x; tz = r.pos.z; sp = 0; }
+    else { r.ang += dt * .42 * r.dir; tx = MEADOW.x + Math.cos(r.ang) * 19; tz = MEADOW.z + Math.sin(r.ang) * 19; sp = 9.5; }   // round the outside of the ring at a gallop
+    const dx = tx - r.pos.x, dz = tz - r.pos.z, d = Math.hypot(dx, dz), step = Math.min(sp * dt, d);
+    if (d > .05) { r.pos.x += dx / d * step; r.pos.z += dz / d * step; r.yaw += wrapA(Math.atan2(dx, dz) - r.yaw) * Math.min(1, dt * 4); }
+    const v = step / Math.max(dt, 1e-4); r.act.timeScale = clamp(v / 8, .2, 1.3); r.act.paused = v < .2;
+    r.pos.y = heightAt(r.pos.x, r.pos.z);
+    r.horse.position.copy(r.pos); r.horse.rotation.y = r.yaw; r.mixer.update(dt);
+    if (betrayed && state === 'play') {
+      for (const c of civs) if (!c.dead && !c.gone && !c.child && !c.spared && !c.prisoner && Math.hypot(c.pos.x - r.pos.x, c.pos.z - r.pos.z) < 2.2) {
+        if (r.f.phase === 'idle') { C.beginAttack(r.f, Math.random() < .5 ? 'left' : 'right'); C.releaseAttack(r.f); }
+        killCiv(c, V(Math.sin(r.yaw), 0, Math.cos(r.yaw)).multiplyScalar(4));
+      }
+      if (r.hitCd <= 0 && Math.hypot(P.pos.x - r.pos.x, P.pos.z - r.pos.z) < 1.8) { r.hitCd = 1.5; damagePlayer(16, r.pos.clone()); }   // ridden down
+    }
+    C.tickFighter(r.f, dt);
+    const b = setPose(r, dt); r.m.root.position.set(r.pos.x, r.pos.y + SADDLE + b * .2, r.pos.z); r.m.root.rotation.y = r.yaw;
+  }
+}
 function spawnCiv(look, x, z, child) {
   const m = soldier('lusitano', look); scene.add(m.root);
   const c = { kind: 'lusitano', civ: true, m, pos: new THREE.Vector3(x, heightAt(x, z), z), yaw: Math.atan2(x - MEADOW.x, z - MEADOW.z), f: C.createFighter(), state: 'idle',
     vel: { x: 0, z: 0 }, mv: { x: 0, z: 0 }, stride: 0, ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, hits: 0, crouch: false,
-    sp: child ? 3.4 : rr(3.6, 4.3), child: !!child, home: V(x, 0, z), flee: null, gone: false, delay: rr(0, .7) };
+    sp: child ? 3.4 : rr(3.6, 4.3), child: !!child, female: !!look.female, home: V(x, 0, z), flee: null, gone: false, delay: rr(0, .7) };
   m.root.position.copy(c.pos); m.root.rotation.y = c.yaw; civs.push(c); return c;
 }
 /** The betrayal: Galba gives the signal, the ring tightens and the people break and run in every direction. */
 function betray() {
   if (betrayed) return; betrayed = true; betrayT = 0; SFX.horn(); armEnvoy(true);
+  civs.filter(c => !c.child && !c.female && !c.elder).slice(0, 3).forEach(c => { c.spared = true; c.surrenderT = rr(1.2, 2.6); });   // a few men are taken alive, to be sold
   const near = enemies.filter(e => e.group === 'cordon' && !e.dead).sort((a, b) => a.pos.distanceTo(P.pos) - b.pos.distanceTo(P.pos));
   near.slice(0, 3).forEach((e, i) => { e.alertIn = 3 + i * 1.2; });
   // the signal: a volley of pila into the crowd at once, a few of them at Viriato
@@ -836,7 +879,7 @@ function betray() {
 }
 function nearestAdultCiv(pos, r) {
   let best = null, bd = r;
-  for (const c of civs) { if (c.dead || c.gone || c.child) continue; const d = Math.hypot(c.pos.x - pos.x, c.pos.z - pos.z); if (d < bd) { bd = d; best = c; } }
+  for (const c of civs) { if (c.dead || c.gone || c.child || c.spared) continue; const d = Math.hypot(c.pos.x - pos.x, c.pos.z - pos.z); if (d < bd) { bd = d; best = c; } }
   return best;
 }
 function killCiv(c, push) { if (c.dead) return; c.dead = true; c.deadT = 0; c.mv.x = c.mv.z = 0; c.knock = push || null; SFX.die(spatial(c.pos) * .55); }
@@ -848,6 +891,10 @@ function updateCivs(dt) {
     if (c.dead) { c.deadT += dt; c.pos.y = heightAt(c.pos.x, c.pos.z); const b = setPose(c, dt); c.m.root.position.set(c.pos.x, c.pos.y + b, c.pos.z); continue; }
     let tx = c.home.x, tz = c.home.z, sp = 0;
     if (c.stun > 0) { c.stun -= dt; c.crouch = true; c.mv.x = c.mv.z = 0; const b = setPose(c, dt); c.m.root.position.set(c.pos.x, heightAt(c.pos.x, c.pos.z) + b, c.pos.z); continue; }
+    if (c.spared && betrayed && !c.prisoner && (c.surrenderT -= dt) <= 0) {   // he gives up: kneels where he is, hands empty
+      c.crouch = true; c.mv.x = c.mv.z = 0; c.yaw += wrapA(Math.atan2(MEADOW.x - c.pos.x, MEADOW.z - c.pos.z) - c.yaw) * Math.min(1, dt * 3);
+      c.pos.y = heightAt(c.pos.x, c.pos.z); const b = setPose(c, dt); c.m.root.position.set(c.pos.x, c.pos.y + b, c.pos.z); c.m.root.rotation.y = c.yaw; continue;
+    }
     if (betrayed && (c.delay -= dt) <= 0) {
       if (!c.flee) { const a = Math.atan2(c.pos.z - MEADOW.z, c.pos.x - MEADOW.x) + rr(-.6, .6); c.flee = V(MEADOW.x + Math.cos(a) * 90, 0, MEADOW.z + Math.sin(a) * 90); c.crouch = false; }
       tx = c.flee.x; tz = c.flee.z; sp = c.sp;
@@ -879,10 +926,12 @@ function startOutro() {
   outroCam.at.y = heightAt(outroCam.at.x, outroCam.at.z) + 1.5;
   // the survivors: roped in a double file and led off toward Galba's camp, between the bodies
   const wx = CAMP.x - MEADOW.x, wz = CAMP.z - MEADOW.z, wl = Math.hypot(wx, wz), w = V(wx / wl, 0, wz / wl), q = V(-w.z, 0, w.x);
-  const caught = civs.filter(c => !c.dead).slice(0, 10), S = V(MEADOW.x, 0, MEADOW.z).addScaledVector(w, -5);
+  const alive = civs.filter(c => !c.dead), men = alive.filter(c => c.spared), rest = alive.filter(c => !c.spared).slice(0, 10 - men.length), caught = [...rest];
+  men.forEach((c, i) => caught.splice(Math.min(caught.length, 1 + i * 3), 0, c));   // the men walk among the women and children
+  const S = V(MEADOW.x, 0, MEADOW.z).addScaledVector(w, -5);
   caught.forEach((c, i) => {
     const row = Math.floor(i / 2), p = S.clone().addScaledVector(w, -row * 1.5).addScaledVector(q, i % 2 ? .65 : -.65);
-    c.pos.set(p.x, heightAt(p.x, p.z), p.z); c.gone = false; c.m.root.visible = true; c.prisoner = true; c.crouch = false; c.delay = 0;
+    c.pos.set(p.x, heightAt(p.x, p.z), p.z); c.gone = false; c.m.root.visible = true; c.prisoner = true; c.crouch = false; c.delay = 0; c.surrenderT = 0;
     c.sp = 1.15; c.flee = p.clone().addScaledVector(w, 120); c.yaw = Math.atan2(w.x, w.z);
   });
   const guards = enemies.filter(e => !e.dead && e.group === 'cordon').sort((a, b) => a.pos.distanceTo(S) - b.pos.distanceTo(S)).slice(0, 7);
@@ -1345,7 +1394,7 @@ function updateProjectiles(dt) {
     } else {
       const c = V(P.pos.x, P.pos.y + 1.1 - P.crouch * .4, P.pos.z);
       if (segSphere(p.prev, p.pos, c, .55)) { damagePlayer(p.dmg, p.prev, true); done = true; }
-      if (!done && civs.length) for (const cv of civs) if (!cv.dead && !cv.gone && !cv.child && segSphere(p.prev, p.pos, V(cv.pos.x, cv.pos.y + 1, cv.pos.z), .5)) { killCiv(cv, p.vel.clone().setY(0).setLength(3)); done = true; break; }
+      if (!done && civs.length) for (const cv of civs) if (!cv.dead && !cv.gone && !cv.child && !cv.spared && segSphere(p.prev, p.pos, V(cv.pos.x, cv.pos.y + 1, cv.pos.z), .5)) { killCiv(cv, p.vel.clone().setY(0).setLength(3)); done = true; break; }
     }
     if (!done) {
       if (landed || p.pos.y < heightAt(p.pos.x, p.pos.z) - .5) {
@@ -1839,6 +1888,7 @@ function updateCamera(dt) {
   camera.rotation.set(P.pitch + shake + P.kick * .12, P.yaw, shake * .5 + P.kick * .05);
   // Viriato himself, posed by the same rig and blade arcs as the Romans
   avatar.f = P.f; avatar.state = P.w === 0 && !P.unarmed ? 'chase' : 'idle'; avatar.crouch = P.crouch > .4; avatar.dead = state === 'dead'; avatar.hits = P.hitsTaken; avatar.yaw = P.yaw + Math.PI; avatar.mv.x = P.vel.x; avatar.mv.z = P.vel.z; avatar.throwT = P.throwT; avatar.throwKind = P.throwKind;
+  if (AV.rig) AV.rig.bareArm = !!P.unarmed;   // no shield in the prologue: the left arm swings free
   const bob3 = setPose(avatar, dt);
   AV.root.position.set(P.pos.x, P.pos.y + bob3 - (AV.rig ? 0 : P.crouch * .3), P.pos.z); AV.root.rotation.y = avatar.yaw;
   AV.root.visible = view === 'third'; AV_FAL.visible = P.w === 0 && !P.unarmed; if (AV.root.userData.parma) AV.root.userData.parma.visible = !P.unarmed;
@@ -2126,9 +2176,9 @@ $('sens2').addEventListener('input', e => { setSens(+e.target.value); $('sens').
 let menuT = 0;
 function step(dt) {
   if (hitStopT > 0) { hitStopT -= dt; dt *= .15; } // brief impact freeze
-  if (state === 'outro') { updateEnemies(dt); updateCivs(dt); updateProjectiles(dt); updateOutro(dt); }
-  else if (state === 'intro') { updateAllies(dt); updateEnemies(dt); updateCivs(dt); updateProjectiles(dt); updateIntro(dt); }
-  else if (state === 'play') { updatePlayer(dt); updateEnemies(dt); updateAllies(dt); updateProjectiles(dt); updateCivs(dt); updateCamera(dt); updateFlag(); updateHUD(dt); if (chapter === 'prologo') checkPrologue(); }
+  if (state === 'outro') { updateEnemies(dt); updateCivs(dt); updateRiders(dt); updateProjectiles(dt); updateOutro(dt); }
+  else if (state === 'intro') { updateAllies(dt); updateEnemies(dt); updateCivs(dt); updateRiders(dt); updateProjectiles(dt); updateIntro(dt); }
+  else if (state === 'play') { updatePlayer(dt); updateEnemies(dt); updateAllies(dt); updateProjectiles(dt); updateCivs(dt); updateRiders(dt); updateCamera(dt); updateFlag(); updateHUD(dt); if (chapter === 'prologo') checkPrologue(); }
   else if (state === 'dead' || state === 'won') {
     if (endT > 0) { endT -= dt; if (endT <= 0 && endArgs) { endScreen(...endArgs); endArgs = null; } }
     updateEnemies(dt); updateAllies(dt); updateCivs(dt); updateProjectiles(dt);
@@ -2174,7 +2224,7 @@ setListener(camera);
 resetWorld();
 $('start').disabled = false; $('start').textContent = 'COMEÇAR';
 return {
-  start: (d, ch = 'emboscada') => { if (d != null) diff = d; setChapter(ch); startGame(false); }, startIntro: (ch = chapter) => { setChapter(ch); startGame(true); }, get civs() { return civs; }, get chapter() { return chapter; }, MEADOW, ESCAPE, CASTRO, get introT() { return introT; }, step, render: () => R.render(), setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
+  start: (d, ch = 'emboscada') => { if (d != null) diff = d; setChapter(ch); startGame(false); }, startIntro: (ch = chapter) => { setChapter(ch); startGame(true); }, get civs() { return civs; }, get riders() { return riders; }, get chapter() { return chapter; }, MEADOW, ESCAPE, CASTRO, get introT() { return introT; }, step, render: () => R.render(), setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
   P, supplyTents, heightAt, CAMP, scene, camera,
   get enemies() { return enemies; }, get allies() { return allies; }, setCompanions: n => { companions = n; }, forceDir: d => { forcedDir = d; }, get order() { return order; }, get placing() { return placing; }, flag: FLAG, flagAt, hurtAllyForTest: (a, d) => hurtAlly(a, d, a.pos.clone()), get mission() { return mission; }, get state() { return state; },
   get projectiles() { return projectiles; }, get pickups() { return pickups; },
@@ -2211,10 +2261,10 @@ export async function loadChars(THREE, base = 'assets/chars/') {
     const u8 = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
     return gl.parseAsync(u8.buffer, '');
   };
-  const [body, a1, a2, hl, hb, hz, bf] = await Promise.all(['body', 'anim_ual1', 'anim_ual2', 'hair_long', 'hair_beard', 'hair_buzzed', 'body_f'].map(get));
+  const [body, a1, a2, hl, hb, hz, bf, hr] = await Promise.all(['body', 'anim_ual1', 'anim_ual2', 'hair_long', 'hair_beard', 'hair_buzzed', 'body_f', 'horse'].map(get));
   const tl = new THREE.TextureLoader(), textures = {};
   await Promise.all(['roman_red', 'roman_white', 'roman_mail', 'velite', 'lusitano', 'lusitano_b', 'lusitano_c', 'lusitano_d'].map(async k => {
     const t = await tl.loadAsync(base + 'body_' + k + '.jpg'); t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; textures[k] = t;
   }));
-  return { body: body.scene, bodyF: bf.scene, clips: [...a1.animations, ...a2.animations], hair: { hair_long: hl.scene, hair_beard: hb.scene, hair_buzzed: hz.scene }, textures, split: [null, null], clone: SkeletonUtils.clone };
+  return { body: body.scene, bodyF: bf.scene, horse: { scene: hr.scene, clip: hr.animations[0] }, clips: [...a1.animations, ...a2.animations], hair: { hair_long: hl.scene, hair_beard: hb.scene, hair_buzzed: hz.scene }, textures, split: [null, null], clone: SkeletonUtils.clone };
 }
