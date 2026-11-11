@@ -807,12 +807,18 @@ function resetPrologue() {
   const ex = MEADOW.x + Math.cos(na) * 9.4, ez = MEADOW.z + Math.sin(na) * 9.4;
   envoy = spawn('legio', ex, ez, 'cordon'); envoy.state = 'cordon'; envoy.ang = na; envoy.envoyDone = false; envoy.home.set(ex, 0, ez);
   envoy.yaw = Math.atan2(lx - ex, lz - ez); elder.yaw = Math.atan2(ex - lx, ez - lz);
+  armEnvoy(false);   // he comes to talk with his sword in its sheath and no shield, so as to raise no suspicion
   // the legions, standing in a wide ring round the field
   for (let i = 0; i < RING_N; i++) {
     const ang = i / RING_N * TAU; if (Math.abs(wrapA(ang - Math.atan2(uz, ux))) < .36) continue;   // a breach on the forest side
     const e = spawn('legio', MEADOW.x + Math.cos(ang) * RING_R0, MEADOW.z + Math.sin(ang) * RING_R0, 'cordon');
     e.ang = ang; e.state = 'cordon'; e.yaw = Math.atan2(-Math.cos(ang), -Math.sin(ang));
   }
+}
+function armEnvoy(on) {
+  if (!envoy) return;
+  if (envoy.m.weapon) envoy.m.weapon.visible = on;
+  const sh = envoy.m.root.userData.scutum || envoy.m.root.userData.parma; if (sh) sh.visible = on;
 }
 function spawnCiv(look, x, z, child) {
   const m = soldier('lusitano', look); scene.add(m.root);
@@ -823,7 +829,7 @@ function spawnCiv(look, x, z, child) {
 }
 /** The betrayal: Galba gives the signal, the ring tightens and the people break and run in every direction. */
 function betray() {
-  if (betrayed) return; betrayed = true; betrayT = 0; SFX.horn();
+  if (betrayed) return; betrayed = true; betrayT = 0; SFX.horn(); armEnvoy(true);
   const near = enemies.filter(e => e.group === 'cordon' && !e.dead).sort((a, b) => a.pos.distanceTo(P.pos) - b.pos.distanceTo(P.pos));
   near.slice(0, 3).forEach((e, i) => { e.alertIn = 3 + i * 1.2; });
   // the signal: a volley of pila into the crowd at once, a few of them at Viriato
@@ -858,9 +864,46 @@ function updateCivs(dt) {
 }
 function checkPrologue() {
   setObjective();
-  if (state === 'play' && Math.hypot(P.pos.x - ESCAPE.x, P.pos.z - ESCAPE.z) < 9) {
-    state = 'won'; endT = 2.2; nextChapter = 'emboscada';
-    endArgs = ['PRÓLOGO · 150 A.C.', 'Viriato escapou', 'Dos milhares que confiaram em Galba, poucos sobreviveram. Entre eles, um pastor dos Montes Hermínios que nunca esqueceria. Três anos depois, Roma voltaria a ouvir falar dele.'];
+  if (state === 'play' && Math.hypot(P.pos.x - ESCAPE.x, P.pos.z - ESCAPE.z) < 9) startOutro();
+}
+/* Escape: Viriato runs on into the trees, then stops, turns and looks back at the field. */
+const OUTRO_LEN = 10;
+let outroT = 0, outroCam = null, outroSaid = 0;
+function startOutro() {
+  state = 'outro'; outroT = 0; outroSaid = 0; introView = view;
+  $('hud').classList.add('intro'); $('msg').style.opacity = 0; missionMsgT = 0;
+  releaseAll(); C.endBlock(P.f);
+  for (const e of enemies) if (!e.dead && e.group === 'cordon') { e.alertIn = null; if (e.state === 'chase') { e.state = 'cordon'; e.victim = null; } }   // the hunters give him up
+  const dx = ESCAPE.x - MEADOW.x, dz = ESCAPE.z - MEADOW.z, dl = Math.hypot(dx, dz), u = V(dx / dl, 0, dz / dl), n = V(-u.z, 0, u.x);
+  outroCam = { u, n, at: V(P.pos.x, 0, P.pos.z).addScaledVector(u, 7).addScaledVector(n, 4.2) };
+  outroCam.at.y = heightAt(outroCam.at.x, outroCam.at.z) + 1.5;
+}
+function updateOutro(dt) {
+  outroT += dt; const T = outroT, { u, n } = outroCam;
+  if (missionMsgT > 0) { missionMsgT -= dt; if (missionMsgT <= 0) $('msg').style.opacity = 0; }
+  if (T < 1.7) {          // into the trees
+    const sp = 4.6; P.vel.x = u.x * sp; P.vel.z = u.z * sp; P.pos.x += P.vel.x * dt; P.pos.z += P.vel.z * dt; P.yaw = Math.atan2(-u.x, -u.z);
+  } else {                // he stops, catches his breath and turns to look back
+    P.vel.x = P.vel.z = 0; P.yaw += wrapA(Math.atan2(u.x, u.z) - P.yaw) * Math.min(1, dt * 2.2);
+  }
+  P.pos.y = heightAt(P.pos.x, P.pos.z); P.pitch = 0;
+  view = 'third'; updateCamera(dt); view = introView; AV.root.visible = true; VM.visible = false;
+  if (T < 2.6) { camera.position.copy(outroCam.at); camera.lookAt(P.pos.x, P.pos.y + 1.3, P.pos.z); }
+  else if (T > 6.4) {     // high over the edge of the wood, back across the field where the ring still stands
+    const k = smooth(6.4, OUTRO_LEN, T), y0 = heightAt(MEADOW.x, MEADOW.z);
+    camera.position.set(MEADOW.x, 0, MEADOW.z).addScaledVector(u, 34 - k * 4).addScaledVector(n, -6 + k * 3); camera.position.y = y0 + 13 - k * 2;
+    camera.lookAt(MEADOW.x, y0 + 1, MEADOW.z);
+  }
+  else {                  // over his shoulder as he turns to look back
+    const k = smooth(2.6, OUTRO_LEN, T), back = 3 - k * 1.2;
+    camera.position.set(P.pos.x, 0, P.pos.z).addScaledVector(u, back).addScaledVector(n, .55); camera.position.y = P.pos.y + 2.3 - k * .3;
+    camera.lookAt(MEADOW.x, heightAt(MEADOW.x, MEADOW.z) + .5, MEADOW.z);
+  }
+  if (outroSaid < 1 && T > 3.6) { outroSaid = 1; showMsg('VIRIATO ESCAPOU', 'Dos milhares que confiaram em Galba, poucos sobreviveram.', 3); }
+  if (outroSaid < 2 && T > 6.8) { outroSaid = 2; showMsg('', 'Um pastor dos Montes Hermínios jurou que Roma pagaria por aquele dia.', 3); }
+  if (T >= OUTRO_LEN) {
+    $('hud').classList.remove('intro'); state = 'won'; endT = .05; nextChapter = 'emboscada';
+    endArgs = ['PRÓLOGO · 150 A.C.', 'Viriato escapou', 'Três anos depois, Roma voltaria a ouvir falar dele.'];
   }
 }
 let nextChapter = null;
@@ -875,7 +918,7 @@ const SIGNAL = new THREE.Group(); SIGNAL.visible = false; scene.add(SIGNAL);
   const ring = new THREE.Mesh(new THREE.RingGeometry(7.4, 8, 48), new THREE.MeshBasicMaterial({ color: 0xe8c36a, transparent: true, opacity: .35, side: THREE.DoubleSide, depthWrite: false })); ring.rotation.x = -Math.PI / 2; ring.position.y = .08; SIGNAL.add(ring);
 }
 function updateSignal(dt) {
-  SIGNAL.visible = chapter === 'prologo' && state !== 'menu';
+  SIGNAL.visible = chapter === 'prologo' && state !== 'menu' && state !== 'outro';
   if (!SIGNAL.visible) return;
   SIGNAL.position.set(ESCAPE.x, heightAt(ESCAPE.x, ESCAPE.z), ESCAPE.z);
   SIGNAL.children[0].rotation.y += dt * .25; SIGNAL.children[1].intensity = 2 + Math.sin(performance.now() * .013) * .5;
@@ -955,7 +998,8 @@ function raiseAlarm() {
    ========================================================= */
 const cv = canvas;
 window.addEventListener('keydown', e => {
-  if (state === 'intro' && e.code !== 'Escape') { introT = INTRO_LEN; return; }
+  if (state === 'intro' && e.code !== 'Escape') { introT = chapter === 'prologo' ? INTRO_P : INTRO_LEN; return; }
+  if (state === 'outro' && e.code !== 'Escape') { outroT = OUTRO_LEN; return; }
   keys[e.code] = true;
   if (state !== 'play') return;
   if (e.code === 'Digit1') selectW(0); if (e.code === 'Digit2') selectW(1); if (e.code === 'Digit3') selectW(2);
@@ -975,7 +1019,8 @@ window.addEventListener('mousemove', e => {
   if (P.f.phase === 'windup' && !P.f.released) { P.post.x += e.movementX; P.post.y += e.movementY; }
 });
 window.addEventListener('mousedown', e => {
-  if (state === 'intro') { introT = INTRO_LEN; return; }
+  if (state === 'intro') { introT = chapter === 'prologo' ? INTRO_P : INTRO_LEN; return; }
+  if (state === 'outro') { outroT = OUTRO_LEN; return; }
   if (state !== 'play') return;
   if (document.pointerLockElement !== cv) { lock(); return; }
   if (e.button === 0) mouseL = true; if (e.button === 2) mouseR = true;
@@ -2048,7 +2093,8 @@ $('sens2').addEventListener('input', e => { setSens(+e.target.value); $('sens').
 let menuT = 0;
 function step(dt) {
   if (hitStopT > 0) { hitStopT -= dt; dt *= .15; } // brief impact freeze
-  if (state === 'intro') { updateAllies(dt); updateEnemies(dt); updateCivs(dt); updateProjectiles(dt); updateIntro(dt); }
+  if (state === 'outro') { updateEnemies(dt); updateCivs(dt); updateProjectiles(dt); updateOutro(dt); }
+  else if (state === 'intro') { updateAllies(dt); updateEnemies(dt); updateCivs(dt); updateProjectiles(dt); updateIntro(dt); }
   else if (state === 'play') { updatePlayer(dt); updateEnemies(dt); updateAllies(dt); updateProjectiles(dt); updateCivs(dt); updateCamera(dt); updateFlag(); updateHUD(dt); if (chapter === 'prologo') checkPrologue(); }
   else if (state === 'dead' || state === 'won') {
     if (endT > 0) { endT -= dt; if (endT <= 0 && endArgs) { endScreen(...endArgs); endArgs = null; } }

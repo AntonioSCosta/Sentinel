@@ -8,7 +8,9 @@ export default async ({ G, doc, st, check, forcePlay, setGod }) => {
   check('prologue: the soldiers cut down most of the adults', G.civs.filter(c => c.dead).length >= 10);
   check('prologue: children are never cut down', G.civs.filter(c => c.child && c.dead).length === 0);
   check('prologue: Viriato carries no weapon', doc.getElementById('wname').textContent === 'Desarmado');
-  G.P.pos.set(G.ESCAPE.x, G.P.pos.y, G.ESCAPE.z); st(240);
+  G.P.pos.set(G.ESCAPE.x, G.P.pos.y, G.ESCAPE.z); st(5);
+  check('prologue: escaping plays the closing scene', G.state === 'outro');
+  st(800);
   check('prologue: reaching the forest wins it', G.state === 'won' && !doc.getElementById('end').classList.contains('hidden'));
   check('prologue: offers the next chapter', !doc.getElementById('next').classList.contains('hidden'));
   setGod(false); G.start(1);
