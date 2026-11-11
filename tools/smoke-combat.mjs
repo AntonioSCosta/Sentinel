@@ -34,10 +34,6 @@ export default async function ({ G, THREE, st, key, check, forcePlay, setGod }) 
   }
   check('three javelins stuck in the shield', G.P.f.stuckJavelins === 3 && G.vm.stuckVisible() === 3);
   G.input.mouse(false, false);
-  // (e) shield bash (F) cancels an enemy windup
-  fresh(); e = legioAhead(1.4); e.state = 'chase'; e.yaw = 0; e.aiT = 99;
-  C.beginAttack(e.f, 'up'); e.releaseAt = 99; st(6); key('KeyF'); st(2); key('KeyF', false);
-  check('F bash cancels enemy windup', e.f.phase !== 'windup');
   // (f) crouched charged backstab kills, wherever the legionary stands (12 trials)
   let misses = 0;
   for (let trial = 0; trial < 12; trial++) {

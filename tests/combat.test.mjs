@@ -11,12 +11,12 @@ test('dirFromMouse maps mouse motion to the four attack directions', () => {
   assert.equal(C.dirFromMouse(1, 1), 'thrust');
 });
 
-test('charge power grows from .5 to 1 over .8 s and caps', () => {
-  for (const [hold, p] of [[0, .5], [.8, 1], [2, 1]]) {
+test('charge power grows from .6 (a tap) to 1.6 over 1.2 s of holding, and no further', () => {
+  for (const [hold, p] of [[0, .6], [.6, 1.1], [1.2, 1.6], [3, 1.6]]) {
     const f = C.createFighter();
     C.beginAttack(f, 'up');
     C.tickFighter(f, hold);
-    assert.equal(C.releaseAttack(f).power, p);
+    assert.ok(Math.abs(C.releaseAttack(f).power - p) < 1e-9, `${hold} s → ${p}`);
   }
 });
 

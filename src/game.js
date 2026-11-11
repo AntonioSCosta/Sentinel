@@ -12,6 +12,7 @@ import { sweepHit, capsuleOf, glance, bladeSegment, toWorld, bladeDir } from './
 import { resolveQuality } from './quality.js';
 import { makeRig, driveRig } from './rig.js';
 import { followSlot, pickFoe, pickTarget, allyAct, holdSlot, aimGround, allyLook } from './ally.js';
+import { JAVELINS, throwPower, allyThrows, veliteState } from './missiles.js';
 
 /**
  * Builds the whole game. Rendering, DOM and window are injected so the game can run headless in tests.
@@ -471,6 +472,9 @@ function makeSoldier(kind) {
     add(new THREE.CylinderGeometry(.016, .016, .1, 10), wood, 0, .02, 0, fal);
     add(new THREE.TorusGeometry(.04, .01, 6, 12, Math.PI * 1.2), gold, .02, .07, 0, fal).rotation.z = Math.PI * .4;
     root.userData.bladeLength = .56;
+    const dj = grp(0, 0, 0, hand); dj.name = 'dardo'; dj.visible = false;   // shown in the fist while throwing
+    add(new THREE.CylinderGeometry(.013, .013, 1.3, 6), wood, 0, 0, .2, dj).rotation.x = Math.PI / 2;
+    add(new THREE.ConeGeometry(.026, .14, 8), metal, 0, 0, .9, dj).rotation.x = Math.PI / 2;
     // caetra: small round concave shield (~0.6 m) with a central boss
     const pg = grp(.34, .2, .3, spine); root.userData.parma = pg; pg.name = 'caetra';
     const dome = new THREE.SphereGeometry(.5, 24, 6, 0, Math.PI * 2, 0, .64); dome.rotateX(Math.PI / 2); dome.translate(0, 0, -.42);
@@ -478,8 +482,11 @@ function makeSoldier(kind) {
     add(new THREE.SphereGeometry(.06, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), gold, 0, 0, .07, pg).rotation.x = Math.PI / 2;
     for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; add(new THREE.SphereGeometry(.014, 6, 4), gold, Math.cos(a) * .2, Math.sin(a) * .2, .03, pg); }
   } else if (kind === 'velite') {
-    const jv = add(new THREE.CylinderGeometry(.015, .015, 1.5, 6), wood, 0, 0, .25, hand); jv.rotation.x = Math.PI / 2;
-    add(new THREE.ConeGeometry(.03, .16, 8), metal, 0, 0, 1.06, hand).rotation.x = Math.PI / 2;
+    const pil = grp(0, 0, 0, hand); pil.name = 'pilum';
+    const jv = add(new THREE.CylinderGeometry(.015, .015, 1.5, 6), wood, 0, 0, .25, pil); jv.rotation.x = Math.PI / 2;
+    add(new THREE.ConeGeometry(.03, .16, 8), metal, 0, 0, 1.06, pil).rotation.x = Math.PI / 2;
+    makeGladius(hand, metal, gold, wood).visible = false;   // drawn once the javelins are spent
+    root.userData.bladeLength = .64;
     const pg = grp(.36, .2, .28, spine); root.userData.parma = pg; // the IK grips this group
     add(new THREE.CylinderGeometry(.36, .36, .04, 28), shieldM, 0, 0, 0, pg).rotation.x = Math.PI / 2;
     add(new THREE.TorusGeometry(.36, .015, 6, 28), metal, 0, 0, .02, pg);
@@ -487,14 +494,8 @@ function makeSoldier(kind) {
   } else {
     // gladius continues the line of the forearm (−y), so the blade follows the swing arc
     // gladius hispaniensis: ~0.64 m blade, slight waist, long tapering point
-    const bs = new THREE.Shape(); bs.moveTo(-.026, 0); bs.lineTo(.026, 0); bs.lineTo(.022, .3); bs.lineTo(.026, .44); bs.lineTo(0, .64); bs.lineTo(-.026, .44); bs.lineTo(-.022, .3); bs.closePath();
     root.userData.bladeLength = .64;
-    const bg = new THREE.ExtrudeGeometry(bs, { depth: .008, bevelEnabled: true, bevelThickness: .003, bevelSize: .004, bevelSegments: 2, curveSegments: 4 });
-    bg.translate(0, 0, -.004);
-    add(bg, metal, 0, -.06, 0, hand).rotation.x = Math.PI;
-    add(new THREE.BoxGeometry(.12, .035, .045), gold, 0, -.04, 0, hand);
-    add(new THREE.CylinderGeometry(.016, .016, .1, 10), wood, 0, .02, 0, hand);
-    add(new THREE.SphereGeometry(.03, 12, 8), gold, 0, .08, 0, hand);
+    makeGladius(hand, metal, gold, wood);
     const sc = grp(.3, .17, .32, spine);
     // oval, curved scutum (≈1.15 × 0.68 m) with a vertical wooden spina and an iron umbo
     const W = .68, HH = 1.15, R = .62, bend = x => -(R - Math.sqrt(R * R - x * x));
@@ -516,6 +517,19 @@ function makeSoldier(kind) {
   }
   return { root, legs, knees, arms, elbows, spine, head, mats, skin };
 }
+
+/** Gladius hispaniensis (~0.64 m blade, slight waist, long point) as a named group in the fist, continuing the forearm (−y). */
+function makeGladius(hand, metal, gold, wood) {
+  const g = new THREE.Group(); g.name = 'gladius'; hand.add(g);
+  const bs = new THREE.Shape(); bs.moveTo(-.026, 0); bs.lineTo(.026, 0); bs.lineTo(.022, .3); bs.lineTo(.026, .44); bs.lineTo(0, .64); bs.lineTo(-.026, .44); bs.lineTo(-.022, .3); bs.closePath();
+  const bg = new THREE.ExtrudeGeometry(bs, { depth: .008, bevelEnabled: true, bevelThickness: .003, bevelSize: .004, bevelSegments: 2, curveSegments: 4 });
+  bg.translate(0, 0, -.004);
+  const parts = [[bg, metal, -.06], [new THREE.BoxGeometry(.12, .035, .045), gold, -.04], [new THREE.CylinderGeometry(.016, .016, .1, 10), wood, .02], [new THREE.SphereGeometry(.03, 12, 8), gold, .08]];
+  for (const [geo, mat, y] of parts) { const m = new THREE.Mesh(geo, mat); m.position.y = y; m.castShadow = true; if (geo === bg) m.rotation.x = Math.PI; g.add(m); }
+  return g;
+}
+/** A velite who has thrown his last javelin draws the gladius. */
+function veliteDraws(e) { const r = e.m.root, pil = r.getObjectByName('pilum'), gl = r.getObjectByName('gladius'); if (pil) pil.visible = false; if (gl) gl.visible = true; e.state = 'chase'; e.act = 'approach'; }
 
 /* Rigged soldier: the Quaternius body and animation clips, wearing the kit built above on its bones. */
 const HAND_BASIS = new THREE.Matrix4().makeBasis(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, -1), new THREE.Vector3(-1, 0, 0));
@@ -777,8 +791,8 @@ function resetWorld() {
   for (const t of supplyTents) { t.burnt = false; t.t = 0; t.mat.color.setHex(0xc9b68c); t.light.intensity = 0; t.flag.visible = true; }
   setSeed(4242);
   endT = 0; endArgs = null;
-  Object.assign(P, { throwPending: 0, throwKind: null, f: C.createFighter({ passiveShield: true }), charging: false, chargeT: 0, acc: { x: 0, y: 0 }, intent: C.createIntent(), post: { x: 0, y: 0 }, prevL: false, swingDir: null, bashCd: 0, bashT: 0, cleanT: 0,
-    lastDefense: null, incomingDir: null, vel: { x: 0, z: 0 }, push: null, kick: 0, swingHits: new Set(), vy: 0, hp: 100, ground: true, crouch: 0, w: 0, dardos: 5, pedras: 12, atk: 0, cd: 0,
+  Object.assign(P, { throwPending: 0, throwKind: null, aimT: null, throwPow: null, f: C.createFighter({ passiveShield: true }), charging: false, chargeT: 0, acc: { x: 0, y: 0 }, intent: C.createIntent(), post: { x: 0, y: 0 }, prevL: false, swingDir: null, bashCd: 0, bashT: 0, cleanT: 0,
+    lastDefense: null, incomingDir: null, vel: { x: 0, z: 0 }, push: null, kick: 0, swingHits: new Set(), vy: 0, hp: 100, ground: true, crouch: 0, w: 0, dardos: JAVELINS.lusitano, pedras: 12, atk: 0, cd: 0,
     kills: 0, shots: 0, hits: 0, heads: 0, time: 0, swing: 0, throwT: 0, hurtT: 0 });
   mission = 0; tentsBurnt = 0; alarm = false;
   P.unarmed = chapter === 'prologo';
@@ -810,7 +824,7 @@ function spawn(kind, x, z, group) {
   const stats = { legio: { hp: 100, sp: 3.9, dmg: 13 }, velite: { hp: 65, sp: 3.7, dmg: 15 }, centurion: { hp: 460, sp: 4.4, dmg: 24 } }[kind];
   const e = { kind, m, pos: new THREE.Vector3(x, heightAt(x, z), z), hp: stats.hp, maxhp: stats.hp, sp: stats.sp, dmg: stats.dmg,
     state: group === 'patrol' ? 'march' : group === 'boss' ? 'chase' : 'guard', group, yaw: Math.PI, home: new THREE.Vector3(x, 0, z),
-    dir: -1, aware: 0, atkT: 0, f: C.createFighter({ shieldHP: kind === 'velite' ? 0 : 220, stamina: kind === 'centurion' ? 140 : 100, tele: kind === 'velite' ? 1.4 : kind === 'centurion' ? 1.5 : 1.7 }), aiT: rr(0, .3), act: 'approach', vel: { x: 0, z: 0 }, dodgeRoll: 1, mv: { x: 0, z: 0 }, releaseAt: 0, feintAt: 0, blockLeft: 0, slowT: 0, cd: rr(.5, 1.5), ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, wander: null, wT: 0, strafe: rand() < .5 ? 1 : -1, moving: 0, barkT: 0 };
+    dir: -1, aware: 0, atkT: 0, f: C.createFighter({ shieldHP: kind === 'velite' ? 0 : 220, stamina: kind === 'centurion' ? 140 : 100, tele: kind === 'velite' ? 1.4 : kind === 'centurion' ? 1.5 : 1.7 }), aiT: rr(0, .3), act: 'approach', vel: { x: 0, z: 0 }, dodgeRoll: 1, mv: { x: 0, z: 0 }, releaseAt: 0, feintAt: 0, blockLeft: 0, slowT: 0, cd: rr(.5, 1.5), ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, wander: null, wT: 0, strafe: rand() < .5 ? 1 : -1, moving: 0, barkT: 0, jav: kind === 'velite' ? JAVELINS.velite : 0 };
   if (group === 'patrol') { e.yaw = 0; e.dir = 1; } // marching south (+z)
   enemies.push(e); return e;
 }
@@ -1071,7 +1085,7 @@ function spawnAlly(i) {
   const m = soldier('lusitano', allyLook(i)); scene.add(m.root);
   const s = followSlot(i, P.pos, flatFwd());
   const a = { kind: 'lusitano', ally: true, m, pos: new THREE.Vector3(s.x, heightAt(s.x, s.z), s.z), yaw: P.yaw + Math.PI, hp: 110, f: C.createFighter(), state: 'follow', i,
-    vel: { x: 0, z: 0 }, mv: { x: 0, z: 0 }, aiT: rr(0, .3), blockLeft: 0, releaseAt: 0, stride: 0, ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, hits: 0, crouch: false, swingHits: new Set() };
+    vel: { x: 0, z: 0 }, mv: { x: 0, z: 0 }, aiT: rr(0, .3), blockLeft: 0, releaseAt: 0, stride: 0, ph: rr(0, TAU), flash: 0, dead: false, deadT: 0, hits: 0, crouch: false, swingHits: new Set(), jav: JAVELINS.lusitano, throwT: 0, throwCd: 0, throwPending: 0 };
   m.root.position.copy(a.pos); m.root.rotation.y = a.yaw;
   allies.push(a); return a;
 }
@@ -1146,7 +1160,6 @@ window.addEventListener('keydown', e => {
   if (state !== 'play') return;
   if (e.code === 'Digit1') selectW(0); if (e.code === 'Digit2') selectW(1); if (e.code === 'Digit3') selectW(2);
   if (e.code === 'KeyE') use();
-  if (e.code === 'KeyF') bash();
   if (e.code === 'KeyV') view = view === 'third' ? 'first' : 'third';
   if (e.code === 'KeyR') cleanShield();
   if (e.code === 'KeyZ') giveOrder('follow'); if (e.code === 'KeyX') giveOrder('hold'); if (e.code === 'KeyT') giveOrder('charge');
@@ -1176,7 +1189,7 @@ document.addEventListener('pointerlockchange', () => {
   else if (state === 'play') pauseGame();
 });
 document.addEventListener('pointerlockerror', lockRefused);
-function selectW(w) { if (w === P.w) return; P.w = w; P.swing = 0; P.charging = false; C.feint(P.f); C.endBlock(P.f); P.throwT = 0; P.cd = Math.max(P.cd, .3); updateHUDWeapon(); }
+function selectW(w) { if (w === P.w) return; P.w = w; P.aimT = null; P.swing = 0; P.charging = false; C.feint(P.f); C.endBlock(P.f); P.throwT = 0; P.cd = Math.max(P.cd, .3); updateHUDWeapon(); }
 
 /* =========================================================
    Player actions
@@ -1186,17 +1199,22 @@ function fwd3() { const cp = Math.cos(P.pitch); return tmpV.set(-Math.sin(P.yaw)
 function eyePos() { return V(P.pos.x, P.pos.y + 1.68 - P.crouch * .6, P.pos.z); }
 function makeNoise(r) { for (const e of enemies) if (!e.dead && e.state !== 'chase' && e.state !== 'skirmish' && e.pos.distanceTo(P.pos) < r) alert(e); }
 
-function attack() {
-  if (P.cd > 0 || P.block) return;
-  if (P.w === 0) return;
-  if (P.throwPending) return;
-  if (P.w === 1) {
-    if (P.dardos <= 0) { showPrompt('Sem dardos — apanha-os do chão', 1.2); return; }
-    P.dardos--; P.cd = .85; P.throwT = 1; P.throwKind = 'javelin'; P.throwPending = .32; SFX.throwJ();
-  } else {
-    if (P.pedras <= 0) { showPrompt('Sem pedras para a funda', 1.2); return; }
-    P.pedras--; P.cd = .75; P.throwT = 1; P.throwKind = 'sling'; P.throwPending = .5; SFX.sling();
-  }
+/** Left button down with the javelins or the sling: draw back (javelin) or start whirling (sling) and keep charging. */
+function beginThrow() {
+  if (P.cd > 0 || P.throwPending || P.aimT != null) return;
+  if (P.w === 1 && P.dardos <= 0) { showPrompt('Sem dardos — apanha-os do chão', 1.2); return; }
+  if (P.w === 2 && P.pedras <= 0) { showPrompt('Sem pedras para a funda', 1.2); return; }
+  P.aimT = 0; P.throwKind = P.w === 1 ? 'javelin' : 'sling';
+}
+/** Holding: arm drawn back / sling whirling. Released: the longer the hold, the faster and harder the throw (capped). */
+function holdThrow(dt, held) {
+  if (P.aimT == null) return;
+  if (P.w === 0 || (P.w === 1 ? 'javelin' : 'sling') !== P.throwKind) { P.aimT = null; P.throwT = 0; return; }
+  P.aimT += dt;
+  if (held) { P.throwT = P.throwKind === 'javelin' ? 1 - .42 * Math.min(1, P.aimT / .25) : 1 - (P.aimT * .9) % .7; return; }
+  P.throwPow = throwPower(P.aimT); P.aimT = null;
+  if (P.throwKind === 'javelin') { P.dardos--; P.cd = .6; P.throwT = 1 - .45; P.throwPending = .05; SFX.throwJ(); }
+  else { P.pedras--; P.cd = .55; P.throwT = 1 - .78; P.throwPending = .04; SFX.sling(); }
   updateHUDWeapon();
 }
 /** World position of Viriato's throwing hand (third person) or a point beside the eye (first person). */
@@ -1211,8 +1229,9 @@ function releaseThrow() {
   const camFwd = V(0, 0, -1).applyQuaternion(camera.quaternion);
   const aim = camera.position.clone().addScaledVector(camFwd, 70);
   const dir = aim.sub(from).normalize();
-  const vel = kind === 'javelin' ? dir.multiplyScalar(36).add(V(0, 1.4, 0)) : dir.multiplyScalar(50).add(V(0, .8, 0));
-  spawnProj(kind === 'javelin' ? 'javelin' : 'stone', from, vel, 'player');
+  const pw = P.throwPow || throwPower(1);
+  const vel = kind === 'javelin' ? dir.multiplyScalar(pw.speed).add(V(0, 1.4, 0)) : dir.multiplyScalar(pw.speed * 1.35).add(V(0, .8, 0));
+  spawnProj(kind === 'javelin' ? 'javelin' : 'stone', from, vel, 'player', pw.dmg);
   P.shots++; makeNoise(kind === 'javelin' ? 16 : 11);
 }
 const deg = r => r * 180 / Math.PI;
@@ -1264,20 +1283,6 @@ function playerSwing(ev) {
 function knock(e, d, strength) { if (!e.vel) e.vel = { x: 0, z: 0 }; e.vel.x += d.x * strength * 2; e.vel.z += d.z * strength * 2; }
 let hitStopT = 0;
 function hitStop(t) { hitStopT = Math.max(hitStopT, t); }
-/** F: shield bash interrupts an enemy windup and knocks them back. */
-function bash() {
-  if (state !== 'play' || P.unarmed || P.w === 2 || P.f.shieldHP <= 0 || P.f.stamina < 20 || P.f.phase !== 'idle' || P.bashCd > 0) return;
-  P.f.stamina -= 20; P.bashCd = .9; P.bashT = .25; SFX.thud();
-  const f = flatFwd();
-  for (const e of enemies) {
-    if (e.dead) continue;
-    const d = V(e.pos.x - P.pos.x, 0, e.pos.z - P.pos.z), dist = d.length();
-    if (dist > 2.4) continue; d.normalize(); if (d.dot(f) < .5) continue;
-    if (e.f.phase === 'windup') { C.feint(e.f); feed('Empurrão! Golpe interrompido'); }
-    C.endBlock(e.f); C.stagger(e.f, .6);
-    e.pos.addScaledVector(d, .8); alert(e);
-  }
-}
 /** R: pull stuck javelins out of the caetra. */
 function cleanShield() { if (state === 'play' && P.f.stuckJavelins > 0 && P.cleanT <= 0) { P.cleanT = 1.2; showPrompt('A arrancar os dardos do escudo…', 1.2); } }
 /** A Roman blow lands (enemy fighter 'strike' event). */
@@ -1358,9 +1363,17 @@ function updateAllies(dt) {
       a.state = 'chase'; a.crouch = false;
       const dx = foe.pos.x - a.pos.x, dz = foe.pos.z - a.pos.z, d = Math.hypot(dx, dz) || 1;
       faceTo(a, foe.pos.x, foe.pos.z, dt, a.f.phase === 'windup' ? 3.5 : 7);
-      a.aiT -= dt; a.blockLeft -= dt;
+      a.aiT -= dt; a.blockLeft -= dt; a.throwCd -= dt;
+      // javelins first: at range, while he has any (the falcata comes out once they are gone or the Roman is close)
+      if (a.throwPending > 0) { if ((a.throwPending -= dt) <= 0) allyRelease(a, foe); }
+      else if (allyThrows({ dist: d, jav: a.jav, phase: a.f.phase, cd: a.throwCd, sees: !a.f.blocking && losTerrain(a.pos.x, a.pos.y + 1.7, a.pos.z, foe.pos.x, foe.pos.y + 1.4, foe.pos.z) })) {
+        a.jav--; a.throwCd = rr(1.6, 2.6); a.throwT = 1; a.throwKind = 'javelin'; a.throwPending = .32;
+      }
+      a.throwT = Math.max(0, a.throwT - dt / .6);
+      { const dj = a.m.root.getObjectByName('dardo'), fa = a.m.root.getObjectByName('falcata'); if (dj) dj.visible = a.throwPending > 0; if (fa) fa.visible = !(a.throwPending > 0); }
+      const throwing = a.throwPending > 0 || a.throwT > .45;
       if (a.f.phase === 'idle') { const wb = a.blockLeft > 0 && a.f.shieldHP > 0; if (wb && !a.f.blocking) C.beginBlock(a.f, 'shield'); else if (!wb && a.f.blocking) C.endBlock(a.f); }
-      if (a.aiT <= 0 && a.f.phase === 'idle') {
+      if (a.aiT <= 0 && a.f.phase === 'idle' && !throwing) {
         a.aiT = .3;
         const act = allyAct({ dist: d, foePhase: foe.f.phase, rng: rand });
         if (act === 'block') a.blockLeft = rr(.5, .8);
@@ -1368,7 +1381,7 @@ function updateAllies(dt) {
       }
       if (a.f.phase === 'windup' && !a.f.released && a.f.t >= a.releaseAt) C.releaseAttack(a.f);
       const sp = d > REACH ? Math.min(4.6, Math.max(.8, (d - REACH) * 3)) * (a.f.blocking ? .6 : 1) : d < 1.1 ? -1.4 : a.f.phase === 'windup' ? .9 : 0;
-      want = { x: dx / d * sp, z: dz / d * sp };
+      want = throwing ? { x: 0, z: 0 } : { x: dx / d * sp, z: dz / d * sp };
       for (const ev of C.tickFighter(a.f, dt)) if (ev.type === 'swing') allySwing(a, ev);
       sampleTrail(a, a.pos, a.yaw, a.f);
     } else {
@@ -1397,6 +1410,13 @@ function updateAllies(dt) {
     const bob = setPose(a, dt);
     r.position.set(a.pos.x, a.pos.y + bob, a.pos.z); r.rotation.y = a.yaw;
   }
+}
+/** A companion's javelin leaves his hand, aimed where the Roman will be. */
+function allyRelease(a, foe) {
+  if (!foe || foe.dead) return;
+  const from = V(a.pos.x, a.pos.y + 1.75, a.pos.z), to = V(foe.pos.x + foe.mv.x * .45, foe.pos.y + 1.2, foe.pos.z + foe.mv.z * .45);
+  const hd = Math.hypot(to.x - from.x, to.z - from.z), t = hd / 26;
+  spawnProj('javelin', from, V((to.x - from.x) / t, (to.y - from.y) / t + .5 * 11 * t, (to.z - from.z) / t), 'ally', .75); SFX.jav(spatial(from));
 }
 function use() {
   for (const t of supplyTents) {
@@ -1443,7 +1463,8 @@ function updateProjectiles(dt) {
     if (p.type === 'javelin') p.mesh.lookAt(p.pos.x + p.vel.x, p.pos.y + p.vel.y, p.pos.z + p.vel.z);
     else p.mesh.rotation.x += dt * 20;
     let done = false;
-    if (p.owner === 'player') {
+    if (p.owner === 'player' || p.owner === 'ally') {
+      const byAlly = p.owner === 'ally';
       for (const e of enemies) {
         if (e.dead) continue;
         const ex = e.pos.x, ey = e.pos.y, ez = e.pos.z;
@@ -1458,13 +1479,13 @@ function updateProjectiles(dt) {
         const fromAngle = deg(Math.acos(clamp(ef.dot(toProj), -1, 1)));
         if (e.f.blocking === 'shield' && fromAngle <= C.SHIELD_ARC) {
           SFX.clank(spatial(p.pos)); burst('spark', p.pos, 8); feed('Bloqueado pelo escudo');
-          if (p.type === 'javelin') addPickup('dardo1', ex + toProj.x * 1.2, ez + toProj.z * 1.2);
+          if (p.type === 'javelin' && !byAlly) addPickup('dardo1', ex + toProj.x * 1.2, ez + toProj.z * 1.2);
           done = true; break;
         }
         const base = p.type === 'javelin' ? 82 : 32;
         const unaware = e.state === 'march' || e.state === 'guard';
-        damageEnemy(e, base * (isHead ? (p.type === 'stone' ? 2.6 : 2) : 1) * (unaware ? 1.4 : 1), isHead, p.pos.clone());
-        P.hits++;
+        damageEnemy(e, base * (p.dmg || 1) * (isHead ? (p.type === 'stone' ? 2.6 : 2) : 1) * (unaware ? 1.4 : 1), isHead, p.pos.clone(), null, byAlly);
+        if (!byAlly) P.hits++;
         done = true; break;
       }
     } else {
@@ -1548,7 +1569,7 @@ function spawnEnemyJavelin(from, target, dmg = 15) {
 function alert(e) {
   if (e.dead) return;
   if (e.state === 'chase' || e.state === 'skirmish') return;
-  e.state = e.kind === 'velite' ? 'skirmish' : 'chase'; e.aware = 1;
+  e.state = e.kind === 'velite' ? veliteState(e.jav) : 'chase'; e.aware = 1;
   if (e.barkT <= 0) { SFX.grunt(spatial(e.pos) * .8); e.barkT = 3; }
   if (e.group === 'camp' && !alarm && mission >= 0) { e.alarmT = 2.5; }
 }
@@ -1710,7 +1731,7 @@ const engaged = new Set();
 function updateEngaged() {
   engaged.clear();
   for (const e of enemies) e.T = !e.dead && e.state === 'chase' ? pickTarget(e.pos, P, allies) : null;
-  const melee = enemies.filter(e => !e.dead && e.state === 'chase' && e.kind !== 'velite' && !e.T.ally);
+  const melee = enemies.filter(e => !e.dead && e.state === 'chase' && !e.T.ally);
   melee.sort((a, b) => a.pos.distanceToSquared(P.pos) - b.pos.distanceToSquared(P.pos));
   for (const e of melee.slice(0, diff === 2 ? 3 : 2)) engaged.add(e);
 }
@@ -1799,7 +1820,7 @@ function updateEnemies(dt) {
       }
       if (e.aiT <= 0 && state === 'play' && e.f.phase === 'idle') {
         e.aiT = e.kind === 'centurion' ? .18 : .26; e.dodgeRoll = rand(); if (rand() < .12) e.strafe *= -1;
-        const attackersNow = enemies.filter(o => o !== e && !o.dead && o.kind !== 'velite' && (o.T && o.T.ally) === (e.T && e.T.ally) && o.state === 'chase' && (o.f.phase === 'windup' || o.f.phase === 'strike' || o.f.phase === 'recovery' || /^attack/.test(o.act || ''))).length;   // anyone already swinging, or about to, at the same target
+        const attackersNow = enemies.filter(o => o !== e && !o.dead && (o.T && o.T.ally) === (e.T && e.T.ally) && o.state === 'chase' && (o.f.phase === 'windup' || o.f.phase === 'strike' || o.f.phase === 'recovery' || /^attack/.test(o.act || ''))).length;   // anyone already swinging, or about to, at the same target
         e.act = decide({ kind: e.kind, fighter: e.f }, { dist: td, playerFighter: tf, difficulty: diff, attackersNow, rng: rand, engaged: engaged.has(e) || !!T.ally });
         if (e.act.startsWith('attack:')) { const dir = e.act.slice(7); C.endBlock(e.f); if (C.beginAttack(e.f, dir)) { e.releaseAt = C.WINDUP[dir] + rr(0, .25) * (e.kind === 'centurion' ? .4 : 1); e.feintAt = 0; } }
         else if (e.act === 'block') e.blockLeft = rr(.5, .9);
@@ -1835,8 +1856,9 @@ function updateEnemies(dt) {
           const target = V(P.pos.x + rr(-1, 1) * (1.4 - dm.detect * .4) * pd / 20, P.pos.y + 1.1, P.pos.z + rr(-1, 1) * (1.4 - dm.detect * .4) * pd / 20);
           const hd = Math.hypot(target.x - from.x, target.z - from.z), t = hd / 24;
           const vel = V((target.x - from.x) / t, (target.y - from.y) / t + .5 * 11 * t, (target.z - from.z) / t);
-          spawnProj('javelin', from, vel, 'enemy', e.dmg); SFX.jav(spatial(from));
+          spawnProj('javelin', from, vel, 'enemy', e.dmg); SFX.jav(spatial(from)); e.jav--;
         }
+        if (e.atkT <= 0 && e.jav <= 0) veliteDraws(e);
       } else if (sees && !e.flee && pd < 34 && e.cd <= 0 && state === 'play') { e.atkT = .55; e.cd = rr(2.2, 3.6); }
     }
     // separation
@@ -1913,9 +1935,10 @@ function updatePlayer(dt) {
   else if (mouseL && !P.prevL && P.unarmed) { showPrompt('Estás desarmado. Foge!', 1); }
   else if (mouseL && !P.prevL) {
     if (P.w === 0) { P.charging = true; P.chargeT = 0; P.acc.x = P.intent.x; P.acc.y = P.intent.y; }
-    else attack();
+    else beginThrow();
   }
   const released = !mouseL && P.prevL; P.prevL = mouseL;
+  holdThrow(dt, mouseL);
   if (P.charging) {
     P.chargeT += dt;
     if (P.f.phase !== 'windup' && (P.chargeT >= .08 || released)) {
@@ -1945,7 +1968,7 @@ function updatePlayer(dt) {
   for (const ev of C.tickFighter(P.f, dt)) if (ev.type === 'swing') playerSwing(ev);
   sampleTrail('player', P.pos, playerFacing(), P.f);
   if (P.throwPending) { P.throwPending -= dt; if (P.throwPending <= 0) { P.throwPending = 0; releaseThrow(); } }
-  P.swing = Math.max(0, P.swing - dt / .45); P.throwT = Math.max(0, P.throwT - dt / .6); P.hurtT = Math.max(0, P.hurtT - dt);
+  P.swing = Math.max(0, P.swing - dt / .45); if (P.aimT == null) P.throwT = Math.max(0, P.throwT - dt / .6); P.hurtT = Math.max(0, P.hurtT - dt);
 
   // pickups
   for (let i = pickups.length - 1; i >= 0; i--) {
@@ -1983,7 +2006,7 @@ function updateCamera(dt) {
   const bob3 = setPose(avatar, dt);
   AV.root.position.set(P.pos.x, P.pos.y + bob3 - (AV.rig ? 0 : P.crouch * .3), P.pos.z); AV.root.rotation.y = avatar.yaw;
   AV.root.visible = view === 'third'; AV_FAL.visible = P.w === 0 && !P.unarmed; if (AV.root.userData.parma) AV.root.userData.parma.visible = !P.unarmed;
-  const thrown = !P.throwPending && P.throwT > 0; // between release and drawing the next one
+  const thrown = !P.throwPending && P.aimT == null && P.throwT > 0; // between release and drawing the next one
   AV_JAV.visible = P.w === 1 && P.dardos + (P.throwPending ? 1 : 0) > 0 && !thrown;
   AV_STONE.visible = P.w === 2 && P.pedras + (P.throwPending ? 1 : 0) > 0 && !thrown;
   if (view === 'third') {
@@ -2096,6 +2119,10 @@ function updateHUDWeapon() {
   $('cross').classList.toggle('melee', P.w === 0);
 }
 function updateHUD(dt) {
+  { // charge meter under the crosshair: how much strength the held button has stored
+    const f = P.f, k = P.aimT != null ? throwPower(P.aimT).k : f.phase === 'windup' && !f.released && P.w === 0 ? Math.min(1, f.t / C.FULL_CHARGE) : -1, el = $('charge');
+    if (el) { el.style.opacity = k >= 0 ? 1 : 0; if (k >= 0) { el.firstChild.style.width = (k * 100).toFixed(0) + '%'; el.className = k >= 1 ? 'full' : ''; } }
+  }
   $('hpb').firstElementChild.style.width = P.hp + '%';
   $('stb').firstElementChild.style.width = P.st + '%';
   $('shb').firstElementChild.style.width = Math.max(0, P.f.shieldHP) + '%';
@@ -2216,7 +2243,7 @@ function endIntro() {
 /** Drop every held input and combat stance (used when the game loses focus). */
 function releaseAll() {
   for (const k in keys) keys[k] = false; mouseL = mouseR = false;
-  P.prevL = false; P.charging = false; C.feint(P.f); C.endBlock(P.f);
+  P.prevL = false; P.charging = false; P.aimT = null; C.feint(P.f); C.endBlock(P.f);
 }
 function pauseGame() { releaseAll(); state = 'pause'; $('pauseobj').textContent = $('objt').textContent; $('sens2').value = $('sens').value; $('pause').classList.remove('hidden'); }
 // Resume only once the browser has actually granted pointer lock (Chrome refuses it for ~1 s after Esc).

@@ -7,7 +7,7 @@ export const STRIKE_TIME = { up: .3, left: .26, right: .26, thrust: .22 }; // bl
 export const RECOVERY = { up: .45, left: .32, right: .32, thrust: .38 }; // lock-out after the arc (s)
 export const FLINCH = .3;            // hit while attacking → blow lost, short stagger
 export const DMG = { up: 1.3, left: 1, right: 1, thrust: .8 };         // damage multiplier per direction
-export const FULL_CHARGE = .8;        // s of holding for full power
+export const FULL_CHARGE = 1.2;       // s of holding for full power (a tap = .6, full = 1.6)
 export const PARRY_WINDOW = .15;      // sword block started this recently → perfect parry
 export const PARRY_COOLDOWN = .45;    // a guard re-raised sooner than this after the last one gets no parry (anti-mashing)
 export const SHIELD_ARC = 75;         // degrees each side covered by the caetra / scutum
@@ -34,7 +34,7 @@ export function createFighter(opts = {}) {
     blocking: null, blockT: 0, sinceBlock: 99, parryOk: true, ...opts };
 }
 
-const chargePower = t => .5 + .5 * Math.min(1, t / FULL_CHARGE);
+export const chargePower = t => .6 + Math.min(1, t / FULL_CHARGE);
 
 export function beginAttack(f, dir) {
   if (f.phase !== 'idle' || f.blocking || f.stamina < MIN_ATTACK_STAMINA) return false;

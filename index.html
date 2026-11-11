@@ -16,6 +16,9 @@
   #obj .m{font-family:'Cinzel',serif;font-size:14px;letter-spacing:.2em;color:var(--gold)}
   #obj .t{font-size:20px;line-height:1.25;margin-top:2px}
   #compass{position:absolute;top:14px;left:50%;transform:translateX(-50%);width:420px;height:34px}
+  #charge{position:absolute;left:50%;top:calc(50% + 22px);width:64px;height:5px;transform:translateX(-50%);background:rgba(0,0,0,.45);border-radius:3px;overflow:hidden;opacity:0;transition:opacity .15s}
+  #charge i{display:block;height:100%;width:0;background:#e8c87a}
+  #charge.full i{background:#f06a3a}
   #cross{position:absolute;left:50%;top:50%;width:22px;height:22px;transform:translate(-50%,-50%)}
   #cross::before,#cross::after{content:"";position:absolute;background:rgba(255,245,225,.85);box-shadow:0 0 2px #000}
   #cross::before{left:10px;top:3px;width:2px;height:16px}
@@ -87,6 +90,7 @@
   <canvas id="compass" width="420" height="34"></canvas>
   <div id="eye"></div>
   <div id="cross"></div>
+  <div id="charge"><i></i></div>
   <div id="hitm"></div>
   <div id="dmg"></div>
   <div id="vign"></div>
@@ -128,9 +132,9 @@
     <div class="row"><label class="lbl" for="sens">RATO</label><input id="sens" type="range" min="1" max="10" value="5"></div>
     <div class="keys">
       <b>W A S D</b><span>mover</span><b>RATO</b><span>olhar</span>
-      <b>CLIQUE</b><span>atacar (segura para carregar)</span><b>CLIQUE DIR.</b><span>escudo</span>
-      <b>CLIQUE</b><span>golpe numa direção ao acaso (segura para carregar)</span><b>Q</b><span>aparar com a falcata</span><b>Z</b><span>companheiros: sigam-me</span><b>X</b><span>companheiros: bandeira (aponta e clica)</span><b>T</b><span>companheiros: ao ataque</span>
-      <b>F</b><span>empurrão com escudo</span><b>R</b><span>arrancar dardos do escudo</span>
+      <b>CLIQUE</b><span>atacar ou lançar — segura para mais força</span><b>CLIQUE DIR.</b><span>escudo</span>
+      <b>Q</b><span>aparar com a falcata</span><b>Z</b><span>companheiros: sigam-me</span><b>X</b><span>companheiros: bandeira (aponta e clica)</span><b>T</b><span>companheiros: ao ataque</span>
+      <b>R</b><span>arrancar dardos do escudo</span><span></span><span></span>
       <b>1 2 3 / RODA</b><span>armas</span><b>SHIFT</b><span>correr</span>
       <b>ESPAÇO</b><span>saltar</span><b>C</b><span>agachar</span>
       <b>E</b><span>usar</span><b>ESC</b><span>pausa</span>
