@@ -19,11 +19,11 @@ for tri in I:
     c = P[tri].mean(0); x, y = abs(c[0]), c[1]
     k = None
     if x < .26 and .98 <= y <= 1.58: k = 'upper'          # chest, back, and the shoulder tops round the neck opening
-    elif x < .26 and .6 <= y < .98: k = 'lower'           # belly, hips, skirt to mid-thigh
+    elif x < .26 and .86 <= y < .98: k = 'lower'          # belly and loincloth only: every kind wears a skirt over bare thighs
     elif .2 <= x < .4 and y > 1.28: k = 'sleeve'          # short sleeves
     elif y < .095 and x < .3: k = 'shoe'                  # closed leather shoe
     elif (.095 <= y < .125 or .19 <= y < .215) and x < .3: k = 'strap'  # ankle cuff and a thong tied above it
-    trim = (k == 'lower' and y < .7) or (k == 'sleeve' and x > .34) or (k == 'upper' and y > 1.5)   # hem, cuffs, neckline
+    trim = (k == 'sleeve' and x > .34) or (k == 'upper' and y > 1.5)   # hem, cuffs, neckline
     if not k: continue
     uv = UV[tri]
     if np.ptp(uv[:, 0]) > .3 or np.ptp(uv[:, 1]) > .3: continue  # seam-spanning triangle

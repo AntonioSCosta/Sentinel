@@ -220,15 +220,23 @@ function mesh(geo, mat, x, y, z, parent) { const m = new THREE.Mesh(geo, mat); m
     mesh(new THREE.ConeGeometry(3.1, 2.6, 14), thatch, x, y + 3.4, z);
     addCol(x, z, 2.6);
   }
-  // low ring wall
-  const wall = [];
-  for (let a = 0; a < TAU; a += .11) {
-    if (Math.abs(wrapA(a - Math.PI * 1.25)) < .25) continue; // gate toward the road (west-north-west)
-    const x = CASTRO.x + Math.cos(a) * 15, z = CASTRO.z + Math.sin(a) * 15;
-    wall.push({ x, y: heightAt(x, z) + .5, z, sx: 1.8, sy: 1.1, sz: 1, ry: -a });
-    addCol(x, z, .9);
+  // one continuous dry-stone ring wall following the ground, open at the gate toward the road
+  {
+    const R = 15, TH = 1.1, HT = 1.6, GATE = Math.PI * 1.25, GAP = .22, N = 160;
+    const a0 = GATE + GAP, a1 = GATE + TAU - GAP, P3 = [], UV = [], IDX = [];
+    const quad = (p, q, r, t, u0, u1, v0, v1) => { const i = P3.length / 3; P3.push(...p, ...q, ...r, ...t); UV.push(u0, v0, u1, v0, u1, v1, u0, v1); IDX.push(i, i + 1, i + 2, i, i + 2, i + 3); };
+    const pt = (a, r, top) => { const x = CASTRO.x + Math.cos(a) * r, z = CASTRO.z + Math.sin(a) * r, y = heightAt(x, z); return [x, top ? y + HT - (r > R ? .08 : 0) : y - .4, z]; };
+    for (let i = 0; i < N; i++) {
+      const aa = a0 + (a1 - a0) * i / N, ab = a0 + (a1 - a0) * (i + 1) / N, u0 = aa * R / 2.2, u1 = ab * R / 2.2, ro = R + TH / 2, ri = R - TH / 2, v = HT / 2.2;
+      quad(pt(aa, ro, 0), pt(ab, ro, 0), pt(ab, ro, 1), pt(aa, ro, 1), u0, u1, 0, v);   // outer face
+      quad(pt(ab, ri, 0), pt(aa, ri, 0), pt(aa, ri, 1), pt(ab, ri, 1), u1, u0, 0, v);   // inner face
+      quad(pt(aa, ro, 1), pt(ab, ro, 1), pt(ab, ri, 1), pt(aa, ri, 1), u0, u1, 0, TH / 2.2); // walk on top
+      if (i % 3 === 0) addCol(CASTRO.x + Math.cos(aa) * R, CASTRO.z + Math.sin(aa) * R, .9);
+    }
+    for (const [aE, s] of [[a0, 1], [a1, -1]]) { const o0 = pt(aE, R + TH / 2, 0), i0 = pt(aE, R - TH / 2, 0), i1 = pt(aE, R - TH / 2, 1), o1 = pt(aE, R + TH / 2, 1); if (s > 0) quad(i0, o0, o1, i1, 0, TH / 2.2, 0, HT / 2.2); else quad(o0, i0, i1, o1, 0, TH / 2.2, 0, HT / 2.2); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P3, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2)); g.setIndex(IDX); g.computeVertexNormals();
+    const w = new THREE.Mesh(g, stone); w.castShadow = w.receiveShadow = true; w.name = 'castro-wall'; scene.add(w);
   }
-  instanced(new THREE.BoxGeometry(1, 1, 1), stone, wall);
 }
 
 // Roman camp
@@ -1806,7 +1814,7 @@ function endScreen(kicker, title, text) {
   $('hud').classList.add('hidden'); $('end').classList.remove('hidden');
 }
 let endT = 0, endArgs = null;
-function die() { state = 'dead'; SFX.die(); endT = 1.4; endArgs = ['CAÍDO EM COMBATE', 'Viriato tombou', 'Roma não vencerá à primeira. Volta aos montes e tenta de novo.']; }
+function die() { avatar.deadT = 0; avatar.f = P.f; C.endBlock(P.f); state = 'dead'; SFX.die(); endT = 2.8; endArgs = ['CAÍDO EM COMBATE', 'Viriato tombou', 'Roma não vencerá à primeira. Volta aos montes e tenta de novo.']; }
 function win() { state = 'won'; SFX.horn(); endT = 1.8; endArgs = ['VITÓRIA', 'Os montes são lusitanos', 'A patrulha caiu, os mantimentos arderam e o centurião jaz no seu próprio acampamento. Esta noite, nos castros, contar-se-á o teu nome.']; }
 
 $('start').addEventListener('click', () => startGame(!navigator.webdriver));
@@ -1829,7 +1837,14 @@ function step(dt) {
   else if (state === 'dead' || state === 'won') {
     if (endT > 0) { endT -= dt; if (endT <= 0 && endArgs) { endScreen(...endArgs); endArgs = null; } }
     updateEnemies(dt); updateAllies(dt); updateProjectiles(dt);
-    if (state === 'dead') { P.crouch = Math.min(1.9, P.crouch + dt * 2); camera.position.y = Math.max(P.pos.y + .3, camera.position.y - dt * 2); camera.rotation.z = Math.min(.6, camera.rotation.z + dt); }
+    if (state === 'dead') {
+      avatar.dead = true; avatar.deadT = (avatar.deadT || 0) + dt; avatar.mv.x = avatar.mv.z = 0;
+      setPose(avatar, dt); AV.root.position.set(P.pos.x, P.pos.y, P.pos.z); AV.root.rotation.y = avatar.yaw; AV.root.visible = true; VM.visible = false;
+      // the camera rises and draws back to look down on the fallen man, whatever the view
+      const k = smooth(0, 2.2, avatar.deadT), back = V(Math.sin(P.yaw), 0, Math.cos(P.yaw));
+      const cp = V(P.pos.x, P.pos.y, P.pos.z).addScaledVector(back, 2.4 + k * 1.6).add(V(0, 1.6 + k * 2.4, 0));
+      camera.position.lerp(cp, Math.min(1, dt * 3)); camera.lookAt(P.pos.x, P.pos.y + .3, P.pos.z);
+    }
   } else if (state === 'menu') {
     menuT += dt * .04;
     const cx = CAMP.x + 20, cz = 40;
