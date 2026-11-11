@@ -55,12 +55,14 @@ export function addCol(x, z, r, h = 99) {
     for (let j = Math.floor((z - r) / GRID); j <= Math.floor((z + r) / GRID); j++) {
       const k = gkey(i, j); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(c);
     }
+  return c;   // set c.off = true to switch it off (scenery that belongs to one mission only)
 }
 export function resolve(p, r) {
   const i0 = Math.floor(p.x / GRID), j0 = Math.floor(p.z / GRID);
   for (let i = i0 - 1; i <= i0 + 1; i++) for (let j = j0 - 1; j <= j0 + 1; j++) {
     const l = grid.get(gkey(i, j)); if (!l) continue;
     for (const c of l) {
+      if (c.off) continue;
       const dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz), m = r + c.r;
       if (d < m && d > 1e-4) { p.x = c.x + dx / d * m; p.z = c.z + dz / d * m; }
     }
@@ -80,6 +82,6 @@ export function clearColliders() { grid.clear(); }
 export function solidAt(x, z, above = 0) {
   const l = grid.get(gkey(Math.floor(x / GRID), Math.floor(z / GRID)));
   if (!l) return false;
-  for (const c of l) if (above < c.h && Math.hypot(x - c.x, z - c.z) < c.r) return true;
+  for (const c of l) if (!c.off && above < c.h && Math.hypot(x - c.x, z - c.z) < c.r) return true;
   return false;
 }

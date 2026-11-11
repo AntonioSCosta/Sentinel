@@ -13,6 +13,7 @@ import { resolveQuality } from './quality.js';
 import { makeRig, driveRig, weaveTexture, slimBody } from './rig.js';
 import { followSlot, pickFoe, pickTarget, allyAct, holdSlot, aimGround, allyLook } from './ally.js';
 import { JAVELINS, throwPower, allyThrows, veliteState } from './missiles.js';
+import { haltLayout, isFighter, companionsFrom, canLeave, alertRadius, REINFORCE_AFTER, RELIEF, CUT_TIME, FREE_TO_LEAVE } from './captives.js';
 
 /**
  * Builds the whole game. Rendering, DOM and window are injected so the game can run headless in tests.
@@ -161,11 +162,12 @@ function instanced(geo, mat, list, shadow = true, { chunk = true, name = '', dep
   return last;
 }
 const MEADOW = { x: 82, z: -122 }, ESCAPE = { x: 134, z: -156 };   // prologue: Galba's killing field and the forest it flees to
-const AMBUSH = { x: roadX(34) + 17, z: 34 };                          // ambush: Viriato's hide in the scrub above the road
+const AMBUSH = { x: roadX(34) + 17, z: 34 };
+const HALT = { x: -110, z: -70 }, WOODS = { x: -62, z: -8 }, CSTART = { x: -63, z: -60 };   // 'Os Cativos': the Roman halt, the wood the freed run to, where Viriato starts                          // ambush: Viriato's hide in the scrub above the road
 setSeed(777);
 {
   const pines = [], oaks = [], rocks = [], grass = [], shrubs = [];
-  const blocked = (x, z, m) => Math.abs(x - roadX(z)) < 7 + m || inCamp(x, z, 12 + m) || Math.hypot(x - CASTRO.x, z - CASTRO.z) < 16 + m || Math.hypot(x - MEADOW.x, z - MEADOW.z) < 30 + m;
+  const blocked = (x, z, m) => Math.abs(x - roadX(z)) < 7 + m || inCamp(x, z, 12 + m) || Math.hypot(x - CASTRO.x, z - CASTRO.z) < 16 + m || Math.hypot(x - MEADOW.x, z - MEADOW.z) < 30 + m || Math.hypot(x - HALT.x, z - HALT.z) < 15 + m;
   const DENS = { low: .45, medium: .8, high: 1 }[quality] || .8, TREES = Math.round(4200 * DENS);
   for (let n = 0; n < 26000 && pines.length + oaks.length < TREES; n++) {
     const x = rr(-WORLD + 8, WORLD - 8), z = rr(-WORLD + 8, WORLD - 8);
@@ -837,6 +839,7 @@ function dropPack(e) {
 }
 function resetWorld() {
   for (const g of packs) scene.remove(g); packs.length = 0;
+  if (halt) { for (const o of halt.objs) scene.remove(o); for (const c of halt.cols) c.off = true; halt = null; }
   for (const s of fallen) scene.remove(s.mesh); fallen.length = 0; loot = null;
   scene.fog.density = FOG_BASE;
   if (typeof avatar !== 'undefined') { avatar.shieldLost = false; if (AV.shield) AV.shield.visible = true; }
@@ -860,6 +863,7 @@ function resetWorld() {
   mission = 0; tentsBurnt = 0; alarm = false;
   P.unarmed = chapter === 'prologo';
   if (chapter === 'prologo') { resetPrologue(); setObjective(); return; }
+  if (chapter === 'cativos') { resetCativos(); setObjective(); return; }
   // hidden in the scrub above the road, looking north up the valley where the patrol will come from
   P.pos.set(AMBUSH.x, 0, AMBUSH.z); P.pos.y = heightAt(P.pos.x, P.pos.z);
   P.yaw = Math.PI * .3; P.pitch = -.05;
@@ -1014,6 +1018,7 @@ function hitCiv(c, push) {
 }
 function killCiv(c, push) { if (c.dead) return; c.dead = true; c.deadT = 0; c.mv.x = c.mv.z = 0; c.knock = push || null; SFX.thud(spatial(c.pos) * .5); }
 function updateCivs(dt) {
+  if (halt) return updateCaptiveCivs(dt);
   if (betrayed) { betrayT += dt; setRing(state === 'outro' ? 17 : lerp(RING_R1, RING_R2, smooth(0, 24, betrayT))); }   // after the killing the line opens out round the field
   for (const c of civs) {
     if (c.gone) continue;
@@ -1103,6 +1108,111 @@ function startOutro() {
   outroCam.column = caught; outroCam.w = w; outroCam.q = q;
   outroCam.base = V(P.pos.x, 0, P.pos.z).addScaledVector(u, -2.6).addScaledVector(n, 1.3); outroCam.base.y = heightAt(outroCam.base.x, outroCam.base.z) + 1.6;
 }
+/* =========================================================
+   'Os Cativos' (149 BC): the survivors of the massacre, roped to stakes at a Roman halt. Viriato comes alone.
+   ========================================================= */
+let halt = null;
+const TENT_MAT = new THREE.MeshStandardMaterial({ color: 0xb9a57c, roughness: 1, metalness: 0, side: THREE.DoubleSide });
+const HALT_COLS = [];   // tent colliders, made once and switched on for this mission only
+function resetCativos() {
+  const L = haltLayout(HALT), objs = [], add = o => { scene.add(o); objs.push(o); return o; }, Y = (x, z) => heightAt(x, z);
+  P.pos.set(CSTART.x, Y(CSTART.x, CSTART.z), CSTART.z); P.yaw = Math.atan2(P.pos.x - HALT.x, P.pos.z - HALT.z); P.pitch = -.05; P.pedras = 0;
+  // tents and the fire
+  if (!HALT_COLS.length) for (const t of L.tents) HALT_COLS.push(addCol(t.x, t.z, 1.25));
+  for (const c of HALT_COLS) c.off = false;
+  for (const t of L.tents) {
+    const src = chars && chars.props && chars.props.tent, g = src ? src.clone(true) : new THREE.Mesh(new THREE.ConeGeometry(1.5, 2.4, 4), M(0xc9b68c));
+    if (src) { g.scale.setScalar(5.6); g.traverse(o => { if (o.isMesh) o.material = TENT_MAT; }); } else g.position.y = 1.2;   // undyed goat-hair canvas, not the kit's team colours
+    const h = new THREE.Group(); h.add(g); h.position.set(t.x, Y(t.x, t.z), t.z); h.rotation.y = t.ry; add(h);
+  }
+  { const f = new THREE.Group(); f.position.set(L.fire.x, Y(L.fire.x, L.fire.z), L.fire.z);
+    const ember = new THREE.Mesh(new THREE.ConeGeometry(.28, .5, 7), new THREE.MeshBasicMaterial({ color: 0xff8a2a })); ember.position.y = .25;
+    const lt = new THREE.PointLight(0xff9a40, 1.6, 12); lt.position.y = .7; f.add(ember, lt); add(f); }
+  // three stakes, four captives roped to each, two guards
+  const HC = [0x2a1d14, 0x3b2a1e, 0x1c1410, 0x4a3524, 0x5a3d24], DRESS = [0x6b4a2e, 0x8a5a2b, 0x4f5a3a, 0x7a3b2a, 0x5c4f45, 0x9a7a4a], OUT = ['lusitano', 'lusitano_b', 'lusitano_c', 'lusitano_d'];
+  const pick = a => a[Math.floor(rand() * a.length)], stakeGeo = new THREE.CylinderGeometry(.07, .09, 1.7, 7), stakeMat = M(0x4a3524);
+  const groups = L.groups.map(g => {
+    const st = new THREE.Mesh(stakeGeo, stakeMat); st.position.set(g.x, Y(g.x, g.z) + .85, g.z); st.castShadow = true; add(st);
+    const cs = g.captives.map(c => {
+      const child = c.kind === 'child', woman = c.kind === 'woman', old = c.kind === 'elder';
+      const look = { unarmed: true, cap: false, outfit: pick(OUT), hairColor: old ? 0x8f8a82 : pick(HC), female: woman || child,
+        palette: { dress: pick(DRESS), skin: pick([0x9c6e52, 0x8a5e44, 0xa87a5a, 0x93664a]), long: woman }, scale: child ? rr(.56, .68) : woman ? rr(.9, .96) : rr(.95, 1.04),
+        dress: woman, hair: woman ? ['hair_long'] : child ? ['hair_buzzed'] : [old || rand() < .6 ? 'hair_long' : 'hair_buzzed', 'hair_beard'] };
+      const e = spawnCiv(look, c.x, c.z, child); e.kind2 = c.kind; e.yaw = c.yaw; e.bound = true; e.crouch = true; return e;
+    });
+    g.guards.forEach((q, k) => { const e = spawn('legio', q.x, q.z, 'halt'); e.yaw = q.yaw; e.wT = rr(2, 7); e.beat = k ? 6 : 1.5; });
+    return { ...g, bound: true, civs: cs };
+  });
+  for (const q of L.sentinel) { const e = spawn('legio', q.x, q.z, 'halt'); e.yaw = q.yaw; e.beat = 3; }
+  addPickup('dardos', CSTART.x - 6, CSTART.z + 3); addPickup('odre', CSTART.x - 2, CSTART.z - 4);
+  halt = { groups, objs, cols: HALT_COLS, freed: 0, fighters: 0, cut: null, cutT: 0, reinfT: null, warned: 0 };
+}
+const boundNear = (r = 3.2) => halt ? halt.groups.find(g => g.bound && Math.hypot(g.x - P.pos.x, g.z - P.pos.z) < r) : null;
+/** The ropes are cut: the men look for arms among the dead, the others run for the woods. */
+function freeGroup(g) {
+  g.bound = false; SFX.swing(); let men = 0;
+  for (const c of g.civs) {
+    c.bound = false; c.crouch = false; halt.freed++;
+    if (!isFighter(c.kind2)) { c.fleeTo = WOODS; c.delay = rr(0, .5); continue; }
+    scene.remove(c.m.root); c.gone = true; men++;
+    const a = spawnAlly(allies.length); a.pos.copy(c.pos); a.yaw = c.yaw; a.jav = 0; a.unarmed = true; a.armT = 0;
+    a.f.shieldHP = 0; a.shieldLost = true; if (a.m.shield) a.m.shield.visible = false; if (a.m.rig) a.m.rig.bareArm = true; if (a.m.weapon) a.m.weapon.visible = false;
+    a.m.root.position.copy(a.pos);
+  }
+  halt.fighters += men;
+  feed(`Cativos libertados: ${halt.freed} de 12`); showMsg('Cordas cortadas', men ? `${men} homens procuram armas entre os mortos.` : '', 2.6);
+}
+/** A freed man with empty hands: to the nearest fallen Roman, down beside him, and up again with his sword. → true while busy */
+function armAlly(a, dt) {
+  if (a.arming && (a.arming.stripped || !a.arming.dead)) a.arming = null;
+  if (!a.arming) { let bd = 60; for (const e of enemies) if (e.dead && !e.stripped && (!e.takenBy || e.takenBy.dead || e.takenBy === a)) { const d = e.pos.distanceTo(a.pos); if (d < bd) { bd = d; a.arming = e; } } if (a.arming) { a.arming.takenBy = a; a.armT = 0; } }
+  const b = a.arming; if (!b) return false;
+  const there = lootWalk(a, b, 4.4, dt); faceTo(a, b.pos.x, b.pos.z, dt, 7);
+  if (there) a.armT += dt;
+  a.crouch = a.armT > .15; a.reach = a.armT > .4 ? .5 - .5 * Math.cos((a.armT - .4) * 5.2) : 0; a.vel.x = a.vel.z = 0;
+  if (a.armT > 1.6) { a.unarmed = false; a.arming = null; a.crouch = false; a.reach = 0; b.stripped = true; if (b.m.weapon) b.m.weapon.visible = false; if (a.m.weapon) a.m.weapon.visible = true; SFX.clank(spatial(a.pos) * .5); }
+  return true;
+}
+function updateCaptiveCivs(dt) {
+  for (const c of civs) {
+    if (c.gone) continue;
+    if (c.fleeTo && (c.delay -= dt) <= 0) {
+      const dx = c.fleeTo.x - c.pos.x, dz = c.fleeTo.z - c.pos.z, d = Math.hypot(dx, dz) || 1;
+      if (d < 7) { c.gone = true; scene.remove(c.m.root); continue; }
+      c.mv.x = dx / d * c.sp; c.mv.z = dz / d * c.sp; c.pos.x += c.mv.x * dt; c.pos.z += c.mv.z * dt; resolve(c.pos, .35);
+      c.yaw += wrapA(Math.atan2(dx, dz) - c.yaw) * Math.min(1, dt * 8);
+    } else { c.mv.x = c.mv.z = 0; }
+    c.pos.y = heightAt(c.pos.x, c.pos.z); const b = setPose(c, dt); c.m.root.position.set(c.pos.x, c.pos.y + b, c.pos.z); c.m.root.rotation.y = c.yaw;
+  }
+}
+function updateCaptives(dt) {
+  const H = halt; if (!H || state !== 'play') return;
+  // cutting the ropes: stay beside the stake until it is done
+  if (H.cut) {
+    if (!H.cut.bound || Math.hypot(H.cut.x - P.pos.x, H.cut.z - P.pos.z) > 3.6 || P.f.phase === 'staggered') { H.cut = null; showPrompt('', .01); }
+    else if ((H.cutT += dt) >= CUT_TIME) { freeGroup(H.cut); H.cut = null; }
+    else showPrompt('A cortar as cordas…', .2);
+  }
+  // the alarm was given: a rider is gone for help
+  if (alarm && H.reinfT == null) H.reinfT = REINFORCE_AFTER;
+  if (H.reinfT != null && H.reinfT > 0 && (H.reinfT -= dt) <= 0) {
+    const a = Math.atan2(roadX(HALT.z) - HALT.x, 0), bx = HALT.x + Math.sin(a) * 58, bz = HALT.z + Math.cos(a) * 58;
+    for (let i = 0; i < RELIEF; i++) { const e = spawn('legio', bx + (i % 3 - 1) * 2.2, bz + Math.floor(i / 3) * 2.4, 'relief'); e.state = 'chase'; e.aware = 1; }
+    SFX.horn(); showMsg('Chegaram os reforços', 'Foge para a floresta com quem libertaste.', 3.4);
+  }
+  // away into the woods
+  if (Math.hypot(P.pos.x - WOODS.x, P.pos.z - WOODS.z) < 9) {
+    if (canLeave(H.freed)) winCativos();
+    else if ((H.warned -= dt) <= 0) { H.warned = 6; showPrompt(`Ainda só libertaste ${H.freed} cativos: precisas de ${FREE_TO_LEAVE}`, 2.5); }
+  }
+  setObjective();
+}
+function winCativos() {
+  const men = allies.filter(a => !a.dead).length; companions = companionsFrom(men);
+  state = 'won'; SFX.horn(); endT = 1.2; nextChapter = 'emboscada';
+  endArgs = ['I · 149 A.C.', 'Os cativos estão livres', `${halt.freed} de 12 libertados. ${men} ${men === 1 ? 'homem pegou' : 'homens pegaram'} em armas romanas e ${men === 1 ? 'segue' : 'seguem'} Viriato.`];
+}
+
 /* Ambush won: Viriato's men come out of the scrub and strip the fallen patrol of its arms and rations. */
 const LOOT_LEN = 13;
 let loot = null;
@@ -1184,7 +1294,7 @@ function updateOutro(dt) {
   if (outroSaid < 2 && T > 8.6) { outroSaid = 2; showMsg('', 'Galba matou ou vendeu como escravos milhares de lusitanos.', 3.2); }
   if (outroSaid < 3 && T > 11.9) { outroSaid = 3; showMsg('', 'Dos que fugiram, um voltaria com um exército.', 3); }
   if (T >= OUTRO_LEN) {
-    $('hud').classList.remove('intro'); state = 'won'; endT = .05; nextChapter = 'emboscada';
+    $('hud').classList.remove('intro'); state = 'won'; endT = .05; nextChapter = 'cativos';
     endArgs = ['PRÓLOGO · 150 A.C.', 'Viriato escapou', 'Galba voltou a Roma, foi julgado e absolvido. A guerra na Lusitânia continuou.'];
   }
 }
@@ -1200,9 +1310,9 @@ const SIGNAL = new THREE.Group(); SIGNAL.visible = false; scene.add(SIGNAL);
   const ring = new THREE.Mesh(new THREE.RingGeometry(7.4, 8, 48), new THREE.MeshBasicMaterial({ color: 0xe8c36a, transparent: true, opacity: .35, side: THREE.DoubleSide, depthWrite: false })); ring.rotation.x = -Math.PI / 2; ring.position.y = .08; SIGNAL.add(ring);
 }
 function updateSignal(dt) {
-  SIGNAL.visible = chapter === 'prologo' && state !== 'menu' && state !== 'outro';
+  SIGNAL.visible = (chapter === 'prologo' || chapter === 'cativos') && state !== 'menu' && state !== 'outro';
   if (!SIGNAL.visible) return;
-  SIGNAL.position.set(ESCAPE.x, heightAt(ESCAPE.x, ESCAPE.z), ESCAPE.z);
+  const sg = chapter === 'cativos' ? WOODS : ESCAPE; SIGNAL.position.set(sg.x, heightAt(sg.x, sg.z), sg.z);
   SIGNAL.children[0].rotation.y += dt * .25; SIGNAL.children[1].intensity = 2 + Math.sin(performance.now() * .013) * .5;
 }
 
@@ -1240,12 +1350,14 @@ function addPickup(type, x, z, y) {
    Missions
    ========================================================= */
 const MISSIONS = [
-  { m: 'I · A EMBOSCADA', t: () => `Embosca a patrulha romana na estrada do vale (${patrolLeft()} restantes)` },
+  { m: 'II · A EMBOSCADA', t: () => `Embosca a patrulha romana na estrada do vale (${patrolLeft()} restantes)` },
   { m: 'II · OS MANTIMENTOS', t: () => `Incendeia as tendas de mantimentos do acampamento (${tentsBurnt}/3)` },
   { m: 'III · O CENTURIÃO', t: () => 'Mata o centurião' },
 ];
 const patrolLeft = () => enemies.filter(e => e.group === 'patrol' && !e.dead).length;
-function setObjective() { if (chapter === 'prologo') { $('objm').textContent = 'PRÓLOGO · A TRAIÇÃO DE GALBA'; $('objt').textContent = `Foge pela brecha até ao fumo na floresta (${Math.round(Math.hypot(P.pos.x - ESCAPE.x, P.pos.z - ESCAPE.z))} m)`; return; } $('objm').textContent = MISSIONS[mission].m; $('objt').textContent = MISSIONS[mission].t(); }
+function setObjective() { if (chapter === 'cativos' && halt) { const left = halt.groups.filter(g => g.bound).length, t = halt.reinfT; $('objm').textContent = 'I · OS CATIVOS';
+    $('objt').textContent = (left ? `Liberta os cativos (${3 - left}/3 grupos)` + (canLeave(halt.freed) ? ' ou leva-os para o fumo na floresta' : '') : 'Leva-os para o fumo na floresta') + (t > 0 ? ` · reforços romanos em ${Math.ceil(t)} s` : ''); return; }
+  if (chapter === 'prologo') { $('objm').textContent = 'PRÓLOGO · A TRAIÇÃO DE GALBA'; $('objt').textContent = `Foge pela brecha até ao fumo na floresta (${Math.round(Math.hypot(P.pos.x - ESCAPE.x, P.pos.z - ESCAPE.z))} m)`; return; } $('objm').textContent = MISSIONS[mission].m; $('objt').textContent = MISSIONS[mission].t(); }
 function showMsg(title, sub, dur = 3.2) { $('msg').innerHTML = ''; const s = document.createElement('span'); s.textContent = title; $('msg').appendChild(s); if (sub) { const sm = document.createElement('small'); sm.textContent = sub; $('msg').appendChild(sm); } $('msg').style.opacity = 1; missionMsgT = dur; }
 function feed(text) {
   const d = document.createElement('div'); d.textContent = text; $('feed').prepend(d);
@@ -1253,7 +1365,7 @@ function feed(text) {
   while ($('feed').children.length > 5) $('feed').lastChild.remove();
 }
 function checkMission() {
-  if (chapter === 'prologo') return;
+  if (chapter === 'prologo' || chapter === 'cativos') return;
   if (mission === 0 && patrolLeft() === 0 && chapter !== 'acampamento') { if (state === 'play') startLoot(); return; }   // the ambush is the whole mission; the camp waits for a later one
   if (mission === 0 && patrolLeft() === 0) {
     mission = 1; setObjective();
@@ -1272,8 +1384,8 @@ function checkMission() {
 }
 function raiseAlarm() {
   if (alarm) return; alarm = true; SFX.horn();
-  for (const e of enemies) if (!e.dead && e.group === 'camp') alert(e);
-  feed('O acampamento deu o alarme!');
+  for (const e of enemies) if (!e.dead && (e.group === 'camp' || e.group === 'halt')) alert(e);
+  if (chapter === 'cativos') { feed('Deram o alarme!'); showMsg('Alarme!', 'Um cavaleiro partiu a pedir reforços.', 3.2); } else feed('O acampamento deu o alarme!');
 }
 
 /* =========================================================
@@ -1391,7 +1503,7 @@ function playerSwing(ev) {
     const ev2 = e.vel || { x: 0, z: 0 }, closing = (P.vel.x - ev2.x) * d.x + (P.vel.z - ev2.z) * d.z;
     const bonus = clamp(1 + closing * .08, .8, 1.5);
     const at = V(r.at.x, r.at.y, r.at.z);
-    if (unaware && fromAngle > 90) { damageEnemy(e, 40 * C.DMG[ev.dir] * ev.power * 3.5, false, at, 'golpe furtivo'); hitStop(.07); continue; }
+    if (unaware && fromAngle > 90) { damageEnemy(e, 40 * C.DMG[ev.dir] * ev.power * 3.5, false, at, 'golpe furtivo'); hitStop(.07); P.quiet = true; continue; }
     const res = C.resolveHit(e.f, { dir: ev.dir, power: ev.power * glance(r.p) * bonus, fromAngle, baseDamage: 40 });
     if (res.result === 'parried') { C.stopBlade(P.f); C.stagger(P.f, res.attackerStagger); SFX.clank(); burst('spark', at, 12); showPrompt('O romano aparou o teu golpe!', .9); P.kick = .2; alert(e); return; }
     if (res.result === 'blocked') { C.stopBlade(P.f); SFX.clank(); burst('spark', at, 8); e.flash = .05; P.kick = .12; knock(e, d, .6); alert(e); return; }
@@ -1404,7 +1516,7 @@ function playerSwing(ev) {
     knock(e, d, 1.2 + ev.power); hitStop(.05 + .04 * g); P.kick = .08;
     alert(e);
   }
-  if (ev.p1 >= 1) makeNoise(P.swingHits.size ? 14 : 6); // the swish is heard once the blow is done
+  if (ev.p1 >= 1) { makeNoise(P.quiet ? 4 : P.swingHits.size ? 14 : 6); P.quiet = false; } // the swish is heard once the blow is done
 }
 /** Push a soldier back a little (he also flinches via resolveHit). */
 function knock(e, d, strength) { if (!e.vel) e.vel = { x: 0, z: 0 }; e.vel.x += d.x * strength * 2; e.vel.z += d.z * strength * 2; }
@@ -1481,7 +1593,8 @@ function updateAllies(dt) {
     const near = Math.hypot(P.pos.x - a.pos.x, P.pos.z - a.pos.z) < 32;
     const post = order === 'hold' ? holdSlot(a.i, flagAt, flagAt.yaw) : null;
     // follow: fight what is already fighting near Viriato; hold: defend the post; charge: go for any Roman
-    const foe = state !== 'play' ? null : order === 'charge' ? pickFoe(a.pos, enemies, 60, true)
+    if (a.unarmed && state === 'play' && armAlly(a, dt)) { const bob = setPose(a, dt); r.position.set(a.pos.x, a.pos.y + bob, a.pos.z); r.rotation.y = a.yaw; continue; }
+    const foe = state !== 'play' || a.unarmed ? null : order === 'charge' ? pickFoe(a.pos, enemies, 60, true)
       : order === 'hold' ? (Math.hypot(a.pos.x - post.x, a.pos.z - post.z) < 12 ? pickFoe(post, enemies, 7) : null)
       : near ? pickFoe(a.pos, enemies, 22) : null;
     if (foe && foe.state !== 'chase' && foe.state !== 'skirmish' && foe.pos.distanceTo(a.pos) < 10) alert(foe);
@@ -1550,6 +1663,7 @@ function allyRelease(a, foe) {
   spawnProj('javelin', from, V((to.x - from.x) / t, (to.y - from.y) / t + .5 * 11 * t, (to.z - from.z) / t), 'ally', .75); SFX.jav(spatial(from));
 }
 function use() {
+  if (chapter === 'cativos') { const g = boundNear(); if (g && state === 'play' && !halt.cut) { halt.cut = g; halt.cutT = 0; C.feint(P.f); P.charging = false; } return; }
   if (chapter !== 'acampamento') return;
   for (const t of supplyTents) {
     if (t.burnt) continue;
@@ -1657,6 +1771,7 @@ function tickClog(dt) { if (!CLOG.length) return; for (const l of CLOG) l.t -= d
 function damageEnemy(e, dmg, head, where, special, byAlly) {
   if (!byAlly && dmg > 0) clog(`${head ? 'Golpe na cabeça' : 'Golpe'}: ${Math.round(dmg)} de dano`, '#f0d9a0');
   e.hp -= dmg; e.flash = .15; e.hits = (e.hits || 0) + 1; e.heavy = dmg >= 45; burst('blood', where, head ? 14 : 8);
+  const quiet = e.state === 'march' || e.state === 'guard';   // struck before he knew anyone was there
   SFX.flesh(); alert(e);
   if (!byAlly) { hitmT = .18; $('hitm').className = head ? 'head' : ''; $('hitm').style.opacity = 1; if (head) P.heads++; }
   if (e.hp <= 0) {
@@ -1666,7 +1781,7 @@ function damageEnemy(e, dmg, head, where, special, byAlly) {
     feed(`${name} abatido${byAlly ? ' por um companheiro' : special ? ' — ' + special : head ? ' — na cabeça' : ''}`);
     if (e.kind !== 'centurion' && rand() < .4) addPickup(rand() < .5 ? 'odre' : (rand() < .5 ? 'dardos' : 'pedras'), e.pos.x + rr(-.6, .6), e.pos.z + rr(-.6, .6));
     // the fallen alert their comrades
-    for (const o of enemies) if (!o.dead && o.pos.distanceTo(e.pos) < 22) alert(o);
+    for (const o of enemies) if (!o.dead && o.pos.distanceTo(e.pos) < alertRadius(quiet)) alert(o);
     checkMission();
   } else { if (rand() < .5) SFX.grunt(spatial(e.pos)); }
 }
@@ -1705,7 +1820,7 @@ function alert(e) {
   if (e.state === 'chase' || e.state === 'skirmish') return;
   e.state = e.kind === 'velite' ? veliteState(e.jav) : 'chase'; e.aware = 1;
   if (e.barkT <= 0) { SFX.grunt(spatial(e.pos) * .8); e.barkT = 3; }
-  if (e.group === 'camp' && !alarm && mission >= 0) { e.alarmT = 2.5; }
+  if ((e.group === 'camp' || e.group === 'halt') && !alarm && mission >= 0) { e.alarmT = e.group === 'halt' ? 3.5 : 2.5; }   // he shouts for the horn unless silenced first
 }
 function canSee(e) {
   const dx = P.pos.x - e.pos.x, dz = P.pos.z - e.pos.z, d = Math.hypot(dx, dz);
@@ -1860,11 +1975,11 @@ function updateTrails(dt) {
     pa.needsUpdate = true; ca.needsUpdate = true; t.mesh.visible = n > 1;
   }
 }
-const engaged = new Set();
+const engaged = new Set(); let armed = [];
 /** Only the 2 (3 on Hard) nearest alerted swordsmen may close in; the rest wait in a ring. */
 function updateEngaged() {
-  engaged.clear();
-  for (const e of enemies) e.T = !e.dead && e.state === 'chase' ? pickTarget(e.pos, P, allies) : null;
+  engaged.clear(); armed = allies.some(a => a.unarmed) ? allies.filter(a => !a.unarmed) : allies;   // the Romans go for men with weapons first
+  for (const e of enemies) e.T = !e.dead && e.state === 'chase' ? pickTarget(e.pos, P, armed) : null;
   const melee = enemies.filter(e => !e.dead && e.state === 'chase' && !e.T.ally);
   melee.sort((a, b) => a.pos.distanceToSquared(P.pos) - b.pos.distanceToSquared(P.pos));
   for (const e of melee.slice(0, diff === 2 ? 3 : 2)) engaged.add(e);
@@ -1932,7 +2047,7 @@ function updateEnemies(dt) {
         if (e.pos.z > 125 && e.dir > 0) e.dir = -1; if (e.pos.z < -70 && e.dir < 0) e.dir = 1;
       } else {
         e.wT -= dt;
-        if (!e.wander || e.wT <= 0) { e.wander = V(e.home.x + rr(-6, 6), 0, e.home.z + rr(-6, 6)); e.wT = rr(4, 9); }
+        if (!e.wander || e.wT <= 0) { { const bt = e.beat || 6; e.wander = V(e.home.x + rr(-bt, bt), 0, e.home.z + rr(-bt, bt)); } e.wT = rr(4, 9); }
         const dw = Math.hypot(e.wander.x - e.pos.x, e.wander.z - e.pos.z);
         if (dw > .6 && e.wT < 6) { speed = moveEnemy(e, e.wander.x, e.wander.z, 1.2, dt); faceTo(e, e.wander.x, e.wander.z, dt, 3); }
       }
@@ -1943,7 +2058,7 @@ function updateEnemies(dt) {
       }
     } else if (e.state === 'chase') {
       if (e.alarmT != null && e.alarmT > 0) { e.alarmT -= dt; if (e.alarmT <= 0) raiseAlarm(); }
-      const T = e.T || pickTarget(e.pos, P, allies), td = T.dist, tf = T.ally ? T.ally.f : P.f; // fights Viriato or a companion
+      const T = e.T || pickTarget(e.pos, P, armed), td = T.dist, tf = T.ally ? T.ally.f : P.f; // fights Viriato or a companion
       faceTo(e, T.pos.x, T.pos.z, dt, e.f.phase === 'windup' ? 3.5 : 7);
       const slow = e.slowT > 0 ? LEG_SLOW.factor : 1; e.slowT -= dt;
       e.blockLeft -= dt; e.aiT -= dt;
@@ -2128,6 +2243,7 @@ function updatePlayer(dt) {
   // E prompt
   let pr = '';
   if (chapter === 'acampamento') for (const t of supplyTents) if (!t.burnt && Math.hypot(t.x - P.pos.x, t.z - P.pos.z) < 5) pr = '<b>[E]</b> Incendiar os mantimentos';
+  if (chapter === 'cativos' && boundNear() && !(halt && halt.cut)) pr = '<b>[E]</b> Cortar as cordas';
   if (promptT > 0) { promptT -= dt; } else $('prompt').innerHTML = pr;
 }
 let promptT = 0;
@@ -2224,6 +2340,7 @@ function updateFires(dt) {
 const cmp = $('compass'); const cctx = cmp.getContext && cmp.getContext('2d');
 function objectiveTarget() {
   if (chapter === 'prologo') return V(ESCAPE.x, 0, ESCAPE.z);
+  if (chapter === 'cativos') { let best = null, bd = 1e9; if (halt) for (const g of halt.groups) if (g.bound) { const d = Math.hypot(g.x - P.pos.x, g.z - P.pos.z); if (d < bd) { bd = d; best = V(g.x, 0, g.z); } } return best || V(WOODS.x, 0, WOODS.z); }
   if (mission === 0) { let best = null, bd = 1e9; for (const e of enemies) if (e.group === 'patrol' && !e.dead) { const d = e.pos.distanceTo(P.pos); if (d < bd) { bd = d; best = e.pos; } } return best; }
   if (mission === 1) { let best = null, bd = 1e9; for (const t of supplyTents) if (!t.burnt) { const d = Math.hypot(t.x - P.pos.x, t.z - P.pos.z); if (d < bd) { bd = d; best = V(t.x, 0, t.z); } } return best; }
   const c = enemies.find(e => e.kind === 'centurion' && !e.dead); return c ? c.pos : null;
@@ -2289,6 +2406,10 @@ function updateHUD(dt) {
 let introT = 0, introView = 'third';
 const INTRO_LEN = 9.5;
 let introVeil = null, introTitled = false, introHorn = false;
+const OPENING = {
+  cativos: ['I · Os Cativos', 'Sozinho. Agacha-te (C), mata os guardas pelas costas ou com dardos, e corta as cordas (E).'],
+  emboscada: ['II · A Emboscada', 'Agacha-te (C) e aproxima-te sem seres visto. Um golpe pelas costas é mortal.'],
+};
 function startGame(intro = false) {
   initAudio();
   intro = intro === true; nextChapter = null; $('next').classList.add('hidden');
@@ -2304,7 +2425,7 @@ function startGame(intro = false) {
     introVeil.style.display = 'block'; introVeil.style.opacity = 1;
   }
   else if (chapter === 'prologo') { setRing(RING_R1); for (const e of enemies) if (e.group === 'cordon') { e.pos.set(e.home.x, heightAt(e.home.x, e.home.z), e.home.z); e.m.root.position.copy(e.pos); } betray(); }
-  else showMsg('I · A Emboscada', 'Agacha-te (C) e aproxima-te sem seres visto. Um golpe pelas costas é mortal.', 5);
+  else showMsg(...OPENING[chapter] || OPENING.emboscada, 5);
   lock();
 }
 const INTRO_P = 17;
@@ -2367,7 +2488,7 @@ function updateIntro(dt) {
   scene.fog.density = FOG_BASE * (1 + 2.6 * k * k);
   if (introVeil) introVeil.style.opacity = String(clamp(1 - (introT - .5) / 5.5, 0, 1));
   if (!introHorn && introT > 1.3) { introHorn = true; SFX.horn(); }
-  if (!introTitled && introT > 4.2) { introTitled = true; showMsg('VIRIATO', 'Montes Hermínios, Lusitânia · 147 a.C.', 4.2); }
+  if (!introTitled && introT > 4.2) { introTitled = true; showMsg('VIRIATO', chapter === 'cativos' ? 'Lusitânia · 149 a.C.' : 'Montes Hermínios, Lusitânia · 147 a.C.', 4.2); }
   if (introT >= INTRO_LEN) endIntro();
 }
 function endIntro() {
@@ -2378,7 +2499,7 @@ function endIntro() {
     for (const e of enemies) { if (e.hidden) { e.hidden = false; e.m.root.visible = true; } if (e.group === 'cordon' && !e.party && Math.hypot(e.pos.x - e.home.x, e.pos.z - e.home.z) > 6) { e.pos.set(e.home.x, heightAt(e.home.x, e.home.z), e.home.z); e.m.root.position.copy(e.pos); } }   // skipped: the ring is already shut
     betray(); return;
   } view = introView; $('hud').classList.remove('hidden'); updateHUDWeapon();
-  showMsg('I · A Emboscada', 'Agacha-te (C) e aproxima-te sem seres visto. Um golpe pelas costas é mortal.', 5);
+  showMsg(...OPENING[chapter] || OPENING.emboscada, 5);
 }
 /** Drop every held input and combat stance (used when the game loses focus). */
 function releaseAll() {
@@ -2403,7 +2524,7 @@ function endScreen(kicker, title, text) {
   const rows = [['Tempo', `${mm}:${ss}`], ['Romanos abatidos', P.kills], ['Tiros na cabeça', P.heads], ['Pontaria (dardos e funda)', P.shots ? Math.round(P.hits / P.shots * 100) + '%' : '—'], ['Dificuldade', DIFF[diff].name]];
   $('ends').innerHTML = ''; for (const [a, b] of rows) { const x = document.createElement('span'); x.textContent = a; const y = document.createElement('span'); y.textContent = b; $('ends').append(x, y); }
   $('hud').classList.add('hidden'); $('end').classList.remove('hidden');
-  $('next').classList.toggle('hidden', !nextChapter);
+  $('next').classList.toggle('hidden', !nextChapter); if (nextChapter) $('next').textContent = 'CONTINUAR · ' + ({ cativos: 'OS CATIVOS', emboscada: 'A EMBOSCADA' }[nextChapter] || '');
 }
 let endT = 0, endArgs = null;
 function die() { avatar.deadT = 0; avatar.f = P.f; C.endBlock(P.f); state = 'dead'; SFX.die(); endT = 2.8; endArgs = ['CAÍDO EM COMBATE', 'Viriato tombou', 'Tenta de novo.']; }
@@ -2415,6 +2536,7 @@ $('next').addEventListener('click', () => { if (!nextChapter) return; setChapter
 const BRIEF = {
   prologo: ['LUSITÂNIA · 150 A.C.', 'Prólogo. O pretor Sérvio Galba promete terras aos lusitanos que entreguem as armas. Viriato está entre os que as entregaram.'],
   emboscada: ['LUSITÂNIA · 147 A.C.', 'Três anos depois de Galba, Roma volta aos vales. Uma patrulha desce a estrada do vale. Viriato e os seus esperam-na escondidos no mato. Não deixes nenhum voltar.'],
+  cativos: ['LUSITÂNIA · 149 A.C.', 'Os que Galba não matou vão a caminho dos mercados de escravos. A coluna parou numa clareira. Viriato seguiu-a sozinho.'],
   acampamento: ['LUSITÂNIA · 147 A.C.', 'O acampamento romano a norte: os mantimentos e o centurião.'],
 };
 function setChapter(c) {
@@ -2438,7 +2560,7 @@ function step(dt) {
   if (hitStopT > 0) { hitStopT -= dt; dt *= .15; } // brief impact freeze
   if (state === 'outro') { updateEnemies(dt); updateCivs(dt); updateRiders(dt); updateProjectiles(dt); updateOutro(dt); }
   else if (state === 'intro') { updateAllies(dt); updateEnemies(dt); updateCivs(dt); updateRiders(dt); updateProjectiles(dt); updateIntro(dt); }
-  else if (state === 'play') { updatePlayer(dt); updateEnemies(dt); updateAllies(dt); updateProjectiles(dt); updateFallen(dt); updateCivs(dt); updateRiders(dt); updateCamera(dt); tickClog(dt); updateFlag(); updateHUD(dt); if (chapter === 'prologo') checkPrologue(); }
+  else if (state === 'play') { if (chapter === 'cativos') updateCaptives(dt); updatePlayer(dt); updateEnemies(dt); updateAllies(dt); updateProjectiles(dt); updateFallen(dt); updateCivs(dt); updateRiders(dt); updateCamera(dt); tickClog(dt); updateFlag(); updateHUD(dt); if (chapter === 'prologo') checkPrologue(); }
   else if (state === 'dead' || state === 'won') {
     if (endT > 0) { endT -= dt; if (endT <= 0 && endArgs) { endScreen(...endArgs); endArgs = null; } }
     updateEnemies(dt); updateAllies(dt); updateCivs(dt); updateProjectiles(dt);
@@ -2486,7 +2608,7 @@ $('start').disabled = false; $('start').textContent = 'COMEÇAR';
 return {
   start: (d, ch = 'emboscada') => { if (d != null) diff = d; setChapter(ch); startGame(false); }, startIntro: (ch = chapter) => { setChapter(ch); startGame(true); }, get civs() { return civs; }, get riders() { return riders; }, get chapter() { return chapter; }, MEADOW, ESCAPE, CASTRO, get introT() { return introT; }, step, render: () => R.render(), setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
   P, supplyTents, heightAt, CAMP, scene, camera,
-  get enemies() { return enemies; }, get allies() { return allies; }, setCompanions: n => { companions = n; }, forceDir: d => { forcedDir = d; }, get order() { return order; }, get placing() { return placing; }, flag: FLAG, flagAt, hurtAllyForTest: (a, d) => hurtAlly(a, d, a.pos.clone()), get mission() { return mission; }, get state() { return state; },
+  get enemies() { return enemies; }, get allies() { return allies; }, setCompanions: n => { companions = n; }, forceDir: d => { forcedDir = d; }, get order() { return order; }, get placing() { return placing; }, flag: FLAG, flagAt, hurtAllyForTest: (a, d) => hurtAlly(a, d, a.pos.clone()), get mission() { return mission; }, alertForTest: e => alert(e), get halt() { return halt; }, get companions() { return companions; }, get alarm() { return alarm; }, get nextChapter() { return nextChapter; }, HALT, WOODS, CSTART, get state() { return state; },
   get projectiles() { return projectiles; }, get pickups() { return pickups; },
   input: { mouse: (l, r) => { mouseL = l; mouseR = r; }, mouseMove: (dx, dy) => { C.nudgeIntent(P.intent, dx, dy); if (P.charging) { P.acc.x += dx; P.acc.y += dy; } if (P.f.phase === 'windup' && !P.f.released) { P.post.x += dx; P.post.y += dy; } } },
   prompt: (t) => showPrompt(t, 1.2),

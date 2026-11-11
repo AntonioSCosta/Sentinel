@@ -11,3 +11,12 @@ test('solidAt finds static obstacles (trees, palisade) for blades bouncing off',
   assert.equal(solidAt(20, 20, 1.2), false, 'blade passes over a low rock');
   clearColliders();
 });
+
+test('a collider can be switched off and on (scenery that exists in one mission only)', async () => {
+  const T = await import('../src/terrain.js');
+  const c = T.addCol(151.5, 151.5, 1.2), p = { x: 151.9, z: 151.5 };
+  assert.ok(c && T.solidAt(151.9, 151.5));
+  c.off = true; T.resolve(p, .4);
+  assert.equal(T.solidAt(151.9, 151.5), false); assert.ok(Math.abs(p.x - 151.9) < 1e-9, 'not pushed while off');
+  c.off = false; T.resolve(p, .4); assert.ok(Math.hypot(p.x - 151.5, p.z - 151.5) >= 1.59);
+});
