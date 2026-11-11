@@ -128,3 +128,16 @@ export function resolveHit(def, { dir, power, fromAngle, baseDamage, kind = 'mel
   interrupt();
   return out;
 }
+
+// Mouse intent: a short memory of recent mouse motion, so a sweep made just before the click
+// (as in Mount & Blade) picks the blow's direction. Half-life ≈ .1 s.
+export const INTENT_HALFLIFE = .1;
+export const REAIM_TIME = .18;         // a held windup can still change direction this early
+export const createIntent = () => ({ x: 0, y: 0 });
+export function nudgeIntent(m, dx, dy) { m.x += dx; m.y += dy; return m; }
+export function decayIntent(m, dt) { const k = Math.pow(.5, dt / INTENT_HALFLIFE); m.x *= k; m.y *= k; return m; }
+/** Change a held (unreleased) windup's direction early in the windup. */
+export function reaim(f, dir) {
+  if (f.phase !== 'windup' || f.released || f.t > REAIM_TIME || !dir) return false;
+  f.dir = dir; return true;
+}

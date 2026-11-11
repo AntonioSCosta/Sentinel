@@ -55,4 +55,18 @@ export default async function ({ G, THREE, st, key, check, forcePlay, setGod }) 
   G.P.pos.z += 1.2; st(50);
   check('a blow at a player who stepped back misses', G.P.hp === 100 && e.swingHit === false);
   setGod(false);
+  // (z) Mount & Blade aim: a sweep just before the click picks the blow; a clear sweep right after re-aims it
+  fresh(); key('Digit1'); st(30);
+  G.input.mouseMove(-35, 3); st(2); G.input.mouse(true, false); st(8);
+  check('sweep left just before clicking → blow from the left', G.P.f.dir === 'left');
+  G.input.mouse(false, false); st(90);
+  G.input.mouse(true, false); st(6); G.input.mouseMove(2, 1); st(1);
+  check('no sweep → thrust', G.P.f.dir === 'thrust');
+  G.input.mouseMove(30, -2); st(1);
+  check('sweep right early in the windup turns it into a blow from the right', G.P.f.dir === 'right');
+  G.input.mouse(false, false); st(90);
+  // momentum and fighting stride
+  fresh(); st(30); const p0 = G.P.pos.clone(); key('KeyW'); st(1); const v1 = Math.hypot(G.P.vel.x, G.P.vel.z); st(30);
+  const v2 = Math.hypot(G.P.vel.x, G.P.vel.z); key('KeyW', false); st(30);
+  check('player accelerates instead of jumping to full speed, and stops', v1 < v2 * .5 && v2 > 4 && Math.hypot(G.P.vel.x, G.P.vel.z) < .01 && G.P.pos.distanceTo(p0) > 1);
 }

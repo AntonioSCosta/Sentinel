@@ -119,3 +119,20 @@ test('Q mashing: a guard re-raised within the cooldown gets no perfect parry', (
   C.beginBlock(d, 'sword'); C.tickFighter(d, .05);
   assert.equal(C.resolveHit(d, { dir: 'left', power: 1, fromAngle: 0, baseDamage: 20 }).result, 'parried');
 });
+
+test('mouse intent: motion just before the click still picks the direction, old motion fades', () => {
+  const m = C.createIntent();
+  C.nudgeIntent(m, -30, 2);               // swept left, then clicked
+  C.decayIntent(m, .08);
+  assert.equal(C.dirFromMouse(m.x, m.y), 'left');
+  C.decayIntent(m, .6);                   // long ago → nothing left → thrust
+  assert.equal(C.dirFromMouse(m.x, m.y), 'thrust');
+  C.nudgeIntent(m, 3, -25); assert.equal(C.dirFromMouse(m.x, m.y), 'up');
+});
+test('re-aim: a windup can change direction early, not once released or late', () => {
+  const f = C.createFighter(); C.beginAttack(f, 'thrust');
+  assert.equal(C.reaim(f, 'right'), true); assert.equal(f.dir, 'right');
+  f.t = C.REAIM_TIME + .01; assert.equal(C.reaim(f, 'left'), false); assert.equal(f.dir, 'right');
+  const g = C.createFighter(); C.beginAttack(g, 'up'); C.releaseAttack(g);
+  assert.equal(C.reaim(g, 'left'), false);
+});

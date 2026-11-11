@@ -37,3 +37,16 @@ test('may dodge back from a visible player windup (not on Easy)', () => {
   assert.ok(footwork(base({ dist: 1.4, act: 'idle', player, rng: () => .1 })).forward < 0);
   assert.ok(footwork(base({ dist: 1.4, act: 'idle', player, rng: () => .1, difficulty: 0 })).forward >= 0);
 });
+
+import { playerSpeed } from '../src/locomotion.js';
+test('player speed: slower backwards and sideways, no sprinting mid-swing, slowed by guard and blows', () => {
+  const idle = { phase: 'idle', blocking: null };
+  const run = playerSpeed({ fwd: 1, side: 0, f: idle });
+  assert.ok(playerSpeed({ fwd: -1, side: 0, f: idle }) < run * .7);
+  assert.ok(playerSpeed({ fwd: 0, side: 1, f: idle }) < run);
+  assert.ok(playerSpeed({ fwd: 1, side: 0, sprint: true, f: idle }) > run * 1.4);
+  assert.equal(playerSpeed({ fwd: 1, side: 0, sprint: true, f: { phase: 'windup' } }), playerSpeed({ fwd: 1, side: 0, f: { phase: 'windup' } }));
+  assert.ok(playerSpeed({ fwd: 1, side: 0, f: { phase: 'strike' } }) < run * .7);
+  assert.ok(playerSpeed({ fwd: 1, side: 0, f: { phase: 'idle', blocking: 'shield' } }) < run * .65);
+  assert.ok(playerSpeed({ fwd: 1, side: 0, crouch: true, f: idle }) < run * .6);
+});

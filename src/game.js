@@ -3,7 +3,7 @@ import { initAudio, SFX, spatial, setListener } from './audio.js';
 import * as C from './combat.js';
 import { zoneFromHeight, ZONE_MULT, LEG_SLOW } from './damage.js';
 import { decide, REACH } from './ai.js';
-import { steer, footwork } from './locomotion.js';
+import { steer, footwork, playerSpeed } from './locomotion.js';
 import { loadMaterials, terrainMaterial, makeMailMaps, loadFoliage, makeGrassMaterial } from './materials.js';
 import { createPhysics } from './physics.js';
 import { createRender } from './render.js';
@@ -605,7 +605,7 @@ function resetWorld() {
   for (const t of supplyTents) { t.burnt = false; t.t = 0; t.mat.color.setHex(0xc9b68c); t.light.intensity = 0; t.flag.visible = true; }
   setSeed(4242);
   endT = 0; endArgs = null;
-  Object.assign(P, { throwPending: 0, throwKind: null, f: C.createFighter(), charging: false, chargeT: 0, acc: { x: 0, y: 0 }, prevL: false, swingDir: null, bashCd: 0, bashT: 0, cleanT: 0,
+  Object.assign(P, { throwPending: 0, throwKind: null, f: C.createFighter(), charging: false, chargeT: 0, acc: { x: 0, y: 0 }, intent: C.createIntent(), post: { x: 0, y: 0 }, prevL: false, swingDir: null, bashCd: 0, bashT: 0, cleanT: 0,
     lastDefense: null, incomingDir: null, vel: { x: 0, z: 0 }, push: null, kick: 0, swingHits: new Set(), vy: 0, hp: 100, ground: true, crouch: 0, w: 0, dardos: 5, pedras: 12, atk: 0, cd: 0,
     kills: 0, shots: 0, hits: 0, heads: 0, time: 0, swing: 0, throwT: 0, hurtT: 0 });
   P.pos.set(CASTRO.x - 9, 0, CASTRO.z - 5); P.pos.y = heightAt(P.pos.x, P.pos.z);
@@ -715,7 +715,9 @@ window.addEventListener('keyup', e => { keys[e.code] = false; });
 window.addEventListener('mousemove', e => {
   if (state !== 'play' || document.pointerLockElement !== cv) return;
   P.yaw -= e.movementX * sens; P.pitch = clamp(P.pitch - e.movementY * sens, -1.45, 1.45);
+  C.nudgeIntent(P.intent, e.movementX, e.movementY);
   if (P.charging) { P.acc.x += e.movementX; P.acc.y += e.movementY; }
+  if (P.f.phase === 'windup' && !P.f.released) { P.post.x += e.movementX; P.post.y += e.movementY; }
 });
 window.addEventListener('mousedown', e => {
   if (state !== 'play') return;
@@ -1276,31 +1278,32 @@ function updateEnemies(dt) {
    ========================================================= */
 function updatePlayer(dt) {
   P.time += dt;
-  const sprint = (keys.ShiftLeft || keys.ShiftRight) && P.st > 1 && !P.block;
+  C.decayIntent(P.intent, dt);
+  const sprintKey = (keys.ShiftLeft || keys.ShiftRight) && P.st > 1;
   const crouchKey = keys.KeyC || keys.ControlLeft;
   P.crouch = lerp(P.crouch, crouchKey ? 1 : 0, Math.min(1, dt * 10));
-  let mx = 0, mz = 0;
+  // local input: W/S forward/back, A/D sideways
+  const lf = ((keys.KeyW || keys.ArrowUp) ? 1 : 0) - ((keys.KeyS || keys.ArrowDown) ? 1 : 0);
+  const ls = ((keys.KeyD || keys.ArrowRight) ? 1 : 0) - ((keys.KeyA || keys.ArrowLeft) ? 1 : 0);
   const fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw), rx = Math.cos(P.yaw), rz = -Math.sin(P.yaw);
-  if (keys.KeyW || keys.ArrowUp) { mx += fx; mz += fz; }
-  if (keys.KeyS || keys.ArrowDown) { mx -= fx; mz -= fz; }
-  if (keys.KeyD || keys.ArrowRight) { mx += rx; mz += rz; }
-  if (keys.KeyA || keys.ArrowLeft) { mx -= rx; mz -= rz; }
-  const ml = Math.hypot(mx, mz);
-  let speed = 5.2;
-  if (P.crouch > .5) speed = 2.6; else if (sprint && ml > 0) speed = 8.6;
-  if (P.block) speed *= .55;
-  P.vel.x = ml > 0 ? mx / ml * speed : 0; P.vel.z = ml > 0 ? mz / ml * speed : 0;
+  const ml = Math.hypot(lf, ls);
+  const top = ml ? playerSpeed({ fwd: lf / ml, side: ls / ml, sprint: sprintKey, crouch: P.crouch > .5, f: P.f }) : 0;
+  const sprint = sprintKey && top > 7;
+  const tx = ml ? (fx * lf + rx * ls) / ml * top : 0, tz = ml ? (fz * lf + rz * ls) / ml * top : 0;
+  // momentum: quick to start, quick to stop, but not instant (footwork you can read)
+  const nv = steer(P.vel, { x: tx, z: tz }, P.ground ? (ml ? 26 : 34) : 6, dt); P.vel.x = nv.x; P.vel.z = nv.z;
+  const speed = Math.hypot(P.vel.x, P.vel.z);
   if (P.push) { P.pos.x += P.push.x * dt; P.pos.z += P.push.z * dt; const k = Math.exp(-8 * dt); P.push.x *= k; P.push.z *= k; resolve(P.pos, .38); if (Math.hypot(P.push.x, P.push.z) < .05) P.push = null; }
-  if (ml > 0) {
+  if (speed > .01) {
     const ox = P.pos.x, oz = P.pos.z;
-    P.pos.x += mx / ml * speed * dt; P.pos.z += mz / ml * speed * dt;
+    P.pos.x += P.vel.x * dt; P.pos.z += P.vel.z * dt;
     // steep climb check
     const nh = heightAt(P.pos.x, P.pos.z), oh = heightAt(ox, oz);
     if (P.ground && (nh - oh) / (speed * dt) > 1.6) { P.pos.x = ox; P.pos.z = oz; }
     resolve(P.pos, .38);
     if (P.ground) { P.bob += dt * speed * 1.6; P.stepT -= dt * speed; if (P.stepT <= 0) { P.stepT = 2.4; SFX.step(); } }
   }
-  if (sprint && ml > 0) P.st = Math.max(0, P.st - dt * 36);
+  if (sprint) P.st = Math.max(0, P.st - dt * 36);
   if (keys.Space && P.ground && P.st > 10) { P.vy = 6.4; P.ground = false; P.st -= 8; }
   P.vy -= 19 * dt; P.pos.y += P.vy * dt;
   const gh = heightAt(P.pos.x, P.pos.z);
@@ -1312,19 +1315,22 @@ function updatePlayer(dt) {
   if (P.cleanT > 0) { P.cleanT -= dt; if (P.cleanT <= 0) { P.f.stuckJavelins = 0; feed('Escudo limpo'); } }
   // press / release edges of the left button
   if (mouseL && !P.prevL) {
-    if (P.w === 0) { P.charging = true; P.chargeT = 0; P.acc.x = 0; P.acc.y = 0; }
+    if (P.w === 0) { P.charging = true; P.chargeT = 0; P.acc.x = P.intent.x; P.acc.y = P.intent.y; }
     else attack();
   }
   const released = !mouseL && P.prevL; P.prevL = mouseL;
   if (P.charging) {
     P.chargeT += dt;
-    if (P.f.phase !== 'windup' && (P.chargeT >= .12 || released)) {
+    if (P.f.phase !== 'windup' && (P.chargeT >= .08 || released)) {
       // buffered: a click during recovery/flinch starts the blow as soon as the fighter is free
+      P.post.x = 0; P.post.y = 0;
       if (!C.beginAttack(P.f, C.dirFromMouse(P.acc.x, P.acc.y))) {
         if (P.f.phase === 'idle' && !P.f.blocking) { P.charging = false; showPrompt('Sem fôlego para atacar', .6); }
         else if (released) P.queued = true;
       } else if (P.queued) { P.queued = false; C.releaseAttack(P.f); P.charging = false; }
     }
+    // a clear sweep right after the blow started still turns it (the first one may have been read from camera turning)
+    if (P.f.phase === 'windup' && Math.hypot(P.post.x, P.post.y) > 14) { C.reaim(P.f, C.dirFromMouse(P.post.x, P.post.y)); P.post.x = P.post.y = 0; }
     if (released && P.f.phase === 'windup') { C.releaseAttack(P.f); P.charging = false; }
     if (P.w !== 0) P.charging = false;
   }
@@ -1591,7 +1597,7 @@ return {
   P, supplyTents, heightAt, CAMP, scene, camera,
   get enemies() { return enemies; }, get mission() { return mission; }, get state() { return state; },
   get projectiles() { return projectiles; }, get pickups() { return pickups; },
-  input: { mouse: (l, r) => { mouseL = l; mouseR = r; }, mouseMove: (dx, dy) => { if (P.charging) { P.acc.x += dx; P.acc.y += dy; } } },
+  input: { mouse: (l, r) => { mouseL = l; mouseR = r; }, mouseMove: (dx, dy) => { C.nudgeIntent(P.intent, dx, dy); if (P.charging) { P.acc.x += dx; P.acc.y += dy; } if (P.f.phase === 'windup' && !P.f.released) { P.post.x += dx; P.post.y += dy; } } },
   studio: { pose: (e, dt) => { const b = setPose(e, dt); e.m.root.position.set(e.pos.x, e.pos.y + b, e.pos.z); e.m.root.rotation.y = e.yaw; }, freeze: () => { state = 'studio'; }, avatarEntity: () => avatar },
   avatar: AV, get view() { return view; }, avatarHand: () => throwOrigin(), trailCount: () => { let n = 0; for (const t of trails.values()) n += t.samples.length; return n; }, physicsOk: phys.ok, physCounts: () => phys.counts(), V3: THREE.Vector3, damageEnemyForTest: (e, d) => damageEnemy(e, d, false, e.pos.clone()), spawnEnemyJavelin, vm: { stuckVisible: () => STUCK.filter(m => m.visible).length, fal: FAL },
 };

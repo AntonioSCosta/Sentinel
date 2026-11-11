@@ -28,3 +28,21 @@ export function footwork({ dist, sp, act, strafe, difficulty, rng, self, player 
   }
   return { forward: 0, strafe: strafe * .6 };
 }
+
+/**
+ * Player top speed (m/s) for the move direction (fwd/side in −1..1, local) and fighter state,
+ * Mount & Blade style: a fighting stride, slower backwards and sideways, sprint only forward and only when not fighting.
+ */
+export function playerSpeed({ fwd, side, sprint = false, crouch = false, f }) {
+  const n = Math.hypot(fwd, side) || 1, back = Math.max(0, -fwd / n), lat = Math.abs(side / n);
+  let s = 4.4 * (1 - .4 * back - .15 * lat);
+  const fighting = f.phase === 'windup' || f.phase === 'strike' || f.phase === 'recovery' || f.phase === 'staggered' || f.blocking;
+  if (crouch) s = 2.3;
+  else if (sprint && !fighting && fwd > .3) s = 7.6;
+  if (f.phase === 'windup') s *= .75;
+  if (f.phase === 'strike') s *= .55;
+  if (f.phase === 'recovery') s *= .7;
+  if (f.phase === 'staggered') s *= .35;
+  if (f.blocking) s *= .55;
+  return s;
+}
