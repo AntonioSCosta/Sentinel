@@ -162,7 +162,7 @@
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <script type="module">
 import { boot } from './src/game.js';
-boot().catch(err => { console.error(err); document.getElementById('loaderr').classList.remove('hidden'); document.getElementById('start').disabled = true; });
+boot().catch(err => { console.error(err, err.stack); document.getElementById('loaderr').classList.remove('hidden'); document.getElementById('start').disabled = true; });
 </script>
 </body>
 </html>

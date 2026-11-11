@@ -10,12 +10,13 @@ import { createRender } from './render.js';
 import { withTimeout } from './physics.js';
 import { sweepHit, capsuleOf, glance, bladeSegment, toWorld, bladeDir } from './swing.js';
 import { resolveQuality } from './quality.js';
+import { makeRig, driveRig } from './rig.js';
 
 /**
  * Builds the whole game. Rendering, DOM and window are injected so the game can run headless in tests.
  * @returns game API used by boot() and by tools/smoke.mjs
  */
-export async function createGame({ THREE, renderer, canvas, document, window, rapier = null, loader = null, quality = 'medium' }) {
+export async function createGame({ THREE, renderer, canvas, document, window, rapier = null, loader = null, quality = 'medium', chars = null }) {
 clearColliders();
 const $ = id => document.getElementById(id);
 
@@ -371,7 +372,7 @@ function makeSoldier(kind) {
     for (const sx of [-1, 1]) { const h = new THREE.CylinderGeometry(.1, .16, .12, 12, 1, true); const o = add(h, mail, sx * .2, .63, 0, spine); o.rotation.z = sx * .55; o.material.side = THREE.DoubleSide; }
   } else if (armour === 'pectorale') {    // square bronze chest and back plates on leather straps
     add(new THREE.BoxGeometry(.21, .21, .014), gold, 0, .44, .2, spine).name = 'pectorale';
-    add(new THREE.BoxGeometry(.21, .21, .014), gold, 0, .44, -.2, spine);
+    add(new THREE.BoxGeometry(.21, .21, .014), gold, 0, .44, -.2, spine).name = 'pectorale-back';
     for (const sx of [-1, 1]) add(new THREE.BoxGeometry(.035, .02, .42), leather, sx * .12, .64, 0, spine);
   }
   const belt = new THREE.TorusGeometry(.27, .025, 6, 24); belt.rotateX(Math.PI / 2); belt.scale(1, 1, .76);
@@ -471,8 +472,46 @@ function makeSoldier(kind) {
     add(umbo, metal, 0, 0, .025, sc).name = 'umbo';
     root.userData.scutum = sc;
   }
-  return { root, legs, knees, arms, elbows, spine, head, mats };
+  return { root, legs, knees, arms, elbows, spine, head, mats, skin };
 }
+
+/* Rigged soldier: the Quaternius body and animation clips, wearing the kit built above on its bones. */
+const HAND_BASIS = new THREE.Matrix4().makeBasis(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, -1), new THREE.Vector3(-1, 0, 0));
+function rigSoldier(kind) {
+  const p = makeSoldier(kind), ud = p.root.userData, lus = kind === 'lusitano';
+  const shield = ud.scutum || ud.parma;
+  const white = p.mats[0].color.equals(MATS.wool_white.color);
+  const outfit = lus ? (rand() < .5 ? 'lusitano' : 'lusitano_b') : kind === 'velite' ? 'velite' : ud.armour === 'hamata' ? 'roman_mail' : white ? 'roman_white' : 'roman_red';
+  const hair = lus ? ['hair_long', 'hair_beard'] : kind === 'velite' ? ['hair_beard'] : [];
+  const rig = makeRig(THREE, chars.clone, chars, { outfit, hair, shielded: !!shield, tint: rr(.86, 1.05), hairColor: [0x2a1d14, 0x3b2a1e, 0x1c1410, 0x4a3524][Math.floor(rand() * 4)] });
+  // helmet / cap: everything on the old head except the skin
+  const hk = new THREE.Group();
+  for (const o of [...p.head.children]) if (!(o.isMesh && o.material === p.skin)) hk.add(o);
+  hk.position.set(0, 1.5, -.005); hk.scale.setScalar(.88); rig.attach('Head', hk);
+  // weapon in the right fist: blade out past the thumb, edges along the fingers
+  const hand = p.elbows[1].children.at(-1), wpn = new THREE.Group(); wpn.name = 'weapon';
+  for (const o of [...hand.children]) wpn.add(o);
+  wpn.quaternion.setFromRotationMatrix(HAND_BASIS); wpn.position.set(-.03, .085, 0);
+  rig.bones.hand_r.add(wpn);
+  // shield gripped in the left fist, placed for the shield-guard pose
+  if (shield) {
+    shield.parent.remove(shield); rig.root.add(shield); shield.rotation.set(0, 0, 0);
+    // centre the board on the fist in the guard pose, a hand's breadth in front of it
+    const SH = { scutum: [.02, -.02, .07], parma: [.0, 0, .05] }[ud.scutum ? 'scutum' : 'parma'];
+    rig.poseAt('Idle_Shield_Loop', 1); const hp = rig.bones.hand_l.getWorldPosition(new THREE.Vector3()).sub(rig.root.position);
+    shield.position.set(hp.x + SH[0], hp.y + SH[1], hp.z + SH[2]);
+    rig.attachInPose('hand_l', shield, 'Idle_Shield_Loop', 1);
+  }
+  // body armour plates and the greave
+  const plates = []; p.root.traverse(o => { if (o.name === 'pectorale' || o.name === 'pectorale-back') plates.push(o); });
+  for (const o of plates) { o.parent.remove(o); o.position.set(0, 1.33, o.name === 'pectorale' ? .14 : -.17); o.scale.set(.9, .9, 1); rig.attach('spine_03', o); }
+  const gr = []; p.root.traverse(o => { if (o.name === 'greave') gr.push(o); });
+  gr.forEach((o, i) => { o.parent.remove(o); o.position.set(i ? -.114 : .114, .33, -.035); o.scale.set(.82, 1.05, .82); rig.attach(i ? 'calf_r' : 'calf_l', o); });
+  Object.assign(rig.root.userData, ud);
+  const mats = [...new Set([...rig.mats, ...p.mats])];
+  return { root: rig.root, rig, mats, weapon: wpn };
+}
+const soldier = kind => chars ? rigSoldier(kind) : makeSoldier(kind);
 
 /* =========================================================
    Viewmodel (first-person weapons)
@@ -590,7 +629,7 @@ function resetWorld() {
 }
 
 function spawn(kind, x, z, group) {
-  const m = makeSoldier(kind === 'legio' ? 'legio' : kind);
+  const m = soldier(kind === 'legio' ? 'legio' : kind);
   scene.add(m.root);
   const stats = { legio: { hp: 100, sp: 3.9, dmg: 13 }, velite: { hp: 65, sp: 3.7, dmg: 15 }, centurion: { hp: 460, sp: 4.4, dmg: 24 } }[kind];
   const e = { kind, m, pos: new THREE.Vector3(x, heightAt(x, z), z), hp: stats.hp, maxhp: stats.hp, sp: stats.sp, dmg: stats.dmg,
@@ -908,7 +947,7 @@ function updateProjectiles(dt) {
    ========================================================= */
 let hitmT = 0, dmgT = 0;
 function damageEnemy(e, dmg, head, where, special) {
-  e.hp -= dmg; e.flash = .15; burst('blood', where, head ? 14 : 8);
+  e.hp -= dmg; e.flash = .15; e.hits = (e.hits || 0) + 1; e.heavy = dmg >= 45; burst('blood', where, head ? 14 : 8);
   SFX.flesh(); alert(e);
   hitmT = .18; $('hitm').className = head ? 'head' : ''; $('hitm').style.opacity = 1;
   if (head) P.heads++;
@@ -925,6 +964,7 @@ function damageEnemy(e, dmg, head, where, special) {
 }
 function damagePlayer(dmg, from, ranged) {
   if (state !== 'play') return;
+  P.hitsTaken = (P.hitsTaken || 0) + 1;
   if (ranged && from !== P.pos) {
     const dd = V(from.x - P.pos.x, 0, from.z - P.pos.z).normalize();
     const fromAngle = deg(Math.acos(clamp(flatFwd().dot(dd), -1, 1)));
@@ -1006,6 +1046,13 @@ function ikArm(m, k) {
 }
 /** Pose a soldier from its measured velocity and fighter state. Returns the vertical bob. */
 function setPose(e, dt) {
+  if (e.m.rig) {
+    const fx = Math.sin(e.yaw), fz = Math.cos(e.yaw);
+    const tk = e.throwT > 0 ? { k: 1 - e.throwT, rel: e.throwKind === 'sling' ? .83 : .53 } : e.kind === 'velite' && e.atkT > 0 ? { k: 1 - e.atkT / .55, rel: .64 } : null;
+    driveRig(THREE, e.m.rig, { speed: e.mv.x * fx + e.mv.z * fz, side: e.mv.x * fz - e.mv.z * fx, crouch: e.crouch, combat: e.state === 'chase', f: e.f, T: C,
+      throwK: tk ? clamp(tk.k * .33 / tk.rel, 0, 1) : -1, hit: e.hits, heavy: e.heavy, dead: e.dead }, dt);
+    return 0;
+  }
   const m = e.m, f = e.f, k = Math.min(1, dt * 14), combat = e.state === 'chase';
   // legs: stride advances with distance walked, so feet don't slide; works forwards, backwards and sideways
   const fx = Math.sin(e.yaw), fz = Math.cos(e.yaw);
@@ -1120,6 +1167,7 @@ function updateEnemies(dt) {
     const r = e.m.root;
     if (e.dead) {
       e.deadT += dt;
+      if (e.m.rig) { setPose(e, dt); if (e.corpse && e.deadT > .1) { phys.removeCorpse(e.corpse); e.corpse = null; } for (const m of e.m.mats) m.emissive.setRGB(0, 0, 0); continue; }
       if (phys.ok && e.corpse) {
         if (e.deadT >= 6) { phys.removeCorpse(e.corpse); e.corpse = null; } // settled: freeze the pose, free the body
         else { const t = phys.getTransform(e.corpse); r.quaternion.set(t.q.x, t.q.y, t.q.z, t.q.w); r.position.set(0, -.9, 0).applyQuaternion(r.quaternion).add(V(t.p.x, t.p.y, t.p.z)); }
@@ -1215,7 +1263,7 @@ function updateEnemies(dt) {
     // animate from the velocity actually travelled this frame
     if (dt > 1e-4) { const a = Math.min(1, dt * 12); e.mv.x = lerp(e.mv.x, (e.pos.x - px0) / dt, a); e.mv.z = lerp(e.mv.z, (e.pos.z - pz0) / dt, a); }
     const bob = setPose(e, dt);
-    if (e.kind === 'velite' && e.atkT > 0) {
+    if (e.kind === 'velite' && e.atkT > 0 && e.m.arms) {
       const k = 1 - e.atkT / .55;
       e.m.arms[1].rotation.set(k < .7 ? lerp(0, -2.5, k / .7) : lerp(-2.5, .4, (k - .7) / .3), 0, 0);
     }
@@ -1323,9 +1371,9 @@ function updateCamera(dt) {
   P.kick = Math.max(0, P.kick - dt * 1.5);
   camera.rotation.set(P.pitch + shake + P.kick * .12, P.yaw, shake * .5 + P.kick * .05);
   // Viriato himself, posed by the same rig and blade arcs as the Romans
-  avatar.f = P.f; avatar.yaw = P.yaw + Math.PI; avatar.mv.x = P.vel.x; avatar.mv.z = P.vel.z; avatar.throwT = P.throwT; avatar.throwKind = P.throwKind;
+  avatar.f = P.f; avatar.state = P.w === 0 ? 'chase' : 'idle'; avatar.crouch = P.crouch > .4; avatar.dead = state === 'dead'; avatar.hits = P.hitsTaken; avatar.yaw = P.yaw + Math.PI; avatar.mv.x = P.vel.x; avatar.mv.z = P.vel.z; avatar.throwT = P.throwT; avatar.throwKind = P.throwKind;
   const bob3 = setPose(avatar, dt);
-  AV.root.position.set(P.pos.x, P.pos.y + bob3 - P.crouch * .3, P.pos.z); AV.root.rotation.y = avatar.yaw;
+  AV.root.position.set(P.pos.x, P.pos.y + bob3 - (AV.rig ? 0 : P.crouch * .3), P.pos.z); AV.root.rotation.y = avatar.yaw;
   AV.root.visible = view === 'third'; AV_FAL.visible = P.w === 0;
   if (view === 'third') {
     const dir = fwd3(), right = V(Math.cos(P.yaw), 0, -Math.sin(P.yaw));
@@ -1526,9 +1574,9 @@ function step(dt) {
   if (state !== 'menu') VM.visible = view === 'first' && (state === 'play' || state === 'pause');
   updateFires(dt); updateParticles(dt); updateTrails(dt);
 }
-const AV = makeSoldier('lusitano'); scene.add(AV.root); AV.root.visible = false;
+const AV = soldier('lusitano'); scene.add(AV.root); AV.root.visible = false;
 let AV_FAL = null; AV.root.traverse(o => { if (o.name === 'falcata') AV_FAL = o; });
-const AV_HAND = AV.elbows[1].children.at(-1);
+const AV_HAND = AV.rig ? AV.weapon : AV.elbows[1].children.at(-1);
 const avatar = { m: AV, f: P.f, yaw: 0, mv: { x: 0, z: 0 }, state: 'chase', kind: 'lusitano', stride: 0 };
 R = await createRender({ THREE, renderer, scene, camera, sun, grass: GRASS, quality: resolveQuality(quality), devicePixelRatio: window.devicePixelRatio || 1 });
 for (const b of document.querySelectorAll('[data-q]')) {
@@ -1544,6 +1592,7 @@ return {
   get enemies() { return enemies; }, get mission() { return mission; }, get state() { return state; },
   get projectiles() { return projectiles; }, get pickups() { return pickups; },
   input: { mouse: (l, r) => { mouseL = l; mouseR = r; }, mouseMove: (dx, dy) => { if (P.charging) { P.acc.x += dx; P.acc.y += dy; } } },
+  studio: { pose: (e, dt) => { const b = setPose(e, dt); e.m.root.position.set(e.pos.x, e.pos.y + b, e.pos.z); e.m.root.rotation.y = e.yaw; }, freeze: () => { state = 'studio'; }, avatarEntity: () => avatar },
   avatar: AV, get view() { return view; }, avatarHand: () => throwOrigin(), trailCount: () => { let n = 0; for (const t of trails.values()) n += t.samples.length; return n; }, physicsOk: phys.ok, physCounts: () => phys.counts(), V3: THREE.Vector3, damageEnemyForTest: (e, d) => damageEnemy(e, d, false, e.pos.clone()), spawnEnemyJavelin, vm: { stuckVisible: () => STUCK.filter(m => m.visible).length, fal: FAL },
 };
 }
@@ -1557,10 +1606,23 @@ export async function boot() {
   try { rapier = await withTimeout((async () => { const R = (await import('https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.0/+esm')).default; await R.init(); return R; })(), 8000); }
   catch (err) { console.warn('Rapier unavailable, using simple physics', err); rapier = null; }
   renderer.useLegacyLights = true;
-  const game = await createGame({ THREE, renderer, canvas, document, window, rapier, loader: new THREE.TextureLoader(), quality: (() => { try { return window.localStorage.getItem('viriato.quality') || 'medium'; } catch (_) { return 'medium'; } })() });
+  const chars = await loadChars(THREE).catch(err => { console.warn('Animated characters unavailable, using simple models', err); return null; });
+  const game = await createGame({ chars, THREE, renderer, canvas, document, window, rapier, loader: new THREE.TextureLoader(), quality: (() => { try { return window.localStorage.getItem('viriato.quality') || 'medium'; } catch (_) { return 'medium'; } })() });
   if (!game.physicsOk) document.getElementById('physnote').classList.remove('hidden');
   let last = 0;
   const frame = t => { const dt = Math.min(.05, (t - last) / 1000 || 0); last = t; game.step(dt); game.render(); requestAnimationFrame(frame); };
   requestAnimationFrame(frame);
   window.__game = game;
+}
+
+/** Load the CC0 Quaternius body, hair and animation clips (≈3 MB). */
+export async function loadChars(THREE, base = 'assets/chars/') {
+  const [{ GLTFLoader }, SkeletonUtils] = await Promise.all([import('three/addons/loaders/GLTFLoader.js'), import('three/addons/utils/SkeletonUtils.js')]);
+  const gl = new GLTFLoader(), get = f => gl.loadAsync(base + f);
+  const [body, a1, a2, hl, hb] = await Promise.all(['body.glb', 'anim_ual1.glb', 'anim_ual2.glb', 'hair_long.glb', 'hair_beard.glb'].map(get));
+  const tl = new THREE.TextureLoader(), textures = {};
+  await Promise.all(['roman_red', 'roman_white', 'roman_mail', 'velite', 'lusitano', 'lusitano_b'].map(async k => {
+    const t = await tl.loadAsync(base + 'body_' + k + '.jpg'); t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; textures[k] = t;
+  }));
+  return { body: body.scene, clips: [...a1.animations, ...a2.animations], hair: { hair_long: hl.scene, hair_beard: hb.scene }, textures, split: [null, null], clone: SkeletonUtils.clone };
 }

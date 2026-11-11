@@ -17,3 +17,7 @@ Todas as texturas abaixo são do Poly Haven e estão sob licença **CC0** (domí
 | leather | leather_white | https://polyhaven.com/a/leather_white |
 | foliage/oak_leaves.png | tree_small_02 (leaf blades, recomposed on searsia_lucida twigs) | https://polyhaven.com/a/tree_small_02 |
 | foliage/shrub_leaves.png | searsia_lucida (leaves and twigs, recomposed) | https://polyhaven.com/a/searsia_lucida |
+
+## Personagens e animações (CC0)
+- Corpo e cabelos: **Universal Base Characters** — Quaternius (CC0 1.0). Texturas do corpo repintadas como túnicas.
+- Animações: **Universal Animation Library 1 e 2** — Quaternius (CC0 1.0). https://quaternius.com
