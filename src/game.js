@@ -128,7 +128,7 @@ setSeed(777);
 {
   const pines = [], oaks = [], rocks = [], grass = [], shrubs = [];
   const blocked = (x, z, m) => Math.abs(x - roadX(z)) < 7 + m || inCamp(x, z, 12 + m) || Math.hypot(x - CASTRO.x, z - CASTRO.z) < 16 + m;
-  for (let n = 0; n < 1400 && pines.length + oaks.length < 520; n++) {
+  for (let n = 0; n < 2400 && pines.length + oaks.length < 760; n++) {
     const x = rr(-WORLD + 8, WORLD - 8), z = rr(-WORLD + 8, WORLD - 8);
     if (blocked(x, z, 0)) continue;
     const forest = vnoise(x * .025 + 40, z * .025);
@@ -520,8 +520,17 @@ function rigSoldier(kind, look = null) {
   }
   bg.traverse(o => { if (o.isMesh) { o.castShadow = true; } });
   rig.attach('spine_01', bg);
+  let skirtMat = null;
+  if (lus) {   // Lusitanian kilt-like skirt (saia) of wool, hanging from the hips to mid-thigh; follows the pelvis
+    skirtMat = new THREE.MeshStandardMaterial({ color: { lusitano: 0x46341f, lusitano_b: 0x46341f, lusitano_c: 0x96682c, lusitano_d: 0x605440 }[outfit] || 0x46341f, roughness: .95, side: THREE.DoubleSide });
+    const sk = new THREE.Group();
+    sk.add(new THREE.Mesh(new THREE.CylinderGeometry(.185, .275, .36, 28, 1, true).translate(0, .82, 0), skirtMat));
+    const hem = new THREE.Mesh(new THREE.TorusGeometry(.275, .012, 5, 28).rotateX(Math.PI / 2).translate(0, .64, 0), skirtMat.clone()); hem.material.color.multiplyScalar(.6); sk.add(hem);
+    sk.scale.set(1, 1, .86); sk.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    rig.attach('pelvis', sk);
+  }
   Object.assign(rig.root.userData, ud);
-  const mats = [...new Set([...rig.mats, ...p.mats, bMat, gMat, sMat])];
+  const mats = [...new Set([...rig.mats, ...p.mats, bMat, gMat, sMat, ...(skirtMat ? [skirtMat] : [])])];
   return { root: rig.root, rig, mats, weapon: wpn };
 }
 const soldier = (kind, look) => { const m = chars ? rigSoldier(kind, look) : makeSoldier(kind); if (look) m.root.scale.setScalar(look.scale); return m; };
@@ -653,7 +662,7 @@ function resetWorld() {
   Object.assign(P, { throwPending: 0, throwKind: null, f: C.createFighter(), charging: false, chargeT: 0, acc: { x: 0, y: 0 }, intent: C.createIntent(), post: { x: 0, y: 0 }, prevL: false, swingDir: null, bashCd: 0, bashT: 0, cleanT: 0,
     lastDefense: null, incomingDir: null, vel: { x: 0, z: 0 }, push: null, kick: 0, swingHits: new Set(), vy: 0, hp: 100, ground: true, crouch: 0, w: 0, dardos: 5, pedras: 12, atk: 0, cd: 0,
     kills: 0, shots: 0, hits: 0, heads: 0, time: 0, swing: 0, throwT: 0, hurtT: 0 });
-  P.pos.set(CASTRO.x - 9, 0, CASTRO.z - 5); P.pos.y = heightAt(P.pos.x, P.pos.z);
+  P.pos.set(CASTRO.x - 8, 0, CASTRO.z - 8); P.pos.y = heightAt(P.pos.x, P.pos.z);
   P.yaw = Math.PI * .28; P.pitch = -.05;
   mission = 0; tentsBurnt = 0; alarm = false;
   for (let i = 0; i < companions; i++) spawnAlly(i);
