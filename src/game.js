@@ -903,7 +903,7 @@ function hitCiv(c, push) {
   if (--c.hp <= 0) return killCiv(c, push);
   c.knock = push.clone().multiplyScalar(.7); c.stun = .5; c.hits = (c.hits || 0) + 1; c.flash = .08; SFX.flesh(spatial(c.pos) * .6);
 }
-function killCiv(c, push) { if (c.dead) return; c.dead = true; c.deadT = 0; c.mv.x = c.mv.z = 0; c.knock = push || null; SFX.die(spatial(c.pos) * .55); }
+function killCiv(c, push) { if (c.dead) return; c.dead = true; c.deadT = 0; c.mv.x = c.mv.z = 0; c.knock = push || null; SFX.die(spatial(c.pos) * .55, c.female || c.child ? (c.child ? 1.9 : 1.6) : 1); }
 function updateCivs(dt) {
   if (betrayed) { betrayT += dt; setRing(state === 'outro' ? 17 : lerp(RING_R1, RING_R2, smooth(0, 20, betrayT))); }   // after the killing the line opens out round the field
   for (const c of civs) {
