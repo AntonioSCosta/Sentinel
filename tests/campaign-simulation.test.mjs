@@ -210,3 +210,55 @@ test('nearRoad', () => {
   assert.equal(nearRoad(w, { x: 50, y: 30 }), false);
   assert.equal(nearRoad(w, { x: 130, y: 0 }, 40), true);
 });
+
+// Task 14: defesa de aldeia
+const withVillage = (vx = 520, vy = 330) => {
+  const s = fresh();
+  s.world.road = [{ x: 0, y: 300 }, { x: 1000, y: 300 }];
+  s.world.settlements = s.world.settlements.filter(x => x.kind !== 'aldeia');
+  s.world.settlements.push({ id: 'av', kind: 'aldeia', name: 'Aldeia de Teste', x: vx, y: vy });
+  s.villages = { av: { burnt: false, recruitedDay: -999 } };
+  return s;
+};
+
+test('defesa: party junto a uma aldeia e patrulha a <= ENCOUNTER_RADIUS dela', () => {
+  const s = withVillage(520, 325);
+  s.patrols.push({ id: 'p1', kind: 'patrulha', x: 480, y: 300, i: 1, men: 6 });   // anda 35 -> (515,300), a ~25 da aldeia
+  s.party = { x: 530, y: 340 };   // a ~18 da aldeia, a ~42 da patrulha
+  const r = stepDay(s, ACAMPAR, rng());
+  assert.equal(r.encounter.kind, 'defesa');
+  assert.equal(r.encounter.villageId, 'av');
+  assert.equal(r.encounter.foe.id, 'p1');
+});
+
+test('defesa tem precedência sobre a patrulha simples, mas não sobre o pretor na party', () => {
+  const s = withVillage(510, 310);
+  s.patrols.push({ id: 'p1', kind: 'patrulha', x: 470, y: 300, i: 1, men: 6 });   // -> (505,300), perto da party e da aldeia
+  s.party = { x: 510, y: 305 };
+  assert.equal(stepDay(s, ACAMPAR, rng()).encounter.kind, 'defesa');
+  const t = withVillage(510, 310);
+  t.patrols.push({ id: 'p1', kind: 'patrulha', x: 470, y: 300, i: 1, men: 6 });
+  t.party = { x: 510, y: 305 };
+  t.praetor = { id: 't', name: 'T', x: 515, y: 305, men: 50, speed: 0, traits: { pursuit: 0, scorch: 0 } };
+  assert.equal(stepDay(t, ACAMPAR, rng()).encounter.kind, 'pretor');
+});
+
+test('defesa: o pretor junto da aldeia (longe da party) também a ameaça', () => {
+  const s = withVillage(500, 400);
+  s.praetor = { id: 't', name: 'T', x: 500, y: 425, men: 50, speed: 0, traits: { pursuit: 0, scorch: 0 } };
+  s.party = { x: 500, y: 380 };   // a 20 da aldeia, a 45 do pretor
+  const r = stepDay(s, ACAMPAR, rng());
+  assert.equal(r.encounter.kind, 'defesa');
+  assert.equal(r.encounter.foe, s.praetor);
+  assert.equal(r.encounter.villageId, 'av');
+});
+
+test('defesa: aldeia queimada, party longe ou escondida não dão defesa', () => {
+  const mk = () => { const s = withVillage(510, 310); s.patrols.push({ id: 'p1', kind: 'patrulha', x: 470, y: 300, i: 1, men: 6 }); return s; };
+  let s = mk(); s.villages.av.burnt = true; s.party = { x: 510, y: 305 };
+  assert.equal(stepDay(s, ACAMPAR, rng()).encounter.kind, 'patrulha');
+  s = mk(); s.party = { x: 540, y: 340 };   // a ~42 da aldeia: fora dos 25; e a ~53 da patrulha
+  assert.equal(stepDay(s, ACAMPAR, rng()).encounter, null);
+  s = mk(); s.party = { x: 510, y: 305 };
+  assert.equal(stepDay(s, { kind: 'esconder' }, rng()).encounter, null);
+});

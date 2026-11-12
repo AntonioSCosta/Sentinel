@@ -7,13 +7,15 @@ export const BATTLE_TYPES = ['emboscada', 'campo-aberto', 'defesa-aldeia', 'assa
 
 const FOE_MEN = { patrulha: 6, comboio: 8, pretor: 60, posto: 12 };
 const LOOT = {
-  emboscada: { food: 6, arms: 3 }, 'assalto-coluna': { food: 20, arms: 6 }, 'campo-aberto': { food: 4, arms: 2 },
+  emboscada: { food: 6, arms: 3 }, 'assalto-coluna': { food: 20, arms: 6 }, 'campo-aberto': { food: 4, arms: 2 }, 'defesa-aldeia': { food: 4, arms: 2 },
   decisiva: { food: 10, arms: 5 }, historica: { food: 8, arms: 4 },
 };
 const DEFEAT = { food: 3, fame: 5 }, RETREAT = { food: 5, fame: 3 };
+const VILLAGE_FAME = 3;   // defesa de aldeia: a mais na vitória, a menos quando arde
 
 function typeOf(enc) {
   if (enc.kind === 'pretor') return { type: 'decisiva', site: 'campo' };
+  if (enc.kind === 'defesa') return { type: 'defesa-aldeia', site: 'castro' };
   if (enc.kind === 'posto') return { type: 'historica', site: 'castro', chapter: 'acampamento' };
   if (enc.waiting) return { type: enc.kind === 'comboio' ? 'assalto-coluna' : 'emboscada', site: 'estrada' };
   return { type: 'campo-aberto', site: 'campo' };
@@ -21,7 +23,7 @@ function typeOf(enc) {
 
 export function battleSpec(enc, state, rng) {
   const { type, site, chapter } = typeOf(enc);
-  const total = enc.foe?.men ?? FOE_MEN[enc.kind] ?? 6;
+  const total = enc.foe?.men ?? FOE_MEN[enc.foe?.kind] ?? FOE_MEN[enc.kind] ?? 6;
   const shown = Math.min(total, ENEMY_CAP);
   const velites = Math.round(shown * 0.25);
   const spec = {
@@ -31,6 +33,7 @@ export function battleSpec(enc, state, rng) {
     bonus: { allies: Math.max(0, state.men - ALLY_CAP), enemies: Math.max(0, total - ENEMY_CAP) },
   };
   if (chapter) spec.chapter = chapter;
+  if (enc.villageId !== undefined) spec.villageId = enc.villageId;
   if (enc.foe?.id !== undefined) spec.foeId = enc.foe.id;
   return spec;
 }
@@ -47,7 +50,7 @@ export function applyResult(state, spec, result) {
     events.push({ type: 'retirada', lost });
   } else if (result.won) {
     const loot = LOOT[spec.type] || { food: 0, arms: 0 };
-    const fame = spec.type === 'decisiva' ? 15 : 5;
+    const fame = spec.type === 'decisiva' ? 15 : spec.type === 'defesa-aldeia' ? 5 + VILLAGE_FAME : 5;
     state.food += loot.food; state.arms += loot.arms; state.fame += fame;
     if (spec.foeId !== undefined) state.patrols = state.patrols.filter(p => p.id !== spec.foeId);
     events.push({ type: 'vitoria', lost, food: loot.food, arms: loot.arms, fame });
@@ -55,6 +58,11 @@ export function applyResult(state, spec, result) {
   } else {
     spend(state, DEFEAT);
     events.push({ type: 'derrota', lost });
+  }
+  if (!result.won && spec.type === 'defesa-aldeia' && state.villages[spec.villageId]) {   // ninguém a defendeu: arde
+    state.villages[spec.villageId].burnt = true;
+    spend(state, { fame: VILLAGE_FAME });
+    events.push({ type: 'aldeia-queimada', id: spec.villageId });
   }
   state.cooldown = 2;
   if (checkRuin(state)) events.push({ type: 'ruina' });

@@ -6,10 +6,10 @@ import { ENEMY_CAP, ALLY_CAP } from '../src/campaign/battles.js';
 const spec = (o = {}) => ({ type: 'emboscada', seed: 77, allies: 8, enemies: { legio: 6, velites: 2, centurion: false }, bonus: { allies: 0, enemies: 0 }, realMen: 8, ...o });
 const kinds = p => p.enemies.reduce((m, e) => (m[e.kind] = (m[e.kind] || 0) + 1, m), {});
 
-test('só emboscada e campo aberto têm cena 3D', () => {
-  assert.deepEqual(BRIDGED, ['emboscada', 'campo-aberto']);
-  assert.ok(isBridged(spec()) && isBridged(spec({ type: 'campo-aberto' })));
-  for (const t of ['defesa-aldeia', 'assalto-coluna', 'retirada', 'decisiva', 'historica']) assert.ok(!isBridged(spec({ type: t })));
+test('tipos com cena 3D', () => {
+  assert.deepEqual(BRIDGED, ['emboscada', 'campo-aberto', 'defesa-aldeia']);
+  assert.ok(isBridged(spec()) && isBridged(spec({ type: 'campo-aberto' })) && isBridged(spec({ type: 'defesa-aldeia' })));
+  for (const t of ['assalto-coluna', 'retirada', 'decisiva', 'historica']) assert.ok(!isBridged(spec({ type: t })));
   assert.ok(!isBridged(null));
 });
 

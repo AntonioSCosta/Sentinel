@@ -7,7 +7,7 @@ import { foodPerDay, recruitsFrom, checkRuin } from './state.js';
 export const MARCH_SPEED = 45;
 export const PATROL_SPEED = 35;
 export const ENCOUNTER_RADIUS = 30;
-const REACH = 20, ROAD_NEAR = 25;
+const REACH = 20, ROAD_NEAR = 25, VILLAGE_NEAR = 25;
 const SPAWN_EVERY = 12, RECRUIT_GAP = 10, HELP_GAP = 30, HELP_FOOD = 25, HELP_FAME = 30, HELP_MEN = 2;
 const PATROL_MEN = { patrulha: 6, comboio: 8 };
 const STARVE = 0.10;
@@ -109,10 +109,23 @@ function feed(state, events) {
   events.push({ type: 'fome', mortos: dead });
 }
 
+/** Uma aldeia intacta a <= VILLAGE_NEAR da party com uma patrulha ou o pretor a <= ENCOUNTER_RADIUS dela. */
+function villageThreat(state) {
+  const foes = state.praetor ? [...state.patrols, state.praetor] : state.patrols;
+  for (const s of state.world.settlements) {
+    if (s.kind !== 'aldeia' || state.villages[s.id]?.burnt || dist(s, state.party) > VILLAGE_NEAR) continue;
+    const foe = foes.find(f => dist(f, s) <= ENCOUNTER_RADIUS);
+    if (foe) return { kind: 'defesa', foe, villageId: s.id, waiting: false };
+  }
+  return null;
+}
+
 function detect(state, order, hidden) {
   const { party } = state;
   if (state.praetor && dist(state.praetor, party) <= ENCOUNTER_RADIUS) return { kind: 'pretor', foe: state.praetor, waiting: false };
   if (hidden) return null;
+  const threat = villageThreat(state);
+  if (threat) return threat;
   const foe = state.patrols.find(p => dist(p, party) <= ENCOUNTER_RADIUS);
   if (!foe) return null;
   return { kind: foe.kind, foe, waiting: order.kind === 'esperar' && nearRoad(state.world, party) };

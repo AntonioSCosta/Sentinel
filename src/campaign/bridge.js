@@ -3,7 +3,7 @@ import { makeRng } from './rng.js';
 import { ALLY_CAP, ENEMY_CAP } from './battles.js';
 
 /** Tipos de batalha que já têm cena 3D; os outros continuam no modal provisório. */
-export const BRIDGED = ['emboscada', 'campo-aberto'];
+export const BRIDGED = ['emboscada', 'campo-aberto', 'defesa-aldeia'];
 export const isBridged = spec => !!spec && BRIDGED.includes(spec.type);
 
 const COL_GAP = 3.2, FILE = 1.1;          // emboscada: coluna em duas filas na estrada, como a patrulha do capítulo

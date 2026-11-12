@@ -138,3 +138,36 @@ test('applyResult em estado terminado não altera nada', () => {
   assert.deepEqual(applyResult(s, b, res({ alliesLost: 3 })), []);
   assert.equal(JSON.stringify(s), before);
 });
+
+// Task 14: defesa de aldeia
+const defesa = (s, foe = {}) => battleSpec({ kind: 'defesa', foe: { id: 'patrulha-1', kind: 'patrulha', men: 6, ...foe }, villageId: 'v1', waiting: false }, s, rng());
+const withV = () => { const s = st(14); s.villages.v1 = { burnt: false, recruitedDay: -999 }; s.patrols.push({ id: 'patrulha-1' }); return s; };
+
+test('defesa: tipo defesa-aldeia, local castro, guarda a aldeia e o inimigo', () => {
+  const s = withV(), b = defesa(s);
+  assert.equal(b.type, 'defesa-aldeia'); assert.equal(b.site, 'castro'); assert.equal(b.villageId, 'v1');
+  assert.equal(b.foeId, 'patrulha-1'); assert.equal(b.enemies.legio + b.enemies.velites, 6);
+  const p = defesa(s, { id: 'vetilio', men: 60 });
+  assert.equal(p.enemies.legio + p.enemies.velites, 30); assert.equal(p.bonus.enemies, 30);
+});
+
+test('defesa vencida: aldeia intacta, saque de campo aberto e +3 de fama', () => {
+  const s = withV(), food = s.food, arms = s.arms, fame = s.fame;
+  const ev = applyResult(s, defesa(s), res());
+  assert.equal(s.villages.v1.burnt, false);
+  assert.equal(s.food, food + 4); assert.equal(s.arms, arms + 2); assert.equal(s.fame, fame + 8);
+  assert.equal(s.patrols.length, 0); assert.equal(ev[0].type, 'vitoria');
+});
+
+test('defesa perdida, abandonada ou em retirada: a aldeia arde e a fama cai mais 3', () => {
+  for (const [r, fameLoss] of [[res({ won: false }), 5 + 3], [res({ won: false, retreated: true }), 3 + 3]]) {
+    const s = withV(), fame = s.fame;
+    const ev = applyResult(s, defesa(s), r);
+    assert.equal(s.villages.v1.burnt, true);
+    assert.equal(s.fame, fame - fameLoss);
+    assert.ok(ev.some(e => e.type === 'aldeia-queimada' && e.id === 'v1'));
+  }
+  const s = withV(); s.fame = 6;
+  applyResult(s, defesa(s), res({ won: false }));
+  assert.equal(s.fame, 0); assert.equal(s.over, 'derrota');
+});
