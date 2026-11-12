@@ -269,3 +269,14 @@ test('decisiva vencida também conta os abatidos e a batalha', () => {
   applyResult(s, battleSpec(enc('pretor', false, { men: 60 }), s, rng()), res({ enemiesKilled: 30 }));
   assert.equal(s.over, 'vitoria'); assert.equal(s.kills, 30); assert.equal(s.battles, 1);
 });
+
+test('decisivaWon: só uma decisiva vencida o marca (campo criado quando preciso)', () => {
+  const s = st(14);
+  applyResult(s, battleSpec(enc('patrulha'), s, rng()), res());
+  assert.equal(s.decisivaWon ?? false, false);
+  const t = st(14);
+  applyResult(t, battleSpec(enc('pretor', false, { men: 60 }), t, rng()), res({ won: false }));
+  assert.equal(t.decisivaWon ?? false, false);
+  applyResult(t, battleSpec(enc('pretor', false, { men: 60 }), t, rng()), res());
+  assert.equal(t.decisivaWon, true);
+});

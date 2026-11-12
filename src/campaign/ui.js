@@ -132,17 +132,18 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const s = flow.state, won = s.over === 'vitoria', yearOut = s.day >= YEAR_DAYS, pretor = s.praetor?.name || 'o pretor';
     $('mend-title').textContent = won || yearOut ? 'Fim do ano de 147 a.C.' : 'O bando desfez-se';
     $('mend-result').textContent = won ? 'Vitória' : 'Derrota';
-    $('mend-text').textContent = won ? (yearOut ? 'Viriato sobreviveu ao ano. Os romanos recuaram para os quartéis de inverno.' : `O exército de ${pretor} foi desfeito em campo.`)
+    const decisive = won && !!s.decisivaWon;   // a decisiva vencida conta mais que o fim do ano, mesmo no último dia
+    $('mend-text').textContent = won ? (decisive ? `O exército de ${pretor} foi desfeito em campo.` : 'Viriato chegou ao fim do ano com o bando inteiro. Roma não o venceu.')
       : yearOut ? `O inverno chegou sem ${s.men < WIN_MEN ? (s.fame < WIN_FAME ? 'homens nem fama bastantes' : 'homens bastantes') : 'fama bastante'} para manter a guerra.`
       : s.men <= 0 ? 'Não restam homens para combater.' : 'Sem fama, as aldeias deixaram de dar homens e comida.';
     const vals = { days: Math.min(s.day, YEAR_DAYS), men: s.men, burnt: Object.values(s.villages).filter(v => v.burnt).length, kills: s.kills || 0, battles: s.battles || 0 };
     for (const [k, v] of Object.entries(vals)) e.querySelector(`[data-k="${k}"]`).textContent = v;
     const chron = $('mend-chron'); chron.textContent = '';
-    if (won) {   // a frase das fontes sobre Vetílio, tal como está na Crónica
+    if (decisive) {   // a frase das fontes sobre Vetílio, tal como está na Crónica; só quando o venceste em campo
       const ent = entryFor('vetilio'), line = ent.text.split(/(?<=\.)\s+/).find(x => x.includes('Periochae')) || ent.title;
       const c = doc.createElement('cite'); c.textContent = ent.citation;
       chron.append(line, c);
-    } else chron.textContent = 'Os montes ficaram em silêncio.';
+    } else if (!won) chron.textContent = 'Os montes ficaram em silêncio.';
     if (!e.dataset.shown) { e.dataset.shown = '1'; $('mend-new').focus?.(); }
   }
 

@@ -828,7 +828,7 @@ function giveOrder(o) {
   if (!allies.some(a => !a.dead)) { showPrompt('Não tens companheiros vivos', 1.2); return; }
   if (o === 'hold') { placing = !placing; if (placing) showPrompt('Aponta e clica para pôr a bandeira (X cancela)', 2.5); else FLAG.visible = order === 'hold'; return; }
   placing = false; order = o; FLAG.visible = false;
-  feed(o === 'follow' ? 'Ordem: sigam-me!' : 'Ordem: ao ataque!'); SFX.horn && o === 'charge' && SFX.grunt();
+  feed(o === 'follow' ? 'Ordem: sigam-me' : 'Ordem: ao ataque'); SFX.horn && o === 'charge' && SFX.grunt();
 }
 function aimPoint() { const d = V(0, 0, -1).applyQuaternion(camera.quaternion); return aimGround(camera.position, d, heightAt, 90); }
 function placeFlag() {
@@ -950,15 +950,39 @@ function resetCampaignBattle() {
   for (const x of [...enemies, ...allies]) { resolve(x.pos, .4); x.pos.y = heightAt(x.pos.x, x.pos.z); }   // ninguém nasce dentro de uma árvore
   campBattle.retreat = spec.retreat?.possible ? retreatEdge() : null;
 }
-/* Retirada (só com uma serra perto no mapa): a orla fica do lado oposto à força romana, a RETREAT_D m de Viriato. */
-const RETREAT_D = 70, RETREAT_R = 9;
+/* Retirada (só com uma serra perto no mapa): a orla fica do lado oposto à força romana, a 50–70 m, num sítio a que se
+   chegue a pé: de várias direcções afastadas dos romanos, fica a primeira cujo caminho a direito não sobe a pique. */
+const RETREAT_D = [70, 60, 50], RETREAT_R = 9, RETREAT_BEARINGS = [0, .4, -.4, .8, -.8, 1.2, -1.2, 1.57, -1.57];
+const RETREAT_GRADE = .8, RETREAT_RISE = 12;   // o jogador pára a subir acima de 1.6 m por metro; aqui fica-se bem abaixo
 const COMPASS_PT = ['norte', 'nordeste', 'este', 'sudeste', 'sul', 'sudoeste', 'oeste', 'noroeste'];
+/** Caminho a direito de o até t: maior declive (por metro, a subir) e subida total. */
+function pathCost(o, t) {
+  const L = Math.hypot(t.x - o.x, t.z - o.z), n = Math.max(1, Math.ceil(L / 1.5));
+  let prev = heightAt(o.x, o.z), grade = 0, walls = false;
+  for (let i = 1; i <= n; i++) {
+    const x = o.x + (t.x - o.x) * i / n, z = o.z + (t.z - o.z) * i / n, h = heightAt(x, z);
+    grade = Math.max(grade, (h - prev) / (L / n)); prev = h;
+    if (Math.hypot(x - CASTRO.x, z - CASTRO.z) < 17) walls = true;   // a muralha do castro não se atravessa
+  }
+  return { grade, rise: prev - heightAt(o.x, o.z), walls };
+}
 function retreatEdge() {
   let ex = 0, ez = 0; for (const e of enemies) { ex += e.pos.x / enemies.length; ez += e.pos.z / enemies.length; }
-  let dx = P.pos.x - ex, dz = P.pos.z - ez; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
-  const lim = WORLD - 8, x = clamp(P.pos.x + dx * RETREAT_D, -lim, lim), z = clamp(P.pos.z + dz * RETREAT_D, -lim, lim);
-  const a = Math.atan2(x - P.pos.x, -(z - P.pos.z));   // 0 = norte (-z), a rodar para este (+x)
-  return { at: { x, z }, dir: COMPASS_PT[((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8], on: false };
+  // na defesa da aldeia só se sai pela porta: o caminho conta a partir de fora dela
+  const via = campBattle.plan.type === 'defesa-aldeia' ? { x: CASTRO.x + GATE_DIR.x * 19, z: CASTRO.z + GATE_DIR.z * 19 } : null, o = via || P.pos;
+  const base = Math.atan2(P.pos.x - ex, P.pos.z - ez), lim = WORLD - 8;
+  let best = null, bestScore = Infinity;
+  search: for (const b of RETREAT_BEARINGS) for (const d of RETREAT_D) {
+    const x = P.pos.x + Math.sin(base + b) * d, z = P.pos.z + Math.cos(base + b) * d;
+    if (Math.abs(x) > lim || Math.abs(z) > lim || solidAt(x, z)) continue;
+    const c = pathCost(o, { x, z });
+    if (c.grade < RETREAT_GRADE && c.rise < RETREAT_RISE && !c.walls) { best = { x, z }; break search; }
+    const score = c.grade * 20 + Math.max(0, c.rise) + Math.abs(b) * 2 + (c.walls ? 100 : 0);   // nenhuma boa: fica a menos má
+    if (score < bestScore) { bestScore = score; best = { x, z }; }
+  }
+  if (!best) best = { x: clamp(P.pos.x + Math.sin(base) * 50, -lim, lim), z: clamp(P.pos.z + Math.cos(base) * 50, -lim, lim) };
+  const at = { x: best.x, z: best.z }, a = Math.atan2(at.x - P.pos.x, -(at.z - P.pos.z));   // 0 = norte (-z), a rodar para este (+x)
+  return { at, via, dir: COMPASS_PT[((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8], on: false };
 }
 /** Tecla G (e «Retirar» na pausa): ordena a retirada, ou desfaz a ordem. Os homens passam a seguir Viriato. */
 function orderRetreat(on) {
@@ -1036,12 +1060,12 @@ function checkCampaignBattle(dt = 0) {
     endCampaignBattle('escaped'); state = 'won'; endT = 2.6; endArgs = null;
     showMsg('A COLUNA ESCAPOU', 'Os carros seguiram pela estrada com a carga.', 2.6); return;
   }
-  if (campBattle.plan.type === 'defesa-aldeia' && state === 'play') {
+  if (campBattle.plan.type === 'defesa-aldeia' && state === 'play' && !campBattle.retreat?.on) {   // em retirada a aldeia fica entregue: arde no mapa, não aqui
     const near = p => Math.hypot(p.x - CASTRO.x, p.z - CASTRO.z) < HOLD_R;
     const taken = enemies.some(e => !e.dead && near(e.pos)) && !near(P.pos) && !allies.some(a => !a.dead && near(a.pos));
     campBattle.holdT = taken ? (campBattle.holdT || 0) + dt : 0;
     if (campBattle.holdT >= HOLD_T) {   // 'won' é só o estado de fim de batalha: a contagem diz que é derrota
-      endCampaignBattle('burnt'); state = 'won'; SFX.horn(); endT = 2.6; endArgs = null;
+      endCampaignBattle('burnt'); state = 'won'; endT = 2.6; endArgs = null;
       showMsg('A ALDEIA ARDE', 'Os romanos tomaram o centro e pegaram-lhe fogo.', 2.6); return;
     }
   }
@@ -1716,10 +1740,10 @@ const MISSIONS = [
 const patrolLeft = () => enemies.filter(e => e.group === 'patrol' && !e.dead).length;
 function setObjective() { $('objh').classList.toggle('hidden', !campBattle?.retreat);
   if (campBattle) { $('objm').textContent = 'CAMPANHA · ' + CAMP_OPENING[campBattle.plan.type][0].toUpperCase(); const left = enemies.filter(e => !e.dead).length, rt = campBattle.retreat;
-    if (rt) $('objh').textContent = rt.on ? 'G desfaz a retirada.' : `Retirada possível: a serra fica a ${rt.dir} (G).`;
+    if (rt) $('objh').textContent = rt.on ? 'G desfaz a retirada.' : `Retirada possível: orla a ${rt.dir} (G).`;
     if (rt && rt.on) { $('objt').textContent = `Retirada — chega à orla a ${rt.dir}`; return; }
     if (campBattle.plan.type === 'decisiva') { $('objt').textContent = `Decisiva — ${campBattle.spec.commander || 'o pretor'} (${left} romanos)`; return; }
-    $('objt').textContent = carts.length ? `Assalta a coluna — carros ${carts.filter(c => !c.gone).length}/${carts.length}` : campBattle.plan.type === 'defesa-aldeia' ? `Defende a aldeia — ${left} romanos` + (campBattle.holdT > 0 ? ' · estão a tomar o centro!' : '') : `Derrota os romanos (${left} restantes)`; return; }
+    $('objt').textContent = carts.length ? `Assalta a coluna — carros ${carts.filter(c => !c.gone).length}/${carts.length}` : campBattle.plan.type === 'defesa-aldeia' ? `Defende a aldeia — ${left} romanos` + (campBattle.holdT > 0 ? ' · os romanos tomam o centro' : '') : `Derrota os romanos (${left} restantes)`; return; }
   if (chapter === 'cativos' && halt) { const left = halt.groups.filter(g => g.bound).length, t = halt.reinfT; $('objm').textContent = 'I · OS CATIVOS';
     $('objt').textContent = (left ? `Liberta os cativos (${3 - left}/3 grupos)` + (canLeave(halt.freed) ? ' ou leva-os para o fumo na floresta' : '') : 'Leva-os para o fumo na floresta') + (t > 0 ? ` · reforços romanos em ${Math.ceil(t)} s` : ''); return; }
   if (chapter === 'prologo') { $('objm').textContent = 'PRÓLOGO · A TRAIÇÃO DE GALBA'; $('objt').textContent = `Foge pela brecha até ao fumo na floresta (${Math.round(Math.hypot(P.pos.x - ESCAPE.x, P.pos.z - ESCAPE.z))} m)`; return; } $('objm').textContent = MISSIONS[mission].m; $('objt').textContent = MISSIONS[mission].t(); }
@@ -2724,7 +2748,7 @@ function updateFires(dt) {
    ========================================================= */
 const cmp = $('compass'); const cctx = cmp.getContext && cmp.getContext('2d');
 function objectiveTarget() {
-  if (campBattle?.retreat?.on) return V(campBattle.retreat.at.x, 0, campBattle.retreat.at.z);
+  if (campBattle?.retreat?.on) { const r = campBattle.retreat, t = r.via && Math.hypot(P.pos.x - CASTRO.x, P.pos.z - CASTRO.z) < 16 ? r.via : r.at; return V(t.x, 0, t.z); }   // da aldeia, primeiro a porta
   if (chapter === 'prologo') return V(ESCAPE.x, 0, ESCAPE.z);
   if (chapter === 'cativos') { let best = null, bd = 1e9; if (halt) for (const g of halt.groups) if (g.bound) { const d = Math.hypot(g.x - P.pos.x, g.z - P.pos.z); if (d < bd) { bd = d; best = V(g.x, 0, g.z); } } return best || V(WOODS.x, 0, WOODS.z); }
   if (mission === 0) { let best = null, bd = 1e9; for (const e of enemies) if (e.group === 'patrol' && !e.dead) { const d = e.pos.distanceTo(P.pos); if (d < bd) { bd = d; best = e.pos; } } return best; }
@@ -3019,7 +3043,7 @@ resetWorld();
 $('start').disabled = false; $('start').textContent = 'COMEÇAR';
 return {
   startCampaign, campaignStorage: storage, campaign: campUI, startCampaignBattle,
-  campaignTest: { YEAR_DAYS, get retreat() { const r = campBattle?.retreat; return r ? { on: r.on, at: { ...r.at }, dir: r.dir } : { on: false, at: null }; }, forceBattle: spec => { const f = campUI.flow; f.battle = spec; f.phase = 'batalha'; campUI.render(); return f; } },
+  campaignTest: { YEAR_DAYS, get retreat() { const r = campBattle?.retreat; return r ? { on: r.on, at: { ...r.at }, via: r.via ? { ...r.via } : null, dir: r.dir } : { on: false, at: null, via: null }; }, forceBattle: spec => { const f = campUI.flow; f.battle = spec; f.phase = 'batalha'; campUI.render(); return f; } },
   start: (d, ch = 'emboscada') => { if (d != null) diff = d; setChapter(ch); startGame(false); }, startIntro: (ch = chapter) => { setChapter(ch); startGame(true); }, get civs() { return civs; }, get riders() { return riders; }, get chapter() { return chapter; }, MEADOW, ESCAPE, CASTRO, roadX, get carts() { return carts; }, get introT() { return introT; }, step, render: () => { if (state === 'map') return; cullChunks(CHUNKS, camera.position); cullCharacters(enemies, camera.position); cullCharacters(allies, camera.position); cullCharacters(civs, camera.position); R.render(); }, setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
   P, supplyTents, heightAt, CAMP, scene, camera, CHUNKS,
   get enemies() { return enemies; }, get allies() { return allies; }, setCompanions: n => { companions = n; }, forceDir: d => { forcedDir = d; }, get order() { return order; }, get placing() { return placing; }, flag: FLAG, flagAt, hurtAllyForTest: (a, d) => hurtAlly(a, d, a.pos.clone()), get mission() { return mission; }, get tentsBurnt() { return tentsBurnt; }, alertForTest: e => alert(e), get halt() { return halt; }, get companions() { return companions; }, get alarm() { return alarm; }, get nextChapter() { return nextChapter; }, HALT, WOODS, CSTART, get state() { return state; },

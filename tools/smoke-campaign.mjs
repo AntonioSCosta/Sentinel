@@ -293,7 +293,7 @@ function retreat({ G, doc, win, check, st, setGod, $, shown }) {
   };
   const backOnMap = () => G.state === 'map' && shown('map') && !shown('hud') && !shown('mbattle');
   let w = begin(true);
-  check(`retirada: a sober one-line hint at the start (${$('objh').textContent})`, shown('objh') && /^Retirada possível: a serra fica a [a-z]+ \(G\)\.$/.test($('objh').textContent));
+  check(`retirada: a sober one-line hint at the start (${$('objh').textContent})`, shown('objh') && /^Retirada possível: orla a [a-z]+ \(G\)\.$/.test($('objh').textContent));
   const r = G.campaignTest.retreat;
   const en = G.enemies.reduce((a, e) => ({ x: a.x + e.pos.x / G.enemies.length, z: a.z + e.pos.z / G.enemies.length }), { x: 0, z: 0 });
   const away = (r.at.x - G.P.pos.x) * (G.P.pos.x - en.x) + (r.at.z - G.P.pos.z) * (G.P.pos.z - en.z);
@@ -317,6 +317,22 @@ function retreat({ G, doc, win, check, st, setGod, $, shown }) {
   $('pretreat').click();
   check('retirada: «Retirar» resumes with the retreat ordered', G.state === 'play' && G.campaignTest.retreat.on && /Retirada/.test($('objt').textContent));
   doc.dispatchEvent(new win.Event('pointerlockchange')); $('abandon').click();
+  // defesa-aldeia: the edge must be reachable on foot (out of the gate and away), with the move key held, no teleport
+  w = begin(true, 'defesa-aldeia'); w.f.state.men = 20; st(5);   // the 8 men lost below must not ruin the band
+  key('KeyG'); up('KeyG');
+  { const rt = G.campaignTest.retreat, wps = [...(rt.via ? [rt.via] : []), rt.at];
+    const h0 = G.heightAt(G.P.pos.x, G.P.pos.z), h1 = G.heightAt(rt.at.x, rt.at.z);
+    check(`defesa retirada: the edge is not up a mountainside (rise ${(h1 - h0).toFixed(1)} m)`, h1 - h0 < 12 && Math.abs(rt.at.x) < 192.5 && Math.abs(rt.at.z) < 192.5);
+    for (const a of G.allies) G.hurtAllyForTest(a, 9999);   // nobody kills the Romans for him: the battle can only end at the edge
+    setGod(true); key('KeyW');
+    let i = 0, n = 0;
+    for (; n < 60 * 90 && G.state === 'play'; n++) {
+      const t = wps[i]; if (Math.hypot(t.x - G.P.pos.x, t.z - G.P.pos.z) < 3 && i < wps.length - 1) i++;
+      G.P.yaw = Math.atan2(-(wps[i].x - G.P.pos.x), -(wps[i].z - G.P.pos.z)); G.P.hp = 100; st(1);
+    }
+    up('KeyW'); st(200); setGod(false);
+    check(`defesa retirada: walking out reaches the edge (${(n / 60).toFixed(0)} s) and ends as a retreat`, backOnMap() && w.calls() === 1 && w.f.phase === 'mapa'
+      && w.f.state.party.x === w.serra.x && /recua para/.test($('mlog').textContent)); }
   // no serra near: no hint, no key, no button
   w = begin(false); st(5);
   check('sem serra: no retreat hint', !shown('objh'));
@@ -373,8 +389,13 @@ function decisive({ G, doc, win, check, st, setGod, $, shown }) {
     if (f.phase === 'batalha') G.campaign.simulateBattle({ won: false, retreated: true, alliesLost: 0, enemiesKilled: 0 });
     check(`year end (${verdict}): the end screen with the flow's result (${$('mend-result').textContent})`, f.phase === 'fim' && shown('mend') && $('mend-title').textContent === 'Fim do ano de 147 a.C.'
       && $('mend-result').textContent === (f.state.over === 'vitoria' ? 'Vitória' : 'Derrota') && $('mend-result').textContent === verdict && sum('days') === f.state.day);
-    check(`year end (${verdict}): closing line`, verdict === 'Vitória' ? /Periochae/.test($('mend-chron').textContent) : $('mend-chron').textContent === 'Os montes ficaram em silêncio.');
+    check(`year end (${verdict}): closing line, no citation without the decisive battle (${$('mend-chron').textContent})`, !/Periochae|Vetílio/.test($('mend-chron').textContent)
+      && (verdict === 'Vitória' ? $('mend-text').textContent === 'Viriato chegou ao fim do ano com o bando inteiro. Roma não o venceu.' : $('mend-chron').textContent === 'Os montes ficaram em silêncio.'));
   }
+  // the decisive battle won on the last day: its own reason and the Crónica line, not the year-end one
+  { w = begin(); w.f.state.day = G.campaignTest.YEAR_DAYS; $('mb-fight').click(); st(5);
+    setGod(true); for (const e of G.enemies) G.damageEnemyForTest(e, 9999); st(200); setGod(false);
+    check(`decisiva on the last day: «desfeito» and the Periochae line (${$('mend-text').textContent})`, shown('mend') && /desfeito/.test($('mend-text').textContent) && /Periochae/.test($('mend-chron').textContent)); }
   // ruin before the end of the year
   { G.campaignStorage.clear(); G.startCampaign(5); const f = G.campaign.flow; f.state.fame = 1;
     G.campaignTest.forceBattle({ type: 'historica', seed: 1, site: 'castro', allies: 8, realMen: 8, enemies: { legio: 6, velites: 2, centurion: false }, bonus: { allies: 0, enemies: 0 } });

@@ -13,7 +13,7 @@ export const CHRONICLE = {
   vetilio: {
     title: 'Caio Vetílio e a emboscada de Tríbola', source: 'fontes',
     citation: 'Apiano, Ibérica, 61–63; Tito Lívio, Periochae, 52',
-    text: 'Apiano conta que o comandante romano Gaio Vetílio encurralou um grupo de lusitanos em fuga. Quando estes falavam em render-se, Viriato convenceu-os a combater e foi escolhido como chefe. Fingiu retirar, dispersou os homens e, com cerca de mil, cansou os romanos com ataques e escapou de noite para Tríbola. Aí emboscou Vetílio, que foi capturado e morto por quem o prendeu e não sabia quem ele era: achou-o velho e gordo, sem valor. As Periochae de Lívio registam que Viriato derrotou o exército do pretor Vetílio e o capturou. A cronologia exata é discutida; o jogo situa a campanha em 147 a.C. Tríbola é aqui um lugar, não um chefe.',
+    text: 'Apiano conta que o comandante romano Caio Vetílio encurralou um grupo de lusitanos em fuga. Quando estes falavam em render-se, Viriato convenceu-os a combater e foi escolhido como chefe. Fingiu retirar, dispersou os homens e, com cerca de mil, cansou os romanos com ataques e escapou de noite para Tríbola. Aí emboscou Vetílio, que foi capturado e morto por quem o prendeu e não sabia quem ele era: achou-o velho e gordo, sem valor. As Periochae de Lívio registam que Viriato derrotou o exército do pretor Vetílio e o capturou. A cronologia exata é discutida; o jogo situa a campanha em 147 a.C. Tríbola é aqui um lugar, não um chefe.',
   },
   traicao: {
     title: 'A morte de Viriato', source: 'fontes',

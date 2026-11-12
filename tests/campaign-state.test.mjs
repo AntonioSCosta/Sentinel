@@ -70,3 +70,11 @@ test('deserialize rejects every structurally corrupt save', () => {
   for (const [name, patch] of Object.entries(cases)) assert.equal(deserialize(JSON.stringify({ ...good, ...patch })), null, name);
   for (const over of [null, 'vitoria', 'derrota']) assert.ok(deserialize(JSON.stringify({ ...good, over })), String(over));
 });
+
+test('deserialize: kills, battles e decisivaWon, quando existem, têm de ser válidos', () => {
+  const base = () => JSON.parse(serialize(newCampaign(3)));
+  assert.ok(deserialize(JSON.stringify(base())));   // gravações antigas, sem os campos
+  assert.ok(deserialize(JSON.stringify({ ...base(), kills: 12, battles: 3, decisivaWon: true })));
+  for (const bad of [{ kills: -1 }, { kills: 'x' }, { kills: null }, { battles: NaN }, { battles: -2 }, { decisivaWon: 'sim' }, { decisivaWon: 1 }])
+    assert.equal(deserialize(JSON.stringify({ ...base(), ...bad })), null, JSON.stringify(bad));
+});

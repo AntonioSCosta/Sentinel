@@ -46,6 +46,8 @@ export function deserialize(text) {
   if (!isObj(o.party) || !num(o.party.x) || !num(o.party.y)) return null;
   if (!isObj(o.villages) || !Array.isArray(o.patrols) || !Array.isArray(o.done)) return null;
   if (o.over !== null && o.over !== 'vitoria' && o.over !== 'derrota') return null;
+  for (const k of ['kills', 'battles']) if (k in o && (!num(o[k]) || o[k] < 0)) return null;   // contas do fim do ano (opcionais)
+  if ('decisivaWon' in o && typeof o.decisivaWon !== 'boolean') return null;
   if (!isObj(o.world) || !isObj(o.world.start) || !Array.isArray(o.world.settlements)) return null;
   if (!o.world.settlements.every(s => isObj(s) && typeof s.id === 'string' && num(s.x) && num(s.y))) return null;
   return o;

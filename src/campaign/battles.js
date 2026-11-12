@@ -88,7 +88,7 @@ export function applyResult(state, spec, result) {
     state.food += loot.food; state.arms += loot.arms; state.fame += fame;
     if (spec.foeId !== undefined) state.patrols = state.patrols.filter(p => p.id !== spec.foeId);
     events.push({ type: 'vitoria', lost, food: loot.food, arms: loot.arms, fame });
-    if (spec.type === 'decisiva') { state.over = 'vitoria'; events.push({ type: 'ano-vencido' }); }
+    if (spec.type === 'decisiva') { state.over = 'vitoria'; state.decisivaWon = true; events.push({ type: 'ano-vencido' }); }
   } else {
     spend(state, DEFEAT);
     events.push({ type: 'derrota', lost });
