@@ -34,7 +34,7 @@ export function eventText(ev, state) {
 
 export function createCampaignUI({ document: doc, window: win, storage, onClose = () => {} }) {
   const $ = id => doc.getElementById(id);
-  let flow = null, view = null, active = false, selected = null;
+  let flow = null, view = null, active = false, selected = null, logDirty = true;
   const log = [];
 
   const ctx2d = () => $('mapcv').getContext('2d');
@@ -57,15 +57,18 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     $('m-season').textContent = season(s.day);
     $('m-day').textContent = s.day; $('m-left').textContent = daysLeft(s.day);
     for (const k of ['men', 'food', 'arms', 'fame']) $('m-' + k).textContent = s[k];
-    const ul = $('mlog'); ul.textContent = '';
-    for (const line of log.slice(-LOG_LINES)) { const li = doc.createElement('li'); li.textContent = line; ul.append(li); }
+    if (logDirty) { // só reconstrói o registo quando há linhas novas (leitores de ecrã não repetem o antigo)
+      logDirty = false;
+      const ul = $('mlog'); ul.textContent = '';
+      for (const line of log.slice(-LOG_LINES)) { const li = doc.createElement('li'); li.textContent = line; ul.append(li); }
+    }
     renderBattle(); renderEnd(); renderContext();
     const busy = flow.phase !== 'mapa';
     for (const b of $('map').querySelectorAll('[data-act]')) b.disabled = busy;
   }
 
   function say(events) {
-    for (const ev of events || []) { const t = eventText(ev, flow.state); if (t) log.push(t); }
+    for (const ev of events || []) { const t = eventText(ev, flow.state); if (t) log.push(t); logDirty = true; }
   }
 
   function order(o) {
@@ -103,9 +106,10 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   function renderBattle() {
     const m = $('mbattle'), on = flow.phase === 'batalha';
     m.classList.toggle('hidden', !on);
-    if (!on) return;
+    if (!on) { delete m.dataset.shown; return; }
     const b = flow.battle;
-    $('mb-type').textContent = `${BATTLE_NAMES[b.type] || b.type} (${b.type})`;
+    $('mb-type').textContent = BATTLE_NAMES[b.type] || 'Batalha';
+    if (!m.dataset.shown) { m.dataset.shown = '1'; $('mb-win').focus?.(); }
     $('mb-info').textContent = `${b.allies} dos teus contra ${b.enemies.legio + b.enemies.velites + (b.enemies.centurion ? 1 : 0)} romanos.`;
   }
 
@@ -136,13 +140,14 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   $('mb-win').addEventListener('click', () => { say(flow.finishBattle({ won: true, alliesLost: 1, enemiesKilled: 6 }).events); render(); });
   $('mb-retreat').addEventListener('click', () => { say(flow.finishBattle({ won: false, retreated: true, alliesLost: 0, enemiesKilled: 0 }).events); render(); });
 
-  $('mend-new').addEventListener('click', () => { clearSave(storage); open(createFlow({ storage })); });
+  $('mend-new').addEventListener('click', () => { try { clearSave(storage); } catch { /* ignorado */ }
+    open(createFlow({ storage })); });
   $('mend-menu').addEventListener('click', close);
   win.addEventListener('resize', render);
   win.addEventListener('keydown', e => { if (active && e.code === 'Escape') close(); });
 
   function open(f) {
-    flow = f; active = true; selected = null; log.length = 0;
+    flow = f; active = true; selected = null; log.length = 0; logDirty = true;
     log.push(flow.state.day ? 'A marcha continua.' : 'Um ano de guerra começa nos montes. Clica no mapa para marchar.');
     $('map').classList.remove('hidden');
     render();

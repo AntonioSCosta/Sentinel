@@ -1,5 +1,5 @@
 // Task 12: o ecrã do mapa da campanha (estado 'map'), HUD, ordens, modal de batalha provisório e ecrã final.
-export default async function ({ G, win, doc, check }) {
+export default async function ({ G, win, doc, check, renderer }) {
   const $ = id => doc.getElementById(id), shown = id => !!$(id) && !$(id).classList.contains('hidden');
   // espião do contexto 2D (o jsdom não traz canvas): conta as chamadas de desenho
   let fills = 0;
@@ -12,6 +12,12 @@ export default async function ({ G, win, doc, check }) {
   G.startCampaign(1234);
   check('campaign opens the map state', G.state === 'map' && shown('map') && !shown('menu'));
   const f = G.campaign.flow, s = f.state;
+  // 3D is not drawn under the map, and is drawn again after leaving
+  { const rd = renderer, c0 = rd.calls || 0; G.step(1 / 60); G.render(); G.render();
+    check('no 3D render while on the map', (rd.calls || 0) === c0); }
+  // the status log is not rebuilt by resizes or clicks without news
+  { const first = $('mlog').firstChild; win.dispatchEvent(new win.Event('resize')); G.campaign.render();
+    check('resize leaves the log DOM untouched', first && $('mlog').firstChild === first); }
   check('the map canvas has a size and was drawn', $('mapcv').width > 0 && $('mapcv').height > 0 && fills > 0);
   const num = id => +$(id).textContent.replace(/\D/g, '');
   check('HUD shows men/food/arms/fame', num('m-men') === s.men && num('m-food') === s.food && num('m-arms') === s.arms && num('m-fame') === s.fame);
@@ -35,7 +41,7 @@ export default async function ({ G, win, doc, check }) {
   let n = 0; while (f.phase === 'mapa' && n < 300) { G.campaign.order({ kind: 'acampar' }); n++; }
   check(`camping leads to a battle or the end (${n} orders)`, f.phase !== 'mapa');
   if (f.phase === 'batalha') {
-    check('battle modal shows', shown('mbattle') && $('mbattle').textContent.includes(f.battle.type));
+    check('battle modal shows', shown('mbattle') && !/\(/.test($('mb-type').textContent) && doc.activeElement === $('mb-win'));
     $('mb-win').click();
     check('placeholder victory returns to the map (or end)', !shown('mbattle') && f.phase !== 'batalha');
   }
@@ -53,4 +59,13 @@ export default async function ({ G, win, doc, check }) {
   check('continuing restores the day', G.state === 'map' && G.campaign.flow.state.day === 1);
   win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'Escape' }));
   check('ESC on the map returns to the menu', G.state === 'menu' && !shown('map'));
+  { const rd = renderer, c0 = rd.calls || 0; G.render(); check('3D renders again after leaving the map', (rd.calls || 0) > c0); }
+  // the save vanishes behind the menu: «Continuar» must not strand the player
+  G.campaignStorage.clear(); $('camp-cont').classList.remove('hidden'); $('camp-cont').click();
+  check('failed continue stays on the menu', G.state === 'menu' && shown('menu') && !shown('map') && !shown('camp-cont'));
+  // removeItem throwing must not break «Nova campanha»
+  G.startCampaign(9); const rm = G.campaignStorage.removeItem; G.campaignStorage.removeItem = () => { throw new Error('quota'); };
+  $('mend').classList.remove('hidden'); $('mend-new').click(); G.campaignStorage.removeItem = rm;
+  check('new campaign survives a throwing removeItem', G.state === 'map' && G.campaign.flow.state.day === 0);
+  G.campaign.close();
 }

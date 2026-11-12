@@ -7,7 +7,7 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const vc = new VirtualConsole();
 const dom = new JSDOM(html, { pretendToBeVisual: true, virtualConsole: vc });
 const win = dom.window, doc = win.document;
-const renderer = { domElement: doc.getElementById('gl'), shadowMap: {}, setPixelRatio() {}, setSize() {}, render() {}, info: { render: { triangles: 0 } } };
+const renderer = { domElement: doc.getElementById('gl'), shadowMap: {}, setPixelRatio() {}, setSize() {}, render() { renderer.calls = (renderer.calls || 0) + 1; }, info: { render: { triangles: 0 } } };
 
 const { createGame } = await import('../src/game.js');
 let rapier = null;
@@ -66,7 +66,7 @@ try {
   check('death', G.state === 'dead' && doc.getElementById('endt').textContent.length > 0);
   // extra scenario hooks for later tasks
   for (const mod of ['./smoke-prologue.mjs', './smoke-combat.mjs', './smoke-models.mjs', './smoke-pause.mjs', './smoke-review.mjs', './smoke-anim.mjs', './smoke-armour.mjs', './smoke-foliage.mjs', './smoke-shieldhand.mjs', './smoke-thirdperson.mjs', './smoke-throw.mjs', './smoke-allies.mjs', './smoke-javelins.mjs', './smoke-cativos.mjs', './smoke-campaign.mjs'].filter(m => !process.env.SMOKE_ONLY || m.includes(process.env.SMOKE_ONLY))) { const extra = await import(mod);
-  const ctx = { G, THREE, win, doc, st, key, check, forcePlay, setGod: v => { god = v; } };
+  const ctx = { renderer, G, THREE, win, doc, st, key, check, forcePlay, setGod: v => { god = v; } };
   await extra.default(ctx); if (extra.chargeOnly) await extra.chargeOnly(ctx); }
 } catch (e) { console.log('EXCEPTION', e.stack); checks.push(['no exception', false]); }
 

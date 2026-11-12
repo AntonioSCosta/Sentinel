@@ -2768,8 +2768,8 @@ $('sens2').addEventListener('input', e => { setSens(+e.target.value); $('sens').
 /* Campanha: ecrã do mapa (src/campaign/ui.js). Estado 'map': o 3D não corre nem pede o rato. */
 const campUI = createCampaignUI({ document, window, storage, onClose: () => { state = 'menu'; $('menu').classList.remove('hidden'); refreshCampMenu(); } });
 function refreshCampMenu() { $('camp-cont').classList.toggle('hidden', !campUI.hasSave()); }
-function openCampaign(f) { try { document.exitPointerLock && document.exitPointerLock(); } catch (_) {} releaseAll(); state = 'map'; for (const id of ['menu', 'end', 'pause', 'hud']) $(id).classList.add('hidden'); f(); }
-function startCampaign(seed) { openCampaign(() => campUI.fresh(seed)); }
+function openCampaign(f) { try { document.exitPointerLock && document.exitPointerLock(); } catch (_) {} releaseAll(); if (!f()) { refreshCampMenu(); return; } state = 'map'; for (const id of ['menu', 'end', 'pause', 'hud']) $(id).classList.add('hidden'); }
+function startCampaign(seed) { openCampaign(() => !!campUI.fresh(seed)); }
 $('camp-new').addEventListener('click', () => startCampaign());
 $('camp-cont').addEventListener('click', () => openCampaign(() => campUI.resume()));
 refreshCampMenu();
@@ -2829,7 +2829,7 @@ resetWorld();
 $('start').disabled = false; $('start').textContent = 'COMEÇAR';
 return {
   startCampaign, campaignStorage: storage, campaign: campUI,
-  start: (d, ch = 'emboscada') => { if (d != null) diff = d; setChapter(ch); startGame(false); }, startIntro: (ch = chapter) => { setChapter(ch); startGame(true); }, get civs() { return civs; }, get riders() { return riders; }, get chapter() { return chapter; }, MEADOW, ESCAPE, CASTRO, get introT() { return introT; }, step, render: () => { cullChunks(CHUNKS, camera.position); cullCharacters(enemies, camera.position); cullCharacters(allies, camera.position); cullCharacters(civs, camera.position); R.render(); }, setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
+  start: (d, ch = 'emboscada') => { if (d != null) diff = d; setChapter(ch); startGame(false); }, startIntro: (ch = chapter) => { setChapter(ch); startGame(true); }, get civs() { return civs; }, get riders() { return riders; }, get chapter() { return chapter; }, MEADOW, ESCAPE, CASTRO, get introT() { return introT; }, step, render: () => { if (state === 'map') return; cullChunks(CHUNKS, camera.position); cullCharacters(enemies, camera.position); cullCharacters(allies, camera.position); cullCharacters(civs, camera.position); R.render(); }, setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
   P, supplyTents, heightAt, CAMP, scene, camera, CHUNKS,
   get enemies() { return enemies; }, get allies() { return allies; }, setCompanions: n => { companions = n; }, forceDir: d => { forcedDir = d; }, get order() { return order; }, get placing() { return placing; }, flag: FLAG, flagAt, hurtAllyForTest: (a, d) => hurtAlly(a, d, a.pos.clone()), get mission() { return mission; }, get tentsBurnt() { return tentsBurnt; }, alertForTest: e => alert(e), get halt() { return halt; }, get companions() { return companions; }, get alarm() { return alarm; }, get nextChapter() { return nextChapter; }, HALT, WOODS, CSTART, get state() { return state; },
   get projectiles() { return projectiles; }, get pickups() { return pickups; },
