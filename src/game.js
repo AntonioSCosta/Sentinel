@@ -176,7 +176,7 @@ const AMBUSH = { x: roadX(34) + 17, z: 34 };
 const HALT = { x: -110, z: -70 }, WOODS = { x: -62, z: -8 }, CSTART = { x: -63, z: -60 };   // 'Os Cativos': the Roman halt, the wood the freed run to, where Viriato starts                          // ambush: Viriato's hide in the scrub above the road
 setSeed(777);
 {
-  const pines = [], oaks = [], rocks = [], grass = [], shrubs = [], ferns = [];
+  const pines = [], oaks = [], rocks = [], grass = [], shrubs = [], ferns = [], moss = [];
   const blocked = (x, z, m) => Math.abs(x - roadX(z)) < 7 + m || inCamp(x, z, 12 + m) || Math.hypot(x - CASTRO.x, z - CASTRO.z) < 16 + m || Math.hypot(x - MEADOW.x, z - MEADOW.z) < 30 + m || Math.hypot(x - HALT.x, z - HALT.z) < 15 + m;
   const DENS = { low: .35, medium: .7, high: 1 }[quality] || .8, TREES = Math.round(4200 * DENS);
   for (let n = 0; n < 26000 && pines.length + oaks.length < TREES; n++) {
@@ -225,6 +225,13 @@ setSeed(777);
     const y = heightAt(x, z); if (y > 34) continue;
     ferns.push({ x, y: y - .05, z, s: rr(.6, 1.1), sy: rr(.6, 1.05), ry: rr(0, TAU) });
   }
+  for (let n = 0; n < 9000 && moss.length < Math.round(700 * DENS); n++) {   // licopódio: low club-moss between the ferns, where the ground is damp
+    const x = rr(-WORLD + 6, WORLD - 6), z = rr(-WORLD + 6, WORLD - 6);
+    if (blocked(x, z, -3)) continue;
+    if (rand() > .14 + vnoise(x * .035 + 55, z * .035)) continue;
+    const y = heightAt(x, z); if (y > 30) continue;
+    moss.push({ x, y: y - .04, z, s: rr(.5, .9), sy: rr(.5, .85), ry: rr(0, TAU) });
+  }
   const broom = [];
   for (let n = 0; n < 20000 && shrubs.length < Math.round(2900 * DENS); n++) {          // mato: low evergreen shrubs, thicker where the forest is
     const x = rr(-WORLD + 6, WORLD - 6), z = rr(-WORLD + 6, WORLD - 6);
@@ -248,6 +255,8 @@ setSeed(777);
   leafy('oak-canopy', canopyGeo({ cards: 22, rx: 3.1, ry: 2.0, cy: 5.3, w: 2.8, h: 2.8, seed: 9 }), FOL.oak, FOL.oakDepth, oaks);
   leafy('shrubs', canopyGeo({ cards: 7, rx: .85, ry: .5, cy: .55, w: 1.3, h: 1.2, seed: 13 }), FOL.shrub, FOL.shrubDepth, shrubs);
   { const bm = FOL.shrub.clone(); bm.color = new THREE.Color(0xe6cf3a); leafy('broom', canopyGeo({ cards: 6, rx: .75, ry: .55, cy: .6, w: 1.1, h: 1.1, seed: 21 }), bm, FOL.shrubDepth, broom); }
+  { const mg = new THREE.PlaneGeometry(.95, .62); mg.translate(0, .3, 0); const mg2 = mg.clone(); mg2.rotateY(Math.PI / 2);
+    instanced(mergeGeos([mg, mg2]), FOL.moss, moss, true, { name: 'moss', depth: FOL.mossDepth, vary: .16, warm: .06 }); }
   { const fg = new THREE.PlaneGeometry(.9, 1.2); fg.translate(0, .6, 0); const fg2 = fg.clone(); fg2.rotateY(Math.PI / 2);
     instanced(mergeGeos([fg, fg2]), FOL.fern, ferns, true, { name: 'ferns', depth: FOL.fernDepth, vary: .18, warm: .1 }); }
   { const gm = MAT('terrain_rock', { flatShading: true }); gm.color = new THREE.Color(0x8d8e8c); instanced(new THREE.IcosahedronGeometry(1, 0), gm, rocks, true, { vary: .16, warm: .08 }); }   // grey granite

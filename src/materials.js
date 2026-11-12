@@ -201,12 +201,12 @@ export async function loadFoliage({ THREE, loader, document, anisotropy = 4 }) {
     return m;
   };
   const prep = t => { if (!t) return null; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = anisotropy; return t; };
-  const files = { oak: 'oak_leaves.png', shrub: 'shrub_leaves.png', fern: 'fern_leaves.png', grass: 'grass_tuft.png' };
+  const files = { oak: 'oak_leaves.png', shrub: 'shrub_leaves.png', fern: 'fern_leaves.png', grass: 'grass_tuft.png', moss: 'moss_clump.png' };
   const keys = Object.keys(files);
   const loaded = loader ? await Promise.all(keys.map(k => tryLoad(loader, `assets/textures/foliage/${files[k]}`).then(prep))) : keys.map(() => null);
   const nc = document && needleCanvas(document);
   const pineT = nc ? prep(new THREE.CanvasTexture(nc)) : null;
-  const fallback = { oak: 0x4f6a2c, shrub: 0x6b7a3a, fern: 0x3f5a2a, grass: 0x6f7c3c };
+  const fallback = { oak: 0x4f6a2c, shrub: 0x6b7a3a, fern: 0x3f5a2a, grass: 0x6f7c3c, moss: 0x55702f };
   const out = { pine: make(pineT ? 0xffffff : 0x2f4a26, pineT) };
   keys.forEach((k, i) => { out[k] = make(loaded[i] ? 0xffffff : fallback[k], loaded[i]); });
   for (const k of [...keys, 'pine']) out[k + 'Depth'] = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: out[k].map, alphaTest: out[k].alphaTest });

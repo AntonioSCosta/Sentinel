@@ -18,6 +18,7 @@ Todas as texturas abaixo são do Poly Haven e estão sob licença **CC0** (domí
 | foliage/oak_leaves.png | tree_small_02 (leaf blades, recomposed on searsia_lucida twigs) | https://polyhaven.com/a/tree_small_02 |
 | foliage/shrub_leaves.png | searsia_lucida (leaves and twigs, recomposed) | https://polyhaven.com/a/searsia_lucida |
 | foliage/fern_leaves.png | fern_02 (frondes recortadas do atlas e recompostas numa touceira) | https://polyhaven.com/a/fern_02 |
+| foliage/moss_clump.png | moss (licopódios recortados do atlas e recompostos) | https://polyhaven.com/a/moss |
 | foliage/grass_tuft.png | grass_medium_01 (tufos recortados do atlas e recompostos) | https://polyhaven.com/a/grass_medium_01 |
 
 ## Personagens e animações (CC0)
