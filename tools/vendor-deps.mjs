@@ -54,7 +54,7 @@ const RSRC = path.join(ROOT, 'node_modules/@dimforge/rapier3d-compat');
 const rver = JSON.parse(fs.readFileSync(path.join(RSRC, 'package.json'), 'utf8')).version;
 fs.mkdirSync(path.join(ROOT, 'vendor/rapier'), { recursive: true });
 fs.copyFileSync(path.join(RSRC, 'rapier.es.js'), path.join(ROOT, 'vendor/rapier/rapier.es.js'));
-fs.copyFileSync(path.join(RSRC, 'LICENSE'), path.join(ROOT, 'vendor/rapier/LICENSE'));
+fs.copyFileSync(path.join(RSRC, 'LICENSE'), path.join(ROOT, 'vendor/rapier/LICENSE.txt'));   // .txt so it can be served with the game
 console.log(`rapier ${rver}: rapier.es.js, ${(fs.statSync(path.join(ROOT, 'vendor/rapier/rapier.es.js')).size / 1048576).toFixed(2)} MB (wasm inlined)`);
 
 // --- the two webfonts, with a stylesheet the page loads instead of Google's
