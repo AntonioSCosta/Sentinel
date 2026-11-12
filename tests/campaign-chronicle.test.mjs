@@ -42,3 +42,27 @@ test('entryFor devolve a entrada e rejeita ids desconhecidos', () => {
   assert.equal(entryFor('galba'), CHRONICLE.galba);
   assert.throws(() => entryFor('inexistente'), /inexistente/);
 });
+
+import { isUnlocked, SOURCE_LABELS } from '../src/campaign/chronicle.js';
+import { newCampaign } from '../src/campaign/state.js';
+
+test('isUnlocked: pretor, lugares e fundo sempre; cativos e baralho só quando vividos', () => {
+  const s = newCampaign(1);
+  for (const id of ['vetilio', 'galba', 'traicao', 'aldeia', 'castro', 'serra', 'posto']) assert.equal(isUnlocked(id, s), true, id);
+  for (const id of ['cativos', ...DECK.map(e => e.id)]) assert.equal(isUnlocked(id, s), false, id);
+  s.done.push('cativos'); s.seen = ['seca'];
+  assert.equal(isUnlocked('cativos', s), true);
+  assert.equal(isUnlocked('seca', s), true);
+  assert.equal(isUnlocked('traidor', s), false);
+  assert.equal(isUnlocked('seca', null), false);
+});
+
+test('etiquetas de origem', () => {
+  assert.deepEqual(SOURCE_LABELS, { fontes: 'Fontes antigas', 'invenção': 'Invenção do jogo', inspirado: 'Cena inspirada' });
+});
+
+test('cativos fala de sobreviventes vendidos como escravos; traição cita Apiano', () => {
+  assert.match(CHRONICLE.cativos.text, /relatos posteriores de sobreviventes vendidos como escravos/);
+  assert.doesNotMatch(CHRONICLE.cativos.text, /levados cativos/);
+  assert.match(CHRONICLE.traicao.text, /\(segundo Apiano\)/);
+});

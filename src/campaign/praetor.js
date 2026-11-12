@@ -6,11 +6,13 @@ export const FINAL_CONVERGENCE = 20;
 const BURN_RANGE = 10;
 const BURN_FAME = 3;
 const JITTER = 0.15;
+export const MARCH_FROM = 15;   // o pretor junta o exército no posto e só marcha a partir deste dia
+export const BURN_REST = 12;     // dias parado a saquear depois de queimar uma aldeia
 
 // pursuit: a partir de 0.5 persegue a party se a vir (determinista).
-// scorch: reservado, ainda sem efeito; a afinar na tarefa de equilíbrio.
+// scorch: reservado, sem efeito nesta fatia (o ritmo das queimadas vem de MARCH_FROM e BURN_REST).
 export const PRAETORS = {
-  vetilio: { id: 'vetilio', name: 'Caio Vetílio', men: 60, speed: 30,
+  vetilio: { id: 'vetilio', name: 'Caio Vetílio', men: 60, speed: 22,
     traits: { pursuit: .7, scorch: .5 }, chronicleId: 'vetilio' },
 };
 
@@ -31,8 +33,11 @@ export function makePraetor(id, rng, world) {
 export function praetorStep(state, rng) {
   const p = state.praetor;
   if (!p) return [];
+  const final = state.day >= YEAR_DAYS - FINAL_CONVERGENCE;
+  if (!final && state.day < MARCH_FROM) return [];
+  if (!final && p.rest > 0) { p.rest -= 1; return []; }
   let target = null, village = null;
-  if (state.day >= YEAR_DAYS - FINAL_CONVERGENCE) target = state.party;
+  if (final) target = state.party;
   else if (dist(p, state.party) <= SIGHT && p.traits.pursuit >= 0.5) target = state.party;
   else {
     let best = Infinity;
@@ -50,6 +55,7 @@ export function praetorStep(state, rng) {
   if (village && dist(p, village) <= BURN_RANGE) {
     state.villages[village.id].burnt = true;
     state.fame = Math.max(0, state.fame - BURN_FAME);
+    p.rest = BURN_REST;
     events.push({ type: 'aldeia-queimada', id: village.id });
   }
   return events;

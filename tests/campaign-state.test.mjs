@@ -14,7 +14,8 @@ test('newCampaign starts with START values, party at world.start, villages only 
   for (const a of aldeias) assert.deepEqual(s.villages[a.id], { burnt: false, recruitedDay: -999 });
 });
 test('formulas', () => {
-  assert.equal(foodPerDay(14), 3); assert.equal(foodPerDay(1), 1); assert.equal(foodPerDay(0), 1);
+  assert.equal(foodPerDay(14), 2); assert.equal(foodPerDay(24), 2); assert.equal(foodPerDay(25), 3);   // MEN_PER_FOOD 12 (Task 18)
+   assert.equal(foodPerDay(1), 1); assert.equal(foodPerDay(0), 1);
   assert.equal(recruitsFrom(20), 2);
 });
 test('spend saturates at 0 and ignores undefined fields', () => {
@@ -24,10 +25,10 @@ test('spend saturates at 0 and ignores undefined fields', () => {
   spend(s, { arms: 999, food: 999 });
   assert.equal(s.arms, 0); assert.equal(s.food, 0);
 });
-test('initial food runs out before day 30 with no income', () => {
+test('initial food runs out by day 30 with no income', () => {
   let food = START.food, day = 0;
   while (food > 0) { food = Math.max(0, food - foodPerDay(START.men)); day++; }
-  assert.ok(day < 30, `food lasted ${day} days`);
+  assert.ok(day <= 30, `food lasted ${day} days`);
 });
 test('checkRuin fires once', () => {
   const s = newCampaign(5);
@@ -76,5 +77,13 @@ test('deserialize: kills, battles e decisivaWon, quando existem, têm de ser vá
   assert.ok(deserialize(JSON.stringify(base())));   // gravações antigas, sem os campos
   assert.ok(deserialize(JSON.stringify({ ...base(), kills: 12, battles: 3, decisivaWon: true })));
   for (const bad of [{ kills: -1 }, { kills: 'x' }, { kills: null }, { battles: NaN }, { battles: -2 }, { decisivaWon: 'sim' }, { decisivaWon: 1 }])
+    assert.equal(deserialize(JSON.stringify({ ...base(), ...bad })), null, JSON.stringify(bad));
+});
+
+test('deserialize: seen, quando existe, é uma lista de strings', () => {
+  const base = () => JSON.parse(serialize(newCampaign(3)));
+  assert.ok(deserialize(JSON.stringify({ ...base(), seen: [] })));
+  assert.ok(deserialize(JSON.stringify({ ...base(), seen: ['seca', 'pastores'] })));
+  for (const bad of [{ seen: 'seca' }, { seen: [1] }, { seen: null }, { seen: { a: 1 } }, { seen: ['ok', null] }])
     assert.equal(deserialize(JSON.stringify({ ...base(), ...bad })), null, JSON.stringify(bad));
 });

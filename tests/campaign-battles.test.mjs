@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ALLY_CAP, ENEMY_CAP, BATTLE_TYPES, battleSpec, applyResult } from '../src/campaign/battles.js';
-import { newCampaign } from '../src/campaign/state.js';
+import { newCampaign, START } from '../src/campaign/state.js';
 import { makeRng } from '../src/campaign/rng.js';
 
 const rng = () => makeRng(5);
@@ -65,11 +65,11 @@ test('vitória dá saque e fama, remove o inimigo', () => {
   const s = st(14); s.patrols.push({ id: 'patrulha-1' }, { id: 'outra' });
   const food = s.food, arms = s.arms, fame = s.fame;
   const ev = applyResult(s, battleSpec(enc('patrulha', true), s, rng()), res());
-  assert.equal(s.food, food + 6); assert.equal(s.arms, arms + 3); assert.equal(s.fame, fame + 5);
+  assert.equal(s.food, food + 15); assert.equal(s.arms, arms + 4); assert.equal(s.fame, fame + 5);
   assert.deepEqual(s.patrols.map(p => p.id), ['outra']);
   assert.equal(ev[0].type, 'vitoria');
   const s2 = st(14); applyResult(s2, battleSpec(enc('comboio', true), s2, rng()), res());
-  assert.equal(s2.food, 60 + 20); assert.equal(s2.arms, 10 + 6);
+  assert.equal(s2.food, START.food + 30); assert.equal(s2.arms, START.arms + 6);
 });
 
 test('derrota tira homens e comida mas não termina a campanha', () => {
@@ -89,7 +89,7 @@ test('derrota com fama a zero é ruína', () => {
 test('retirada custa comida e fama, sem saque, inimigo fica', () => {
   const s = st(14); s.patrols.push({ id: 'patrulha-1' });
   const ev = applyResult(s, battleSpec(enc('patrulha'), s, rng()), res({ won: false, retreated: true, alliesLost: 2 }));
-  assert.equal(s.food, 55); assert.equal(s.fame, 17); assert.equal(s.arms, 10); assert.equal(s.patrols.length, 1);
+  assert.equal(s.food, START.food - 5); assert.equal(s.fame, 17); assert.equal(s.arms, START.arms); assert.equal(s.patrols.length, 1);
   assert.equal(s.men, 12); assert.equal(ev[0].type, 'retirada');
 });
 
@@ -155,7 +155,7 @@ test('defesa vencida: aldeia intacta, saque de campo aberto e +3 de fama', () =>
   const s = withV(), food = s.food, arms = s.arms, fame = s.fame;
   const ev = applyResult(s, defesa(s), res());
   assert.equal(s.villages.v1.burnt, false);
-  assert.equal(s.food, food + 4); assert.equal(s.arms, arms + 2); assert.equal(s.fame, fame + 8);
+  assert.equal(s.food, food + 12); assert.equal(s.arms, arms + 3); assert.equal(s.fame, fame + 8);
   assert.equal(s.patrols.length, 0); assert.equal(ev[0].type, 'vitoria');
 });
 
@@ -175,21 +175,21 @@ test('defesa perdida, abandonada ou em retirada: a aldeia arde e a fama cai mais
 // Task 15: assalto a coluna: o saque depende dos carros tomados; a coluna que foge custa só fama
 const coluna = s => battleSpec(enc('comboio', true), s, rng());
 test('assalto-coluna: o saque escala com os carros capturados', () => {
-  for (const [cap, food, arms] of [[0, 4, 2], [1, 9, 3], [2, 15, 5], [3, 20, 6]]) {
+  for (const [cap, food, arms] of [[0, 12, 3], [1, 18, 4], [2, 24, 5], [3, 30, 6]]) {
     const s = st(14);
     applyResult(s, coluna(s), res({ cartsCaptured: cap, cartsTotal: 3 }));
-    assert.deepEqual([s.food - 60, s.arms - 10], [food, arms], `${cap}/3`);
+    assert.deepEqual([s.food - START.food, s.arms - START.arms], [food, arms], `${cap}/3`);
   }
   const s = st(14); applyResult(s, coluna(s), res());   // sem os campos: todos capturados
-  assert.deepEqual([s.food, s.arms], [80, 16]);
+  assert.deepEqual([s.food, s.arms], [START.food + 30, START.arms + 6]);
   const t = st(14); applyResult(t, coluna(t), res({ cartsCaptured: 9, cartsTotal: 0 }));   // malformado: nunca mais que tudo
-  assert.deepEqual([t.food, t.arms], [80, 16]);
+  assert.deepEqual([t.food, t.arms], [START.food + 30, START.arms + 6]);
 });
 
 test('a coluna escapou-se: sem saque, só -2 de fama e os homens que caíram; o comboio fica no mapa', () => {
   const s = st(14); s.patrols.push({ id: 'comboio-1' });
   const ev = applyResult(s, coluna(s), res({ won: false, escaped: true, alliesLost: 2, cartsCaptured: 0, cartsTotal: 3 }));
-  assert.deepEqual([s.men, s.food, s.arms, s.fame], [12, 60, 10, 18]);
+  assert.deepEqual([s.men, s.food, s.arms, s.fame], [12, START.food, START.arms, 18]);
   assert.equal(s.patrols.length, 1); assert.equal(ev[0].type, 'fuga'); assert.equal(ev[0].lost, 2);
 });
 
@@ -279,4 +279,17 @@ test('decisivaWon: só uma decisiva vencida o marca (campo criado quando preciso
   assert.equal(t.decisivaWon ?? false, false);
   applyResult(t, battleSpec(enc('pretor', false, { men: 60 }), t, rng()), res());
   assert.equal(t.decisivaWon, true);
+});
+
+import { PRAETOR_REGROUP } from '../src/campaign/battles.js';
+test('decisiva perdida ou em retirada: o pretor fica PRAETOR_REGROUP dias a reagrupar', () => {
+  assert.equal(PRAETOR_REGROUP, 6);
+  for (const r of [{ won: false, alliesLost: 2 }, { won: false, retreated: true, alliesLost: 0 }]) {
+    const s = st(14); s.praetor = { id: 'vetilio', name: 'Caio Vetílio', men: 60, x: 0, y: 0 };
+    applyResult(s, battleSpec({ kind: 'pretor', foe: s.praetor, waiting: false }, s, rng()), res(r));
+    assert.equal(s.praetor.rest, PRAETOR_REGROUP);
+  }
+  const t = st(14); t.praetor = { id: 'vetilio', men: 60, x: 0, y: 0 };
+  applyResult(t, battleSpec(enc('patrulha'), t, rng()), res({ won: false, alliesLost: 1 }));
+  assert.equal(t.praetor.rest, undefined);   // só a decisiva
 });

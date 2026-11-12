@@ -7,12 +7,13 @@ export const BATTLE_TYPES = ['emboscada', 'campo-aberto', 'defesa-aldeia', 'assa
 
 const FOE_MEN = { patrulha: 6, comboio: 8, pretor: 60, posto: 12 };
 const LOOT = {
-  emboscada: { food: 6, arms: 3 }, 'assalto-coluna': { food: 20, arms: 6 }, 'campo-aberto': { food: 4, arms: 2 }, 'defesa-aldeia': { food: 4, arms: 2 },
-  decisiva: { food: 10, arms: 5 }, historica: { food: 8, arms: 4 },
+  emboscada: { food: 15, arms: 4 }, 'assalto-coluna': { food: 30, arms: 6 }, 'campo-aberto': { food: 12, arms: 3 }, 'defesa-aldeia': { food: 12, arms: 3 },
+  decisiva: { food: 20, arms: 6 }, historica: { food: 10, arms: 4 },
 };
 const DEFEAT = { food: 3, fame: 5 }, RETREAT = { food: 5, fame: 3 };
 const VILLAGE_FAME = 3;
 const ESCAPED_FAME = 2;   // assalto a coluna: os carros fugiram todos com a escolta viva   // defesa de aldeia: a mais na vitória, a menos quando arde
+export const PRAETOR_REGROUP = 6;   // dias que o pretor fica a reagrupar depois de uma decisiva que não ganhou
 export const RETREAT_RANGE = 80;   // retirada: uma serra a esta distância (no mapa) do sítio onde a batalha começa
 const RETREAT_TYPES = ['campo-aberto', 'decisiva', 'defesa-aldeia'];   // nas outras foste tu que escolheste lutar
 
@@ -93,6 +94,7 @@ export function applyResult(state, spec, result) {
     spend(state, DEFEAT);
     events.push({ type: 'derrota', lost });
   }
+  if (!result.won && spec.type === 'decisiva' && state.praetor) state.praetor.rest = PRAETOR_REGROUP;   // o bando tem uns dias para se afastar
   if (!result.won && spec.type === 'defesa-aldeia' && state.villages[spec.villageId]) {   // ninguém a defendeu: arde
     state.villages[spec.villageId].burnt = true;
     spend(state, { fame: VILLAGE_FAME });

@@ -68,15 +68,15 @@ test('estado terminado: stepDay não faz nada', () => {
   assert.equal(JSON.stringify(s), before);
 });
 
-test('postos largam patrulha e comboio alternados de 12 em 12 dias', () => {
+test('postos largam patrulha e comboio alternados de 6 em 6 dias', () => {
   const s = fresh(); far(s); s.food = 1e6; s.fame = 1e6;
   const seen = [];
-  for (let d = 0; d < 37; d++) {
+  for (let d = 0; d < 19; d++) {
     stepDay(s, ACAMPAR, rng());
     for (const p of s.patrols) if (!seen.find(q => q.id === p.id)) seen.push({ id: p.id, kind: p.kind, day: s.day });
   }
   assert.deepEqual(seen.map(p => p.kind), ['patrulha', 'comboio', 'patrulha']);
-  assert.deepEqual(seen.map(p => p.day), [13, 25, 37]); // nasce ao passar o dia 12, 24, 36
+  assert.deepEqual(seen.map(p => p.day), [7, 13, 19]); // nasce ao passar o dia 6, 12, 18
 });
 
 test('patrulhas avançam PATROL_SPEED pela estrada e somem no fim', () => {
@@ -174,18 +174,21 @@ test('recrutar inválido: longe, queimada ou id desconhecido', () => {
   assert.equal(s.men, men); assert.equal(s.arms, arms);
 });
 
-test('pedir-ajuda num castro: +25 comida, +2 homens com fama >= 30, 1 vez por 30 dias', () => {
+test('pedir-ajuda num castro: +40 comida, +2 homens com fama >= 30, 1 vez por 25 dias', () => {
   const s = fresh(), c = find(s, 'castro');
   at(s, c); s.fame = 30;
   const food = s.food, men = s.men, need = foodPerDay(men + 2);
   stepDay(s, { kind: 'pedir-ajuda', id: c.id }, rng());
   assert.equal(s.men, men + 2);
-  assert.equal(s.food, food + 25 - need);
+  assert.equal(s.food, food + 40 - need);
   const f2 = s.food, m2 = s.men;
   stepDay(s, { kind: 'pedir-ajuda', id: c.id }, rng());
   assert.equal(s.men, m2);
   assert.ok(s.food < f2);
-  s.day = 30;
+  s.day = 24;
+  stepDay(s, { kind: 'pedir-ajuda', id: c.id }, rng());
+  assert.equal(s.men, m2);   // ainda dentro dos 25 dias
+  s.day = 25;
   stepDay(s, { kind: 'pedir-ajuda', id: c.id }, rng());
   assert.equal(s.men, m2 + 2);
   const t = fresh(), c2 = find(t, 'castro'); at(t, c2); t.fame = 29;

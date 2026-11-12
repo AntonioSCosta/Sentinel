@@ -8,7 +8,8 @@ export const MARCH_SPEED = 45;
 export const PATROL_SPEED = 35;
 export const ENCOUNTER_RADIUS = 30;
 const REACH = 20, ROAD_NEAR = 25, VILLAGE_NEAR = 25;
-const SPAWN_EVERY = 12, RECRUIT_GAP = 10, HELP_GAP = 30, HELP_FOOD = 25, HELP_FAME = 30, HELP_MEN = 2;
+export const SPAWN_EVERY = 6, HELP_GAP = 25, HELP_FOOD = 40;   // afinados na Task 18 (npm run balance)
+const RECRUIT_GAP = 10, HELP_FAME = 30, HELP_MEN = 2;
 const PATROL_MEN = { patrulha: 6, comboio: 8 };
 const STARVE = 0.10;
 

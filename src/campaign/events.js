@@ -41,5 +41,7 @@ export function rollEvent(state, rng) {
   const e = rng.pick(pool.length ? pool : DECK);
   const text = e.apply(state);
   state.lastEvent = e.id;
+  state.seen = state.seen || [];   // para a Crónica; criado só quando preciso
+  if (!state.seen.includes(e.id)) state.seen.push(e.id);
   return { id: e.id, text };
 }

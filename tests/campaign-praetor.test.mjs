@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PRAETORS, makePraetor, SIGHT, FINAL_CONVERGENCE, praetorStep } from '../src/campaign/praetor.js';
+import { PRAETORS, makePraetor, SIGHT, FINAL_CONVERGENCE, praetorStep, MARCH_FROM, BURN_REST } from '../src/campaign/praetor.js';
 import { makeRng } from '../src/campaign/rng.js';
 import { YEAR_DAYS } from '../src/campaign/clock.js';
 import { generateWorld } from '../src/campaign/worldgen.js';
 
 const mkState = (over = {}) => ({
-  day: 10, fame: 20, party: { x: 100, y: 0 },
+  day: 20, fame: 20, party:   // depois de MARCH_FROM (Task 18)
+ { x: 100, y: 0 },
   world: { settlements: [
     { id: 'a1', kind: 'aldeia', x: 0, y: 300 },
     { id: 'a2', kind: 'aldeia', x: 0, y: -500 },
@@ -20,7 +21,7 @@ const rng = makeRng(1);
 
 test('constants and Vetilio data', () => {
   assert.equal(SIGHT, 140); assert.equal(FINAL_CONVERGENCE, 20);
-  assert.deepEqual(PRAETORS.vetilio, { id: 'vetilio', name: 'Caio Vetílio', men: 60, speed: 30,
+  assert.deepEqual(PRAETORS.vetilio, { id: 'vetilio', name: 'Caio Vetílio', men: 60, speed: 22,
     traits: { pursuit: .7, scorch: .5 }, chronicleId: 'vetilio' });
 });
 test('pursuit 1 within SIGHT approaches the party by speed', () => {
@@ -89,4 +90,28 @@ test('makePraetor: different seeds differ, traits in [0,1], starts at farthest p
   const far = Math.max(...postos.map(d));
   assert.equal(d(a), far);
   assert.equal(a.id, 'vetilio'); assert.equal(PRAETORS.vetilio.traits.pursuit, .7);
+});
+
+test('o pretor não marcha antes de MARCH_FROM (salvo na convergência final)', () => {
+  assert.equal(MARCH_FROM, 15);
+  const s = withTraits(mkState({ day: MARCH_FROM - 1 }), 1);
+  assert.deepEqual(praetorStep(s, rng), []);
+  assert.deepEqual([s.praetor.x, s.praetor.y], [0, 0]);
+  s.day = MARCH_FROM; praetorStep(s, rng);
+  assert.ok(s.praetor.x > 0);
+});
+
+test('depois de queimar fica BURN_REST dias parado; a convergência final ignora o descanso', () => {
+  assert.equal(BURN_REST, 12);
+  const s = withTraits(mkState(), 0);
+  s.praetor.y = 280;
+  praetorStep(s, rng);
+  assert.equal(s.praetor.rest, BURN_REST);
+  const y = s.praetor.y;
+  for (let i = 0; i < BURN_REST; i++) { assert.deepEqual(praetorStep(s, rng), []); assert.equal(s.praetor.y, y); }
+  praetorStep(s, rng);
+  assert.notEqual(s.praetor.y, y);
+  const t = withTraits(mkState({ day: YEAR_DAYS - FINAL_CONVERGENCE, party: { x: 900, y: 0 } }), 0);
+  t.praetor.rest = 5; praetorStep(t, rng);
+  assert.ok(t.praetor.x > 0);
 });

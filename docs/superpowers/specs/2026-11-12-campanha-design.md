@@ -87,6 +87,63 @@ Escolha do jogador: **A**.
 
 Estrutura dos módulos (um por responsabilidade: mapa, relógio, recursos, IA do mapa, gerador de batalhas, gravação, crónica), tabela de números (consumo de comida, recrutas por fama, força dos pretores), estilo visual do mapa, e a ordem de construção — com o relógio e o mapa primeiro e jogáveis antes de haver IA de pretores.
 
+### Equilíbrio (Task 18)
+
+Medido com `npm run balance` (`tools/balance.mjs`): joga o ano inteiro na camada pura, sementes 1–20, com um bot simples. O bot foge do pretor quando ele está a ≤ 80. Com comida para menos de 12 dias vai ao castro mais próximo pedir ajuda. Recruta de 10 em 10 dias e defende a aldeia que uma patrulha ameaça. No resto do tempo espera na estrada. Cada batalha resolve-se por um modelo de força: Lanchester ao quadrado, com vantagem de 1,8 na emboscada, 1,6 no assalto à coluna, 1,2 na defesa da aldeia e 1,3 no episódio histórico, e Viriato a valer 4 homens. As baixas são proporcionais à razão de forças. É um modelo grosseiro: serve para comparar números, não para prever o jogo em 3D.
+
+**Constantes escolhidas** (antes → depois):
+
+| Constante | Antes | Depois |
+|---|---|---|
+| `START` (state.js) | homens 14, comida 60, armas 10, fama 20 | homens 14, comida 60, **armas 15**, fama 20 |
+| `MEN_PER_FOOD` | 5 | **12** (14 homens comem 2 por dia; 60 de comida chegam a 30 dias) |
+| `FAME_PER_RECRUIT` | 15 | 15 |
+| saque (battles.js) emboscada / coluna / campo / defesa / decisiva / histórica | 6+3 / 20+6 / 4+2 / 4+2 / 10+5 / 8+4 | **15+4 / 30+6 / 12+3 / 12+3 / 20+6 / 10+4** (comida+armas) |
+| pretor: velocidade | 30 | **22** |
+| pretor: `MARCH_FROM` (novo) | — | **15**: junta o exército no posto e só marcha a partir do dia 15 |
+| pretor: `BURN_REST` (novo) | — | **12** dias parado a saquear depois de queimar uma aldeia |
+| `PRAETOR_REGROUP` (novo, battles.js) | — | **6** dias a reagrupar depois de uma decisiva que não ganhou |
+| `SPAWN_EVERY` (patrulhas) | 12 | **6** |
+| `HELP_FOOD` / `HELP_GAP` (castro) | 25 / 30 dias | **40 / 25 dias** |
+| `EVENT_CHANCE`, `ENCOUNTER_RADIUS`, `SIGHT`, traços do pretor | 0,1 / 30 / 140 / pursuit .7, scorch .5 | sem alteração |
+
+**Antes** (o mesmo bot, constantes antigas): 2/20 vitórias; mediana de 3 batalhas (0/20 anos na faixa 12–25); mediana de 35 dias; derrotas por fama 10, homens 6, fome 2; até ao dia 30 o pretor queimava até 8 aldeias (mediana 4).
+
+**Depois** (sementes 1–20):
+
+```
+
+seed  dias  bat  resultado  causa     queimadas(d30/fim)  homens  fama  tipos
+   1   110   17  vitoria    decisiva          1/ 5           28   142  historica:1 defesa-aldeia:14 campo-aberto:1 decisiva:1
+   2   145   20  derrota    homens            1/ 5            0   111  historica:1 defesa-aldeia:12 campo-aberto:3 emboscada:1 decisiva:3
+   3   133   16  vitoria    decisiva          1/ 6           12   121  historica:1 defesa-aldeia:13 decisiva:2
+   4   149   22  vitoria    decisiva          1/ 9           19   134  historica:1 defesa-aldeia:19 campo-aberto:1 decisiva:1
+   5    99   11  vitoria    decisiva          1/ 4           21   100  historica:1 defesa-aldeia:9 decisiva:1
+   6   176   19  derrota    fama              1/ 8            0     0  historica:1 defesa-aldeia:6 campo-aberto:5 decisiva:5 assalto-coluna:1 emboscada:1
+   7    97   13  vitoria    decisiva          1/ 5           12    81  historica:1 campo-aberto:2 defesa-aldeia:8 decisiva:2
+   8   125   10  derrota    homens            1/ 4            0    43  historica:1 defesa-aldeia:5 campo-aberto:1 decisiva:3
+   9   237   29  derrota    homens            1/ 8            0    99  historica:1 defesa-aldeia:16 emboscada:1 campo-aberto:5 decisiva:6
+  10   168   16  derrota    homens            1/ 8            0    86  historica:1 campo-aberto:2 defesa-aldeia:10 emboscada:1 decisiva:2
+  11    87   11  vitoria    decisiva          1/ 4           22    97  historica:1 defesa-aldeia:8 campo-aberto:1 decisiva:1
+  12   245   22  vitoria    ano               1/ 9           16    93  historica:1 defesa-aldeia:11 assalto-coluna:5 decisiva:2 emboscada:1 campo-aberto:2
+  13    89    8  derrota    homens            1/ 3            0    44  emboscada:4 historica:1 defesa-aldeia:1 campo-aberto:1 decisiva:1
+  14   140   15  derrota    fome              1/ 7            0    71  historica:1 campo-aberto:3 defesa-aldeia:11
+  15   245   21  vitoria    ano               1/11           41   146  historica:1 campo-aberto:2 defesa-aldeia:18
+  16   103   14  vitoria    decisiva          1/ 4           24   106  historica:1 defesa-aldeia:6 campo-aberto:6 decisiva:1
+  17   114   13  derrota    homens            1/ 2            0    73  historica:1 defesa-aldeia:8 campo-aberto:1 decisiva:3
+  18   245   26  derrota    ano               2/11            7    52  historica:1 defesa-aldeia:7 campo-aberto:7 emboscada:6 assalto-coluna:2 decisiva:3
+  19   135   12  derrota    homens            1/ 5            0    43  historica:1 campo-aberto:2 defesa-aldeia:6 decisiva:3
+  20   215   20  derrota    homens            1/ 6            0    34  historica:1 defesa-aldeia:5 campo-aberto:7 emboscada:2 decisiva:5
+
+Resumo (20 sementes): vitórias 9/20 (decisiva 7, ano 2) · batalhas 12–25 em 14/20 (mediana 16) · dias (mediana) 140 · derrotas por causa {"homens":8,"fama":1,"fome":1,"ano":1} · aldeias queimadas até ao dia 30: máx 2, mediana 1
+```
+
+Em 60 sementes: 31/60 vitórias (52 %), 37/60 anos na faixa 12–25 (mediana 16), derrotas por homens 17, fome 6, ano 3, fama 3; no máximo 2 aldeias queimadas até ao dia 30.
+
+**Leitura.** Nenhuma semente é trivial, porque não se ganham todas, e nenhuma é impossível em conjunto: perto de metade ganha-se. A fome deixou de ser a causa principal; o que desfaz o bando é perder homens contra o pretor. Ficam duas coisas por rever:
+- A fama sobe demasiado num bom ano (100–150). Quase nunca é o limite; quem limita os recrutas são as armas.
+- A defesa de aldeia domina os tipos de batalha, porque o bot espera junto das aldeias da estrada.
+
 ## 10. Lacunas que o construtor encontrou (decididas por mim)
 
 7. **Quando é que o pretor dá batalha?** Quando a coluna dele chega ao teu ponto no mapa, ou quando tu o procuras. Não há batalha decisiva «agendada»: a que decide o ano é aquela em que o pretor te apanha em campo aberto, ou em que tu o apanhas numa emboscada.

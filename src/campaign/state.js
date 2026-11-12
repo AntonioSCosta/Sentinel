@@ -1,12 +1,12 @@
 // Estado da campanha: recursos, ruína e gravação. Módulo puro (sem DOM nem Three.js).
 import { generateWorld } from './worldgen.js';
 
-/** Tabela inicial de equilíbrio (a Task 18 afina). */
-export const START = { men: 14, food: 60, arms: 10, fame: 20 };
-export const MEN_PER_FOOD = 5;
+/** Tabela de equilíbrio, afinada na Task 18 com `npm run balance` (ver a spec, secção 9). */
+export const START = { men: 14, food: 60, arms: 15, fame: 20 };
+export const MEN_PER_FOOD = 12;
 export const FAME_PER_RECRUIT = 15;
 
-/** Comida gasta por dia: 1 por cada 5 homens, mínimo 1. */
+/** Comida gasta por dia: 1 por cada MEN_PER_FOOD homens (arredondado para cima), mínimo 1. */
 export const foodPerDay = men => Math.max(1, Math.ceil(men / MEN_PER_FOOD));
 /** Recrutas por visita a uma aldeia. */
 export const recruitsFrom = fame => Math.floor(fame / FAME_PER_RECRUIT) + 1;
@@ -47,6 +47,7 @@ export function deserialize(text) {
   if (!isObj(o.villages) || !Array.isArray(o.patrols) || !Array.isArray(o.done)) return null;
   if (o.over !== null && o.over !== 'vitoria' && o.over !== 'derrota') return null;
   for (const k of ['kills', 'battles']) if (k in o && (!num(o[k]) || o[k] < 0)) return null;   // contas do fim do ano (opcionais)
+  if ('seen' in o && !(Array.isArray(o.seen) && o.seen.every(x => typeof x === 'string'))) return null;   // Crónica
   if ('decisivaWon' in o && typeof o.decisivaWon !== 'boolean') return null;
   if (!isObj(o.world) || !isObj(o.world.start) || !Array.isArray(o.world.settlements)) return null;
   if (!o.world.settlements.every(s => isObj(s) && typeof s.id === 'string' && num(s.x) && num(s.y))) return null;

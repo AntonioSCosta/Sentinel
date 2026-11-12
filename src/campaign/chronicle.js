@@ -18,11 +18,11 @@ export const CHRONICLE = {
   traicao: {
     title: 'A morte de Viriato', source: 'fontes',
     citation: 'Apiano, Ibérica, 74–75; Diodoro Sículo, 33.21; Tito Lívio, Periochae, 54',
-    text: 'Viriato mandou três homens de confiança, Áudax, Ditalco e Minuro, tratar da paz com o procônsul Quinto Servílio Cepião. Cepião corrompeu-os com presentes e promessas para o matarem. Entraram na tenda enquanto ele dormia de armadura e feriram-no na garganta, o ponto que a armadura não cobria. Fugiram para junto de Cepião, que lhes deixou o que já tinham recebido e remeteu o resto para Roma. O exército fez-lhe um funeral grandioso. A data habitual é 139 a.C. (há cronologias que apontam 140). Diodoro dá o terceiro nome como Nicorontes e a terra dos três como Urso; Lívio atribui a morte a traidores incitados por Cepião.',
+    text: 'Viriato mandou três homens de confiança, Áudax, Ditalco e Minuro, tratar da paz com o procônsul Quinto Servílio Cepião. Cepião corrompeu-os com presentes e promessas para o matarem (segundo Apiano). Entraram na tenda enquanto ele dormia de armadura e feriram-no na garganta, o ponto que a armadura não cobria. Fugiram para junto de Cepião, que lhes deixou o que já tinham recebido e remeteu o resto para Roma. O exército fez-lhe um funeral grandioso. A data habitual é 139 a.C. (há cronologias que apontam 140). Diodoro dá o terceiro nome como Nicorontes e a terra dos três como Urso; Lívio atribui a morte a traidores incitados por Cepião.',
   },
   cativos: {
     title: 'Os Cativos', source: 'inspirado',
-    text: 'Esta missão é uma dramatização. Inspira-se no contexto de 149 a.C. (as consequências da traição de Galba, com sobreviventes levados cativos), mas o jogo coloca-a no ano de campanha de 147 a.C. O resgate em si, a clareira, os doze cativos e os homens que Viriato leva consigo são invenção do jogo; não há fonte antiga que descreva este episódio.',
+    text: 'Esta missão é uma dramatização. Inspira-se no contexto de 149 a.C. (as consequências da traição de Galba, com relatos posteriores de sobreviventes vendidos como escravos), mas o jogo coloca-a no ano de campanha de 147 a.C. O resgate em si, a clareira, os doze cativos e os homens que Viriato leva consigo são invenção do jogo; não há fonte antiga que descreva este episódio.',
   },
   enviado: { title: 'Voluntários das aldeias', source: 'invenção',
     text: 'Um mensageiro traz voluntários para o bando. ' + INVENCAO + ' É um episódio plausível, não um facto registado.' },
@@ -47,4 +47,16 @@ export function entryFor(id) {
   const e = Object.hasOwn(CHRONICLE, id) ? CHRONICLE[id] : null;
   if (!e) throw new Error(`Crónica: entrada desconhecida «${id}»`);
   return e;
+}
+
+/** Etiqueta mostrada no ecrã da Crónica para cada origem. */
+export const SOURCE_LABELS = { fontes: 'Fontes antigas', 'invenção': 'Invenção do jogo', inspirado: 'Cena inspirada' };
+
+// Sempre visíveis: o pretor do ano, os tipos de lugar do mapa e o fundo histórico.
+const ALWAYS = new Set(['vetilio', 'galba', 'traicao', 'aldeia', 'castro', 'serra', 'posto']);
+
+/** A entrada já foi vivida nesta campanha? (capítulos em state.done, acontecimentos em state.seen) */
+export function isUnlocked(id, state) {
+  if (ALWAYS.has(id)) return true;
+  return !!state && ((state.done || []).includes(id) || (state.seen || []).includes(id));
 }

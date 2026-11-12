@@ -2,7 +2,7 @@
 import { makeView, drawMap, hitTest, toWorld } from './map-view.js';
 import { createFlow, loadFlow, clearSave, WIN_MEN, WIN_FAME } from './flow.js';
 import { dateLabel, season, daysLeft, YEAR_DAYS } from './clock.js';
-import { entryFor } from './chronicle.js';
+import { entryFor, CHRONICLE, SOURCE_LABELS, isUnlocked } from './chronicle.js';
 import { isBridged } from './bridge.js';
 
 const BAR_TOP = 52, BAR_BOTTOM = 64; // alturas das barras HTML (px) que o canvas deixa livres
@@ -184,25 +184,80 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     return r;
   }
 
+  // --- Crónica ---
+  let cronOpener = null;
+  const cronOpen = () => !$('mcron').classList.contains('hidden');
+  function renderChronicle() {
+    const ul = $('mcron-list'); ul.textContent = '';
+    for (const [id, e] of Object.entries(CHRONICLE)) {
+      const li = doc.createElement('li'); li.dataset.entry = id; li.tabIndex = 0;
+      const h = doc.createElement('h3'); h.id = 'mcron-h-' + id; h.textContent = e.title; li.append(h);
+      li.setAttribute('aria-labelledby', h.id);
+      if (!isUnlocked(id, flow?.state)) {
+        li.classList.add('locked');
+        const p = doc.createElement('p'); p.className = 'lk'; p.textContent = 'Ainda não vivido'; li.append(p);
+      } else {
+        const chip = doc.createElement('span'); chip.className = 'chip'; chip.textContent = SOURCE_LABELS[e.source]; li.append(chip);
+        const p = doc.createElement('p'); p.className = 'txt'; p.textContent = e.text; li.append(p);
+        if (e.citation) { const c = doc.createElement('p'); c.className = 'cit'; c.textContent = e.citation; li.append(c); }
+      }
+      ul.append(li);
+    }
+  }
+  function openChronicle(opener) {
+    if (!flow || cronOpen()) return;
+    cronOpener = opener || doc.activeElement;
+    renderChronicle();
+    $('mcron').classList.remove('hidden');
+    $('mcron-list').scrollTop = 0;
+    $('mcron-list').firstElementChild?.focus?.();
+  }
+  function closeChronicle() {
+    if (!cronOpen()) return;
+    $('mcron').classList.add('hidden');
+    cronOpener?.focus?.(); cronOpener = null;
+  }
+  $('m-cronica').addEventListener('click', () => { if (active && flow?.phase === 'mapa') openChronicle($('m-cronica')); });
+  $('mend-cronica').addEventListener('click', () => { if (active && flow?.phase === 'fim') openChronicle($('mend-cronica')); });
+  $('mcron-close').addEventListener('click', closeChronicle);
+  $('mcron').addEventListener('keydown', e => {   // Tab não sai do diálogo
+    if (e.key !== 'Tab') return;
+    const items = [...$('mcron').querySelectorAll('[data-entry], button')], first = items[0], last = items[items.length - 1];
+    if (e.shiftKey && doc.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && doc.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  $('mcron-list').addEventListener('keydown', e => {   // setas, Home e End entre entradas
+    const li = e.target.closest?.('[data-entry]'); if (!li) return;
+    const to = e.key === 'ArrowDown' ? li.nextElementSibling : e.key === 'ArrowUp' ? li.previousElementSibling
+      : e.key === 'Home' ? li.parentElement.firstElementChild : e.key === 'End' ? li.parentElement.lastElementChild : null;
+    if (to) { e.preventDefault(); to.focus(); }
+  });
+
   $('mend-new').addEventListener('click', () => { try { clearSave(storage); } catch { /* ignorado */ }
     open(createFlow({ storage })); });
   $('mend-menu').addEventListener('click', close);
   win.addEventListener('resize', render);
-  win.addEventListener('keydown', e => { if (active && e.code === 'Escape') close(); });
+  win.addEventListener('keydown', e => {
+    if (!active || e.code !== 'Escape') return;
+    if (cronOpen()) { closeChronicle(); return; }   // ESC fecha a Crónica primeiro, sem sair do mapa
+    close();
+  });
 
   function open(f) {
     flow = f; active = true; selected = null; log.length = 0; logDirty = true;
+    $('mcron').classList.add('hidden'); cronOpener = null;
     log.push(flow.state.day ? 'A marcha continua.' : 'Um ano de guerra começa nos montes. Clica no mapa para marchar.');
     $('map').classList.remove('hidden');
     render();
   }
   function close() {
     if (!active) return;
+    $('mcron').classList.add('hidden'); cronOpener = null;
     active = false; $('map').classList.add('hidden');
     onClose();
   }
   return {
-    open, close, render, order, simulateBattle, suspend, battleDone, select: id => { selected = id; render(); }, view: () => view,
+    open, close, render, order, openChronicle, closeChronicle, simulateBattle, suspend, battleDone, select: id => { selected = id; render(); }, view: () => view,
     get flow() { return flow; }, get active() { return active; },
     hasSave: () => !!loadFlow(storage),
     resume: () => { const f = loadFlow(storage); if (f) open(f); return !!f; },

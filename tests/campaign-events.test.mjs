@@ -81,3 +81,16 @@ test('rollEvent devolve null se a campanha terminou', () => {
   const s = newCampaign(1); s.over = 'vitoria';
   assert.equal(rollEvent(s, alwaysFire()), null);
 });
+
+test('rollEvent regista em state.seen os acontecimentos vividos, sem repetir', () => {
+  const s = newCampaign(1);
+  assert.equal(s.seen, undefined);   // criado só quando preciso: gravações antigas ficam iguais
+  const r = rollEvent(s, alwaysFire());
+  assert.deepEqual(s.seen, [r.id]);
+  s.lastEvent = null; rollEvent(s, alwaysFire());
+  assert.deepEqual(s.seen, [r.id]);
+  rollEvent(s, alwaysFire());
+  assert.equal(s.seen.length, 2);
+  const t = newCampaign(1); rollEvent(t, { chance: () => false, pick: a => a[0] });
+  assert.equal(t.seen, undefined);
+});

@@ -835,7 +835,7 @@ function placeFlag() {
   const g = aimPoint(); if (!g) { showPrompt('Aponta para o chão', 1); return false; }
   flagAt.x = g.x; flagAt.z = g.z; flagAt.yaw = Math.atan2(g.x - P.pos.x, g.z - P.pos.z);
   FLAG.position.set(g.x, g.y, g.z); FLAG.rotation.y = flagAt.yaw; FLAG.visible = true; setFlagLook(false);
-  placing = false; order = 'hold'; feed('Ordem: para a bandeira!'); return true;
+  placing = false; order = 'hold'; feed('Ordem: para a bandeira'); return true;
 }
 function updateFlag() {
   if (!placing) return;
@@ -861,7 +861,7 @@ function dropShield(ent, mine = false) {
   const c = sh.clone(); sh.matrixWorld.decompose(c.position, c.quaternion, c.scale); scene.add(c); sh.visible = false;
   fallen.push({ mesh: c, vy: 1.5, t: 0, spin: rr(-3, 3) });
   SFX.thud(mine ? 1 : spatial(c.position)); burst('dust', c.position, 5);
-  if (mine) { showPrompt('O escudo partiu-se! Apara com a falcata (BOTÃO DIREITO ou Q)', 2.4); clog('Escudo partido', '#e08a6a'); } else if (!ent.ally) feed('Escudo romano partido');
+  if (mine) { showPrompt('O escudo partiu-se. Apara com a falcata (BOTÃO DIREITO ou Q)', 2.4); clog('Escudo partido', '#e08a6a'); } else if (!ent.ally) feed('Escudo romano partido');
 }
 const FLAT = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
 function updateFallen(dt) {
@@ -1774,7 +1774,7 @@ function checkMission() {
 function raiseAlarm() {
   if (alarm) return; alarm = true; SFX.horn();
   for (const e of enemies) if (!e.dead && (e.group === 'camp' || e.group === 'halt')) alert(e);
-  if (chapter === 'cativos') { feed('Deram o alarme!'); showMsg('Alarme!', 'Um cavaleiro partiu a pedir reforços.', 3.2); } else feed('O acampamento deu o alarme!');
+  if (chapter === 'cativos') { feed('Deram o alarme'); showMsg('Alarme', 'Um cavaleiro partiu a pedir reforços.', 3.2); } else feed('O acampamento deu o alarme');
 }
 
 /* =========================================================
@@ -1893,7 +1893,7 @@ function playerSwing(ev) {
     const at = V(r.at.x, r.at.y, r.at.z);
     if (unaware && fromAngle > 90) { damageEnemy(e, 40 * C.DMG[ev.dir] * ev.power * 3.5, false, at, 'golpe furtivo'); hitStop(.07); P.quiet = true; continue; }
     const res = C.resolveHit(e.f, { dir: ev.dir, power: ev.power * glance(r.p) * bonus, fromAngle, baseDamage: 40 });
-    if (res.result === 'parried') { C.stopBlade(P.f); C.stagger(P.f, res.attackerStagger); SFX.clank(); burst('spark', at, 12); showPrompt('O romano aparou o teu golpe!', .9); P.kick = .2; alert(e); return; }
+    if (res.result === 'parried') { C.stopBlade(P.f); C.stagger(P.f, res.attackerStagger); SFX.clank(); burst('spark', at, 12); showPrompt('O romano aparou o teu golpe', .9); P.kick = .2; alert(e); return; }
     if (res.result === 'blocked') { C.stopBlade(P.f); SFX.clank(); burst('spark', at, 8); e.flash = .05; P.kick = .12; knock(e, d, .6); alert(e); return; }
     const hRel = clamp((r.at.y - e.pos.y) / 1.85, 0, 1), zone = zoneFromHeight(hRel);
     if (res.result === 'guardBroken') feed('Quebraste-lhe a guarda');
@@ -1940,9 +1940,9 @@ function enemySwing(e, ev) {
   P.lastDefense = res.result;
   if (res.result === 'blocked' || res.result === 'parried') clog(res.result === 'parried' ? 'Aparo perfeito' : 'Bloqueado', '#a8c8e0');
   const spark = V(r.at.x, r.at.y, r.at.z);
-  if (res.result === 'parried') { C.stopBlade(e.f); C.stagger(e.f, res.attackerStagger); SFX.clank(); burst('spark', spark, 14); showPrompt('Aparo perfeito!', .8); hitStop(.08); return; }
+  if (res.result === 'parried') { C.stopBlade(e.f); C.stagger(e.f, res.attackerStagger); SFX.clank(); burst('spark', spark, 14); showPrompt('Aparo perfeito', .8); hitStop(.08); return; }
   if (res.result === 'blocked') { C.stopBlade(e.f); SFX.clank(); burst('spark', spark, 8); P.shake = .18; P.push = { x: dd.x * 1.5, z: dd.z * 1.5 }; return; }
-  if (res.result === 'guardBroken') showPrompt('Guarda quebrada!', 1);
+  if (res.result === 'guardBroken') showPrompt('Guarda quebrada', 1);
   if (res.damage > 0) { hurtPlayer(res.damage, e.pos); burst('blood', spark, 4); P.push = { x: dd.x * 2.5, z: dd.z * 2.5 }; P.kick = .25; hitStop(.05); }
 }
 function hurtAlly(a, dmg, at) {
@@ -2596,7 +2596,7 @@ function updatePlayer(dt) {
   if (P.cleanT > 0) { P.cleanT -= dt; if (P.cleanT <= 0) { P.f.stuckJavelins = 0; feed('Escudo limpo'); } }
   // press / release edges of the left button
   if (mouseL && !P.prevL && placing) { placeFlag(); P.prevL = true; }
-  else if (mouseL && !P.prevL && P.unarmed) { showPrompt('Estás desarmado. Foge!', 1); }
+  else if (mouseL && !P.prevL && P.unarmed) { showPrompt('Estás desarmado: recua', 1); }
   else if (mouseL && !P.prevL) {
     if (P.w === 0) { P.charging = true; P.chargeT = 0; P.acc.x = P.intent.x; P.acc.y = P.intent.y; }
     else beginThrow();

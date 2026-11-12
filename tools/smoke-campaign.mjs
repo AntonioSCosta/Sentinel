@@ -1,3 +1,5 @@
+import { rollEvent } from '../src/campaign/events.js';
+import { CHRONICLE } from '../src/campaign/chronicle.js';
 // Task 12: o ecrã do mapa da campanha (estado 'map'), HUD, ordens, modal de batalha provisório e ecrã final.
 export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   const $ = id => doc.getElementById(id), shown = id => !!$(id) && !$(id).classList.contains('hidden');
@@ -70,6 +72,7 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   check('new campaign survives a throwing removeItem', G.state === 'map' && G.campaign.flow.state.day === 0);
   G.campaign.close();
 
+  chronicle({ G, doc, win, check, $, shown });
   battleBridge({ G, doc, win, check, st, setGod, $, shown });
   villageDefence({ G, doc, win, check, st, setGod, $, shown });
   convoyAssault({ G, doc, win, check, st, setGod, $, shown });
@@ -255,13 +258,13 @@ function convoyAssault({ G, doc, win, check, st, setGod, $, shown }) {
   for (const e of G.enemies) G.damageEnemyForTest(e, 9999);
   st(200); setGod(false);
   check('assalto: killing the escort goes back to the map once', backOnMap() && w.f.phase === 'mapa' && w.calls() === 1);
-  check(`assalto won with every cart: +20 food, +6 arms — more than an ambush (${w.f.state.food}/${w.f.state.arms})`, w.f.state.food === 80 && w.f.state.arms === 16 && /3 de 3 carros/.test($('mlog').textContent));
+  check(`assalto won with every cart: +30 food, +6 arms — more than an ambush (${w.f.state.food}/${w.f.state.arms})`, w.f.state.food === 90 && w.f.state.arms === 16 && /3 de 3 carros/.test($('mlog').textContent));
   // one cart gets away, then the escort dies: less loot
   w = begin(); $('mb-fight').click(); st(5);
   G.carts[0].pos.z = 140; st(30);
   check(`assalto: a cart past the end of the road is gone (${$('objt').textContent})`, G.carts[0].gone && /carros 2\/3/.test($('objt').textContent) && G.state === 'play');
   setGod(true); for (const e of G.enemies) G.damageEnemyForTest(e, 9999); st(200); setGod(false);
-  check(`assalto with a cart lost: less loot (${w.f.state.food}/${w.f.state.arms})`, backOnMap() && w.f.state.food === 75 && w.f.state.arms === 15);
+  check(`assalto with a cart lost: less loot (${w.f.state.food}/${w.f.state.arms})`, backOnMap() && w.f.state.food === 84 && w.f.state.arms === 15);
   // every cart gets away with the escort alive: no loot, -2 fame
   w = begin(); $('mb-fight').click(); st(5);
   for (const c of G.carts) c.pos.z = 140;
@@ -372,7 +375,11 @@ function decisive({ G, doc, win, check, st, setGod, $, shown }) {
   check(`end screen: title and result (${$('mend-title').textContent} / ${$('mend-result').textContent})`, $('mend-title').textContent === 'Fim do ano de 147 a.C.' && $('mend-result').textContent === 'Vitória');
   check(`end screen: summary (${$('mend-sum').textContent})`, sum('days') === s.day && sum('men') === s.men && sum('burnt') === 0 && sum('kills') === 30 && sum('battles') === 1);
   check('end screen: a closing line from the Crónica', /Vetílio/.test($('mend-chron').textContent) && /Periochae/.test($('mend-chron').textContent));
-  check('end screen: «Nova campanha», «Crónica» (not yet), «Voltar ao menu»', shown('mend-new') && $('mend-cronica').disabled && $('mend-cronica').title === 'disponível em breve' && shown('mend-menu') && doc.activeElement === $('mend-new'));
+  check('end screen: «Nova campanha», «Crónica», «Voltar ao menu»', shown('mend-new') && !$('mend-cronica').disabled && !$('mend-cronica').title && shown('mend-menu') && doc.activeElement === $('mend-new'));
+  $('mend-cronica').click();
+  check('end screen: «Crónica» opens over the end screen', shown('mcron') && shown('mend') && doc.activeElement !== $('mend-cronica'));
+  win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'Escape', key: 'Escape' }));
+  check('end screen: Escape closes the Crónica, focus back on its button, end screen stays', !shown('mcron') && shown('mend') && G.state === 'map' && doc.activeElement === $('mend-cronica'));
   check('end screen: sober copy, no exclamation marks', !/!/.test(endText()));
   st(60); check('… finishBattle once only', w.calls() === 1);
   $('mend-new').click();
@@ -404,4 +411,50 @@ function decisive({ G, doc, win, check, st, setGod, $, shown }) {
   $('mend-menu').click();
   G.campaign.close();
   cappedTris({ G, doc, win, check, st, $, type: 'decisiva', extra: { site: 'campo', commander: 'Caio Vetílio' } });
+}
+
+// Task 18: o ecrã da Crónica (mapa e fim), com entradas desbloqueadas pelo que já se viveu.
+function chronicle({ G, doc, win, check, $, shown }) {
+  G.campaignStorage.clear(); G.startCampaign(31);
+  const f = G.campaign.flow, s = f.state;
+  check('map HUD has a «Crónica» button', $('m-cronica')?.tagName === 'BUTTON' && $('m-cronica').textContent.trim() === 'Crónica');
+  $('m-cronica').focus(); $('m-cronica').click();
+  const dlg = $('mcron');
+  check('«Crónica» opens a labelled dialog', shown('mcron') && dlg.getAttribute('role') === 'dialog' && dlg.getAttribute('aria-modal') === 'true'
+    && !!$(dlg.getAttribute('aria-labelledby')) && $(dlg.getAttribute('aria-labelledby')).textContent.trim() === 'Crónica');
+  check('focus moves into the dialog', dlg.contains(doc.activeElement));
+  const card = id => dlg.querySelector(`[data-entry="${id}"]`);
+  const ids = Object.keys(CHRONICLE);
+  check(`the dialog lists every entry (${dlg.querySelectorAll('[data-entry]').length}/${ids.length})`, ids.every(id => card(id)) && dlg.querySelectorAll('[data-entry]').length === ids.length);
+  const LABEL = { fontes: 'Fontes antigas', 'invenção': 'Invenção do jogo', inspirado: 'Cena inspirada' };
+  const unlockedNow = ['galba', 'vetilio', 'traicao', 'aldeia', 'castro', 'serra', 'posto'];
+  check('unlocked entries show title, label chip and text', unlockedNow.every(id => {
+    const c = card(id), e = CHRONICLE[id];
+    return c.querySelector('h3')?.textContent === e.title && c.querySelector('.chip')?.textContent === LABEL[e.source] && c.querySelector('.txt')?.textContent === e.text;
+  }));
+  check('«fontes» entries show their citation under the text', ['galba', 'vetilio', 'traicao'].every(id => {
+    const c = card(id), cit = c.querySelector('.cit'), txt = c.querySelector('.txt');
+    return cit?.textContent === CHRONICLE[id].citation && !!(txt.compareDocumentPosition(cit) & 4);
+  }));
+  check('invented entries carry no citation', !card('castro').querySelector('.cit'));
+  const locked = id => /Ainda não vivido/.test(card(id).textContent) && card(id).querySelector('h3')?.textContent === CHRONICLE[id].title && !card(id).querySelector('.txt') && !card(id).querySelector('.chip');
+  check('the captives and the deck are locked at the start', ['cativos', 'seca', 'pastores', 'enviado', 'traidor'].every(locked));
+  check('entries are keyboard reachable', [...dlg.querySelectorAll('[data-entry]')].every(c => c.tabIndex === 0));
+  { const first = dlg.querySelector('[data-entry]'); first.focus();
+    first.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    check('ArrowDown moves to the next entry', doc.activeElement === first.nextElementSibling); }
+  check('sober copy, no exclamation marks', !/!/.test(dlg.textContent));
+  win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'Escape', key: 'Escape' }));
+  check('Escape closes the Crónica, stays on the map, focus back on the button', !shown('mcron') && G.state === 'map' && shown('map') && doc.activeElement === $('m-cronica'));
+  // um acontecimento do baralho acontece: a entrada desbloqueia
+  const ev = rollEvent(s, { chance: () => true, pick: a => a.find(e => e.id === 'seca') || a[0] });
+  check('rollEvent produced the drought and recorded it', ev?.id === 'seca' && s.seen.includes('seca'));
+  s.done.push('cativos');
+  $('m-cronica').click();
+  check('the drought is now unlocked with its label', !locked('seca') && card('seca').querySelector('.chip').textContent === 'Invenção do jogo' && card('seca').querySelector('.txt').textContent === CHRONICLE.seca.text);
+  check('the captives entry unlocks once played, «Cena inspirada»', card('cativos').querySelector('.chip')?.textContent === 'Cena inspirada');
+  check('other deck entries stay locked', locked('traidor') && locked('pastores'));
+  dlg.querySelector('#mcron-close').click();
+  check('«Fechar» closes it and focus returns', !shown('mcron') && doc.activeElement === $('m-cronica'));
+  G.campaign.close();
 }
