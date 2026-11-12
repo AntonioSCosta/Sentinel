@@ -4,6 +4,8 @@ import * as C from './combat.js';
 import { zoneFromHeight, ZONE_MULT, LEG_SLOW } from './damage.js';
 import { decide, REACH } from './ai.js';
 import { staminaUse, steer, footwork, playerSpeed } from './locomotion.js';
+import { cullChunks, cullCharacters } from './chunks.js';
+import { newFps, tickFps } from './fps.js';
 import { loadMaterials, terrainMaterial, makeMailMaps, loadFoliage, makeGrassMaterial } from './materials.js';
 import { createPhysics } from './physics.js';
 import { createRender } from './render.js';
@@ -36,7 +38,7 @@ const FOG = 0xb7c2bf;   // the damp blue-grey haze of the Beira hills
 scene.fog = new THREE.FogExp2(FOG, .013);   // thick hill mist: nothing is seen past ~150 m, so nothing is drawn past it either
 scene.background = new THREE.Color(FOG);
 const FOG_BASE = scene.fog.density;
-const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, .05, 210);
+const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, .05, 165);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
 window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); if (R) R.resize(window.innerWidth, window.innerHeight); });
@@ -149,6 +151,7 @@ const MAT = (name, extra) => { const m = MATS[name].clone(); if (extra) Object.a
    ========================================================= */
 const dummy = new THREE.Object3D();
 const CELL = 50;   // m: scenery is batched per map square, so squares behind the camera or lost in the mist are not drawn at all
+const CHUNKS = [];   // 50 m scenery blocks, culled by distance each frame (src/chunks.js)
 function instanced(geo, mat, list, shadow = true, { chunk = true, name = '', depth = null, vary = 0, warm = 0 } = {}) {
   const tintC = new THREE.Color(), hash = (x, z, k) => { const v = Math.sin(x * 12.9898 + z * 78.233 + k * 37.719) * 43758.5453; return v - Math.floor(v); };
   const cells = new Map();
@@ -159,7 +162,9 @@ function instanced(geo, mat, list, shadow = true, { chunk = true, name = '', dep
     part.forEach((t, i) => { dummy.position.set(t.x, t.y, t.z); dummy.rotation.set(t.rx || 0, t.ry || 0, t.rz || 0); dummy.scale.set(t.sx || t.s || 1, t.sy || t.s || 1, t.sz || t.s || 1); dummy.updateMatrix(); im.setMatrixAt(i, dummy.matrix);
       if (vary) { const l = 1 - vary + 2 * vary * hash(t.x, t.z, 1), w = warm * (hash(t.x, t.z, 2) - .5); im.setColorAt(i, tintC.setRGB(l * (1 + w), l, l * (1 - w * 1.6))); } });   // no two trees quite the same green
     im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; im.castShadow = shadow; im.receiveShadow = true; im.name = name; if (depth) im.customDepthMaterial = depth;
-    im.computeBoundingSphere(); scene.add(im); last = im;
+    im.computeBoundingSphere();
+    if (chunk && shadow && im.boundingSphere) { const b = im.boundingSphere; im.__c = { x: b.center.x, z: b.center.z, r: b.radius }; CHUNKS.push(im); }
+    scene.add(im); last = im;
   }
   return last;
 }
@@ -2773,8 +2778,8 @@ setListener(camera);
 resetWorld();
 $('start').disabled = false; $('start').textContent = 'COMEÇAR';
 return {
-  start: (d, ch = 'emboscada') => { if (d != null) diff = d; setChapter(ch); startGame(false); }, startIntro: (ch = chapter) => { setChapter(ch); startGame(true); }, get civs() { return civs; }, get riders() { return riders; }, get chapter() { return chapter; }, MEADOW, ESCAPE, CASTRO, get introT() { return introT; }, step, render: () => R.render(), setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
-  P, supplyTents, heightAt, CAMP, scene, camera,
+  start: (d, ch = 'emboscada') => { if (d != null) diff = d; setChapter(ch); startGame(false); }, startIntro: (ch = chapter) => { setChapter(ch); startGame(true); }, get civs() { return civs; }, get riders() { return riders; }, get chapter() { return chapter; }, MEADOW, ESCAPE, CASTRO, get introT() { return introT; }, step, render: () => { cullChunks(CHUNKS, camera.position); cullCharacters(enemies, camera.position); cullCharacters(allies, camera.position); cullCharacters(civs, camera.position); R.render(); }, setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
+  P, supplyTents, heightAt, CAMP, scene, camera, CHUNKS,
   get enemies() { return enemies; }, get allies() { return allies; }, setCompanions: n => { companions = n; }, forceDir: d => { forcedDir = d; }, get order() { return order; }, get placing() { return placing; }, flag: FLAG, flagAt, hurtAllyForTest: (a, d) => hurtAlly(a, d, a.pos.clone()), get mission() { return mission; }, get tentsBurnt() { return tentsBurnt; }, alertForTest: e => alert(e), get halt() { return halt; }, get companions() { return companions; }, get alarm() { return alarm; }, get nextChapter() { return nextChapter; }, HALT, WOODS, CSTART, get state() { return state; },
   get projectiles() { return projectiles; }, get pickups() { return pickups; },
   input: { mouse: (l, r) => { mouseL = l; mouseR = r; }, mouseMove: (dx, dy) => { C.nudgeIntent(P.intent, dx, dy); if (P.charging) { P.acc.x += dx; P.acc.y += dy; } if (P.f.phase === 'windup' && !P.f.released) { P.post.x += dx; P.post.y += dy; } } },
@@ -2805,7 +2810,14 @@ export async function boot() {
   // ?manual=1 holds the loop so only step() moves the game; ?scene=<chapter> starts in that chapter.
   const { manual, scene } = installHook(game, window);
   if (scene) game.start(null, scene);
-  const frame = t => { const dt = Math.min(.05, (t - last) / 1000 || 0) * timeScale; last = t; game.step(dt); game.render(); requestAnimationFrame(frame); };
+  const fps = newFps(), fpsEl = document.getElementById('fps');
+  const frame = t => {
+    const dt = Math.min(.05, (t - last) / 1000 || 0) * timeScale; last = t;
+    game.step(dt); game.render();
+    const f = tickFps(fps, t);
+    if (f != null && fpsEl) fpsEl.textContent = `${f} imagens por segundo · gráficos ${{ low: 'Baixa', medium: 'Média', high: 'Alta' }[game.quality]}`;
+    requestAnimationFrame(frame);
+  };
   if (!manual) requestAnimationFrame(frame);
   window.__game = game;
 }

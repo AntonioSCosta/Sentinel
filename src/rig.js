@@ -16,6 +16,7 @@ export function layerOf(bone, shielded) {
 }
 
 import { attackPose, blockPose, MOVES, BLOCKS } from './moves.js';
+import { bigEnoughForShadow } from './chunks.js';
 // Attack clips: clip time windows for windup → strike → recovery, chosen from the hand's measured path.
 export const ATK = {
   right: { clip: 'Sword_Regular_A', w: [0, .16], s: [.16, .3], r: [.3, .43] },   // cut from the right, rising across
@@ -230,7 +231,10 @@ export function makeRig(THREE, cloneSkinned, assets, { outfit = 'roman_red', hai
     }
     return actions[key];
   };
-  const rig = { root, body, mixer, bones, mats, shielded, action, actions, w: { lo: {}, up: {}, sh: {} }, hitSeen: 0, oneShot: null, side: 0 };
+  // shadow budget: eyes, brows, crests and cheek-guards are too small to show in the shadow map, and each one costs a draw call
+  const cast = [];
+  root.traverse(o => { if (o.isMesh) { if (!bigEnoughForShadow(o.name) || !bigEnoughForShadow(o.material && o.material.name)) o.castShadow = false; else if (o.castShadow) cast.push(o); } });
+  const rig = { root, body, mixer, bones, mats, shielded, action, actions, cast, w: { lo: {}, up: {}, sh: {} }, hitSeen: 0, oneShot: null, side: 0 };
   /** Attach `obj`, currently placed in bind-pose model space, to a bone keeping that placement. */
   rig.attach = (boneName, obj) => { root.updateMatrixWorld(true); root.add(obj); obj.updateMatrixWorld(true); bones[boneName].attach(obj); return obj; };
   /** Put the whole body in a clip's pose at time t (matrices updated); used to measure where hands are. */
