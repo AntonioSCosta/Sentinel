@@ -14,6 +14,7 @@ import { makeRig, driveRig, weaveTexture, slimBody } from './rig.js';
 import { followSlot, pickFoe, pickTarget, allyAct, holdSlot, aimGround, allyLook } from './ally.js';
 import { JAVELINS, throwPower, allyThrows, veliteState } from './missiles.js';
 import { haltLayout, isFighter, companionsFrom, canLeave, alertRadius, REINFORCE_AFTER, RELIEF, CUT_TIME, FREE_TO_LEAVE } from './captives.js';
+import { installHook } from './hook.js';
 
 /**
  * Builds the whole game. Rendering, DOM and window are injected so the game can run headless in tests.
@@ -2709,8 +2710,12 @@ export async function boot() {
   let timeScale = 1;
   window.addEventListener('keydown', e => { if (e.code !== 'F8') return; e.preventDefault(); timeScale = timeScale === 1 ? .5 : timeScale === .5 ? .25 : 1; game.prompt && game.prompt(`Velocidade ${timeScale === 1 ? 'normal' : timeScale === .5 ? '½×' : '¼×'}`); });
   import('./moves.js').then(m => { window.__moves = m; }); import('./combat.js').then(m => { window.__combat = m; });
+  // window.game: the hook the studio framework's checks drive the game through (src/hook.js).
+  // ?manual=1 holds the loop so only step() moves the game; ?scene=<chapter> starts in that chapter.
+  const { manual, scene } = installHook(game, window);
+  if (scene) game.start(null, scene);
   const frame = t => { const dt = Math.min(.05, (t - last) / 1000 || 0) * timeScale; last = t; game.step(dt); game.render(); requestAnimationFrame(frame); };
-  requestAnimationFrame(frame);
+  if (!manual) requestAnimationFrame(frame);
   window.__game = game;
 }
 
