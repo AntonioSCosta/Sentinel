@@ -7,9 +7,9 @@ const spec = (o = {}) => ({ type: 'emboscada', seed: 77, allies: 8, enemies: { l
 const kinds = p => p.enemies.reduce((m, e) => (m[e.kind] = (m[e.kind] || 0) + 1, m), {});
 
 test('tipos com cena 3D', () => {
-  assert.deepEqual(BRIDGED, ['emboscada', 'campo-aberto', 'defesa-aldeia']);
+  assert.deepEqual(BRIDGED, ['emboscada', 'campo-aberto', 'defesa-aldeia', 'assalto-coluna']);
   assert.ok(isBridged(spec()) && isBridged(spec({ type: 'campo-aberto' })) && isBridged(spec({ type: 'defesa-aldeia' })));
-  for (const t of ['assalto-coluna', 'retirada', 'decisiva', 'historica']) assert.ok(!isBridged(spec({ type: t })));
+  for (const t of ['retirada', 'decisiva', 'historica']) assert.ok(!isBridged(spec({ type: t })));
   assert.ok(!isBridged(null));
 });
 
@@ -78,4 +78,35 @@ test('tallyResult: abandonar é derrota, como a morte dele', () => {
 
 test('tallyResult: com romanos vivos não há vitória', () => {
   assert.equal(tallyResult({ allies: 8, alliesDead: 0, enemies: 8, enemiesDead: 7 }).won, false);
+});
+
+// Task 15: assalto a coluna
+test('tallyResult: carros capturados vão no resultado; sem carros os campos não aparecem', () => {
+  const r = tallyResult({ allies: 8, alliesDead: 1, enemies: 8, enemiesDead: 8, carts: { captured: 2, total: 3 } });
+  assert.deepEqual(r, { won: true, retreated: false, alliesLost: 1, enemiesKilled: 8, cartsCaptured: 2, cartsTotal: 3 });
+  assert.ok(!('cartsTotal' in tallyResult({ enemies: 1, enemiesDead: 1 })));
+});
+
+test('tallyResult: a coluna escapou-se com a escolta viva', () => {
+  const r = tallyResult({ allies: 8, alliesDead: 2, enemies: 8, enemiesDead: 3, escaped: true, carts: { captured: 0, total: 3 } });
+  assert.deepEqual(r, { won: false, retreated: false, escaped: true, alliesLost: 2, enemiesKilled: 3, cartsCaptured: 0, cartsTotal: 3 });
+});
+
+test('assalto-coluna tem cena 3D; o plano é uma coluna na estrada', () => {
+  assert.ok(isBridged(spec({ type: 'assalto-coluna' })));
+  const p = spawnPlan(spec({ type: 'assalto-coluna' }));
+  assert.equal(p.gap, 0); assert.ok(p.enemies.every(e => Math.abs(e.side) < 1.5));
+});
+
+test('assalto-coluna: 3 carros (2 com escolta < 8) entre as filas da escolta, sem se sobreporem', () => {
+  for (const [men, n] of [[8, 3], [6, 2], [30, 3]]) {
+    const p = spawnPlan(spec({ type: 'assalto-coluna', enemies: { legio: men - 2, velites: 2, centurion: false } }));
+    assert.equal(p.carts.length, n, `${men} homens`);
+    const al = p.enemies.map(e => e.along);
+    for (const c of p.carts) {
+      assert.ok(c.along < Math.max(...al) && c.along > Math.min(...al), 'dentro da coluna');
+      assert.ok(p.enemies.every(e => Math.abs(e.along - c.along) > 2), 'longe de cada soldado');
+    }
+  }
+  assert.deepEqual(spawnPlan(spec()).carts, []);
 });

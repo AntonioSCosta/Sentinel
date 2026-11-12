@@ -171,3 +171,24 @@ test('defesa perdida, abandonada ou em retirada: a aldeia arde e a fama cai mais
   applyResult(s, defesa(s), res({ won: false }));
   assert.equal(s.fame, 0); assert.equal(s.over, 'derrota');
 });
+
+// Task 15: assalto a coluna: o saque depende dos carros tomados; a coluna que foge custa só fama
+const coluna = s => battleSpec(enc('comboio', true), s, rng());
+test('assalto-coluna: o saque escala com os carros capturados', () => {
+  for (const [cap, food, arms] of [[0, 4, 2], [1, 9, 3], [2, 15, 5], [3, 20, 6]]) {
+    const s = st(14);
+    applyResult(s, coluna(s), res({ cartsCaptured: cap, cartsTotal: 3 }));
+    assert.deepEqual([s.food - 60, s.arms - 10], [food, arms], `${cap}/3`);
+  }
+  const s = st(14); applyResult(s, coluna(s), res());   // sem os campos: todos capturados
+  assert.deepEqual([s.food, s.arms], [80, 16]);
+  const t = st(14); applyResult(t, coluna(t), res({ cartsCaptured: 9, cartsTotal: 0 }));   // malformado: nunca mais que tudo
+  assert.deepEqual([t.food, t.arms], [80, 16]);
+});
+
+test('a coluna escapou-se: sem saque, só -2 de fama e os homens que caíram; o comboio fica no mapa', () => {
+  const s = st(14); s.patrols.push({ id: 'comboio-1' });
+  const ev = applyResult(s, coluna(s), res({ won: false, escaped: true, alliesLost: 2, cartsCaptured: 0, cartsTotal: 3 }));
+  assert.deepEqual([s.men, s.food, s.arms, s.fame], [12, 60, 10, 18]);
+  assert.equal(s.patrols.length, 1); assert.equal(ev[0].type, 'fuga'); assert.equal(ev[0].lost, 2);
+});

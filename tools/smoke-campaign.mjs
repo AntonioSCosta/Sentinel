@@ -72,6 +72,7 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
 
   battleBridge({ G, doc, win, check, st, setGod, $, shown });
   villageDefence({ G, doc, win, check, st, setGod, $, shown });
+  convoyAssault({ G, doc, win, check, st, setGod, $, shown });
 }
 
 // Task 13: a ponte para as batalhas 3D (emboscada e campo aberto) e o regresso ao mapa.
@@ -221,4 +222,55 @@ function cappedTris({ G, doc, win, check, st, $, type, extra = {} }) {
   doc.dispatchEvent(new win.Event('pointerlockchange')); $('abandon').click();   // out of the battle again
   check(`${type}: the capped battle is abandoned cleanly`, G.state === 'map');
   G.campaign.close();
+}
+
+// Task 15: assalto a uma coluna de abastecimento: carros e escolta na estrada; o saque depende dos carros tomados.
+function convoyAssault({ G, doc, win, check, st, setGod, $, shown }) {
+  const begin = (seed = 61) => {
+    G.campaignStorage.clear(); G.startCampaign(seed);
+    const f = G.campaign.flow; f.state.men = 8; f.state.fame = 20; f.state.food = 60; f.state.arms = 10;
+    let calls = 0; const fb = f.finishBattle; f.finishBattle = r => { calls++; return fb(r); };
+    G.campaignTest.forceBattle({ type: 'assalto-coluna', seed: 4242, site: 'estrada', allies: 8, realMen: 8,
+      enemies: { legio: 6, velites: 2, centurion: false }, bonus: { allies: 0, enemies: 0 } });
+    return { f, calls: () => calls };
+  };
+  const backOnMap = () => G.state === 'map' && shown('map') && !shown('hud') && !shown('mbattle');
+  const offRoad = p => Math.abs(p.x - G.roadX(p.z));
+  let w = begin();
+  check('assalto: the modal offers «Lutar»', shown('mbattle') && shown('mb-fight') && !shown('mb-win'));
+  $('mb-fight').click();
+  check('assalto: «Lutar» starts the 3D battle', G.state === 'play' && shown('hud'));
+  const carts = G.carts || [];
+  check(`assalto: three carts and an escort of 8 on the road (${carts.length}/${G.enemies.length})`, carts.length === 3 && G.enemies.length === 8
+    && carts.every(c => offRoad(c.pos) < 1) && G.enemies.every(e => offRoad(e.pos) < 3 && e.state === 'march'));
+  const zs = G.enemies.map(e => e.pos.z);
+  check('assalto: the carts travel inside the column', carts.every(c => c.pos.z < Math.max(...zs) && c.pos.z > Math.min(...zs)));
+  check('assalto: no cart overlaps a soldier', carts.every(c => G.enemies.every(e => Math.hypot(e.pos.x - c.pos.x, e.pos.z - c.pos.z) > 1.6)));
+  check('assalto: objective «Assalta a coluna — carros 3/3»', /Assalta a coluna — carros 3\/3/.test($('objt').textContent));
+  const cz = carts.map(c => c.pos.z); st(300);
+  check('assalto: the carts roll on down the road', carts.every((c, i) => c.pos.z > cz[i] + 5 && offRoad(c.pos) < 1));
+  setGod(true);
+  for (const e of G.enemies) G.damageEnemyForTest(e, 9999);
+  st(200); setGod(false);
+  check('assalto: killing the escort goes back to the map once', backOnMap() && w.f.phase === 'mapa' && w.calls() === 1);
+  check(`assalto won with every cart: +20 food, +6 arms — more than an ambush (${w.f.state.food}/${w.f.state.arms})`, w.f.state.food === 80 && w.f.state.arms === 16 && /3 de 3 carros/.test($('mlog').textContent));
+  // one cart gets away, then the escort dies: less loot
+  w = begin(); $('mb-fight').click(); st(5);
+  G.carts[0].pos.z = 140; st(30);
+  check(`assalto: a cart past the end of the road is gone (${$('objt').textContent})`, G.carts[0].gone && /carros 2\/3/.test($('objt').textContent) && G.state === 'play');
+  setGod(true); for (const e of G.enemies) G.damageEnemyForTest(e, 9999); st(200); setGod(false);
+  check(`assalto with a cart lost: less loot (${w.f.state.food}/${w.f.state.arms})`, backOnMap() && w.f.state.food === 75 && w.f.state.arms === 15);
+  // every cart gets away with the escort alive: no loot, -2 fame
+  w = begin(); $('mb-fight').click(); st(5);
+  for (const c of G.carts) c.pos.z = 140;
+  st(300);
+  check('assalto: the whole column escaping ends the battle, back on the map', backOnMap() && w.calls() === 1 && w.f.phase === 'mapa');
+  check(`assalto escaped: no loot, fame -2 (${w.f.state.food}/${w.f.state.arms}/${w.f.state.fame})`, w.f.state.food === 60 && w.f.state.arms === 10 && w.f.state.fame === 18 && /escapou/.test($('mlog').textContent));
+  // a cart reached by Viriato stops where it is
+  w = begin(); $('mb-fight').click(); st(5);
+  const c0 = G.carts[1]; G.P.pos.set(c0.pos.x + 1.5, c0.pos.y, c0.pos.z); const z1 = c0.pos.z; st(120);
+  check('assalto: a cart Viriato reaches is stopped', c0.stopped && Math.abs(c0.pos.z - z1) < .5);
+  doc.dispatchEvent(new win.Event('pointerlockchange')); $('abandon').click();
+  G.campaign.close();
+  cappedTris({ G, doc, win, check, st, $, type: 'assalto-coluna', extra: { site: 'estrada' } });
 }

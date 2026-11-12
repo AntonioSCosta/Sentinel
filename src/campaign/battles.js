@@ -11,7 +11,8 @@ const LOOT = {
   decisiva: { food: 10, arms: 5 }, historica: { food: 8, arms: 4 },
 };
 const DEFEAT = { food: 3, fame: 5 }, RETREAT = { food: 5, fame: 3 };
-const VILLAGE_FAME = 3;   // defesa de aldeia: a mais na vitória, a menos quando arde
+const VILLAGE_FAME = 3;
+const ESCAPED_FAME = 2;   // assalto a coluna: os carros fugiram todos com a escolta viva   // defesa de aldeia: a mais na vitória, a menos quando arde
 
 function typeOf(enc) {
   if (enc.kind === 'pretor') return { type: 'decisiva', site: 'campo' };
@@ -38,6 +39,16 @@ export function battleSpec(enc, state, rng) {
   return spec;
 }
 
+/** Saque de uma vitória; no assalto a coluna vai do de campo aberto (nenhum carro) ao cheio (todos os carros). */
+function lootOf(spec, result) {
+  const loot = LOOT[spec.type] || { food: 0, arms: 0 };
+  if (spec.type !== 'assalto-coluna') return loot;
+  const { cartsCaptured: c, cartsTotal: t } = result;
+  const frac = Number.isFinite(c) && Number.isFinite(t) && t > 0 ? Math.min(1, Math.max(0, c / t)) : 1;
+  const min = LOOT['campo-aberto'];
+  return { food: Math.round(min.food + (loot.food - min.food) * frac), arms: Math.round(min.arms + (loot.arms - min.arms) * frac) };
+}
+
 export function applyResult(state, spec, result) {
   if (state.over) return [];
   const raw = Number.isFinite(result.alliesLost) ? Math.max(0, result.alliesLost) : 0;
@@ -48,8 +59,11 @@ export function applyResult(state, spec, result) {
   if (result.retreated) {
     spend(state, RETREAT);
     events.push({ type: 'retirada', lost });
+  } else if (result.escaped) {
+    spend(state, { fame: ESCAPED_FAME });
+    events.push({ type: 'fuga', lost });
   } else if (result.won) {
-    const loot = LOOT[spec.type] || { food: 0, arms: 0 };
+    const loot = lootOf(spec, result);
     const fame = spec.type === 'decisiva' ? 15 : spec.type === 'defesa-aldeia' ? 5 + VILLAGE_FAME : 5;
     state.food += loot.food; state.arms += loot.arms; state.fame += fame;
     if (spec.foeId !== undefined) state.patrols = state.patrols.filter(p => p.id !== spec.foeId);
