@@ -12,7 +12,8 @@ const renderer = { domElement: doc.getElementById('gl'), shadowMap: {}, setPixel
 const { createGame } = await import('../src/game.js');
 let rapier = null;
 if (process.env.SMOKE_RAPIER) { rapier = (await import('@dimforge/rapier3d-compat')).default; await rapier.init(); }
-const G = await createGame({ THREE, renderer, canvas: renderer.domElement, document: doc, window: win, rapier });
+const mem = new Map(), storage = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, String(v)), removeItem: k => mem.delete(k), clear: () => mem.clear() };
+const G = await createGame({ storage, THREE, renderer, canvas: renderer.domElement, document: doc, window: win, rapier });
 console.log('physics:', G.physicsOk ? 'rapier' : 'simple');
 
 let god = false;
@@ -64,7 +65,7 @@ try {
   G.damagePlayer(500, G.P.pos.clone().add(new THREE.Vector3(1, 0, 0)), false); st(200);
   check('death', G.state === 'dead' && doc.getElementById('endt').textContent.length > 0);
   // extra scenario hooks for later tasks
-  for (const mod of ['./smoke-prologue.mjs', './smoke-combat.mjs', './smoke-models.mjs', './smoke-pause.mjs', './smoke-review.mjs', './smoke-anim.mjs', './smoke-armour.mjs', './smoke-foliage.mjs', './smoke-shieldhand.mjs', './smoke-thirdperson.mjs', './smoke-throw.mjs', './smoke-allies.mjs', './smoke-javelins.mjs', './smoke-cativos.mjs'].filter(m => !process.env.SMOKE_ONLY || m.includes(process.env.SMOKE_ONLY))) { const extra = await import(mod);
+  for (const mod of ['./smoke-prologue.mjs', './smoke-combat.mjs', './smoke-models.mjs', './smoke-pause.mjs', './smoke-review.mjs', './smoke-anim.mjs', './smoke-armour.mjs', './smoke-foliage.mjs', './smoke-shieldhand.mjs', './smoke-thirdperson.mjs', './smoke-throw.mjs', './smoke-allies.mjs', './smoke-javelins.mjs', './smoke-cativos.mjs', './smoke-campaign.mjs'].filter(m => !process.env.SMOKE_ONLY || m.includes(process.env.SMOKE_ONLY))) { const extra = await import(mod);
   const ctx = { G, THREE, win, doc, st, key, check, forcePlay, setGod: v => { god = v; } };
   await extra.default(ctx); if (extra.chargeOnly) await extra.chargeOnly(ctx); }
 } catch (e) { console.log('EXCEPTION', e.stack); checks.push(['no exception', false]); }

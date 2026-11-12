@@ -1,0 +1,162 @@
+// Ecrã do mapa da campanha: HUD em HTML + canvas 2D. Liga o DOM ao Flow; não conhece Three.js nem as batalhas 3D.
+import { makeView, drawMap, hitTest, toWorld } from './map-view.js';
+import { createFlow, loadFlow, clearSave } from './flow.js';
+import { dateLabel, season, daysLeft } from './clock.js';
+
+const BAR_TOP = 52, BAR_BOTTOM = 64; // alturas das barras HTML (px) que o canvas deixa livres
+const LOG_LINES = 6;
+const BATTLE_NAMES = {
+  emboscada: 'Emboscada', 'campo-aberto': 'Combate em campo aberto', 'defesa-aldeia': 'Defesa da aldeia',
+  'assalto-coluna': 'Assalto a um comboio', retirada: 'Retirada', decisiva: 'A batalha decisiva', historica: 'Um episódio da guerra',
+};
+const KIND_NAMES = { aldeia: 'Aldeia', castro: 'Castro', posto: 'Posto romano', serra: 'Serra' };
+
+/** Uma frase curta (pt-PT) por evento devolvido por flow.order()/finishBattle(). */
+export function eventText(ev, state) {
+  const name = id => state.world.settlements.find(s => s.id === id)?.name ?? 'o povoado';
+  switch (ev.type) {
+    case 'recrutou': return ev.men ? `${name(ev.id)}: ${ev.men} homens juntam-se a ti.` : `${name(ev.id)}: ninguém tem armas para dar.`;
+    case 'recrutar-cedo': return `${name(ev.id)}: já recrutaste aqui há pouco.`;
+    case 'ajuda': return `${name(ev.id)} dá-te ${ev.food} de comida${ev.men ? ` e ${ev.men} homens` : ''}.`;
+    case 'ajuda-recusada': return `${name(ev.id)}: ainda não podem dar mais ajuda.`;
+    case 'fome': return `Fome no bando: morrem ${ev.mortos}.`;
+    case 'derrota': return ev.lost !== undefined ? `Derrota: perdes ${ev.lost} homens.` : 'O bando está arruinado.';
+    case 'vitoria': return `Vitória! Perdes ${ev.lost}, ganhas ${ev.food} de comida, ${ev.arms} armas e ${ev.fame} de fama.`;
+    case 'retirada': return `Recuas, perdendo ${ev.lost} homens.`;
+    case 'ano-vencido': return 'O pretor caiu: o ano é teu.';
+    case 'ruina': return 'O bando desfez-se.';
+    case 'aldeia-queimada': return `${name(ev.id)} foi queimada pelos romanos.`;
+    case 'acontecimento': return ev.text;
+    case 'ordem-invalida': return 'Não podes fazer isso daqui: aproxima-te primeiro.';
+    default: return null;
+  }
+}
+
+export function createCampaignUI({ document: doc, window: win, storage, onClose = () => {} }) {
+  const $ = id => doc.getElementById(id);
+  let flow = null, view = null, active = false, selected = null;
+  const log = [];
+
+  const ctx2d = () => $('mapcv').getContext('2d');
+
+  function resize() {
+    const cv = $('mapcv'), dpr = win.devicePixelRatio || 1;
+    const r = cv.getBoundingClientRect();
+    const w = Math.round(r.width || win.innerWidth || 800), h = Math.round(r.height || (win.innerHeight || 600) - BAR_TOP - BAR_BOTTOM);
+    cv.width = Math.max(1, Math.round(w * dpr)); cv.height = Math.max(1, Math.round(h * dpr));
+    view = makeView(flow.state.world, w, h);
+    return dpr;
+  }
+
+  function render() {
+    if (!active || !flow) return;
+    const s = flow.state, dpr = resize();
+    const ctx = ctx2d();
+    if (ctx) { ctx.setTransform?.(dpr, 0, 0, dpr, 0, 0); drawMap(ctx, view, s); }
+    $('m-date').textContent = dateLabel(s.day);
+    $('m-season').textContent = season(s.day);
+    $('m-day').textContent = s.day; $('m-left').textContent = daysLeft(s.day);
+    for (const k of ['men', 'food', 'arms', 'fame']) $('m-' + k).textContent = s[k];
+    const ul = $('mlog'); ul.textContent = '';
+    for (const line of log.slice(-LOG_LINES)) { const li = doc.createElement('li'); li.textContent = line; ul.append(li); }
+    renderBattle(); renderEnd(); renderContext();
+    const busy = flow.phase !== 'mapa';
+    for (const b of $('map').querySelectorAll('[data-act]')) b.disabled = busy;
+  }
+
+  function say(events) {
+    for (const ev of events || []) { const t = eventText(ev, flow.state); if (t) log.push(t); }
+  }
+
+  function order(o) {
+    if (!flow || flow.phase !== 'mapa') return null;
+    const r = flow.order(o);
+    say(r.events);
+    selected = null;
+    render();
+    return r;
+  }
+
+  function renderContext() {
+    const box = $('mctx');
+    const s = selected && flow.phase === 'mapa' ? flow.state.world.settlements.find(x => x.id === selected) : null;
+    box.classList.toggle('hidden', !s);
+    if (!s) return;
+    box.textContent = '';
+    const h = doc.createElement('h3'); h.textContent = s.name;
+    const p = doc.createElement('p'); p.textContent = KIND_NAMES[s.kind] || s.kind;
+    box.append(h, p);
+    const add = (label, act, o) => {
+      const b = doc.createElement('button'); b.type = 'button'; b.dataset.act = act; b.textContent = label;
+      b.setAttribute('aria-label', `${label} — ${s.name}`);
+      b.addEventListener('click', () => order(o)); box.append(b);
+    };
+    const burnt = flow.state.villages?.[s.id]?.burnt;
+    if (s.kind === 'aldeia') { if (burnt) { const q = doc.createElement('p'); q.textContent = 'Queimada.'; box.append(q); } else add('Recrutar', 'recrutar', { kind: 'recrutar', id: s.id }); }
+    if (s.kind === 'castro') add('Pedir ajuda', 'pedir-ajuda', { kind: 'pedir-ajuda', id: s.id });
+    if (s.kind === 'posto') add('Atacar', 'atacar', { kind: 'atacar', id: s.id });
+    add('Marchar para aqui', 'marchar', { kind: 'marchar', to: { x: s.x, y: s.y } });
+    const x = doc.createElement('button'); x.type = 'button'; x.textContent = 'Fechar';
+    x.addEventListener('click', () => { selected = null; render(); }); box.append(x);
+  }
+
+  function renderBattle() {
+    const m = $('mbattle'), on = flow.phase === 'batalha';
+    m.classList.toggle('hidden', !on);
+    if (!on) return;
+    const b = flow.battle;
+    $('mb-type').textContent = `${BATTLE_NAMES[b.type] || b.type} (${b.type})`;
+    $('mb-info').textContent = `${b.allies} dos teus contra ${b.enemies.legio + b.enemies.velites + (b.enemies.centurion ? 1 : 0)} romanos.`;
+  }
+
+  function renderEnd() {
+    const e = $('mend'), on = flow.phase === 'fim';
+    e.classList.toggle('hidden', !on);
+    if (!on) return;
+    const s = flow.state, burnt = Object.values(s.villages).filter(v => v.burnt).length;
+    $('mend-title').textContent = s.over === 'vitoria' ? 'O ANO É LUSITANO' : 'O BANDO DESFEZ-SE';
+    $('mend-text').textContent = `${s.day} dias de guerra · ${s.men} homens · ${s.fame} de fama · ${burnt} aldeias queimadas.`;
+    $('mend-new').focus?.();
+  }
+
+  // --- acções ---
+  function mapClick(e) {
+    if (!active || flow.phase !== 'mapa') return;
+    const r = $('mapcv').getBoundingClientRect();
+    const sx = e.clientX - r.left, sy = e.clientY - r.top;
+    const hit = hitTest(view, flow.state, sx, sy);
+    if (hit && hit.type === 'settlement') { selected = hit.id; render(); return; }
+    const w = toWorld(view, { x: sx, y: sy });
+    order({ kind: 'marchar', to: { x: w.x, y: w.y } });
+  }
+  $('mapcv').addEventListener('click', mapClick);
+  for (const b of $('map').querySelectorAll('[data-order]')) b.addEventListener('click', () => order({ kind: b.dataset.order }));
+
+  // TODO(task13): substituir pelo arranque da batalha 3D
+  $('mb-win').addEventListener('click', () => { say(flow.finishBattle({ won: true, alliesLost: 1, enemiesKilled: 6 }).events); render(); });
+  $('mb-retreat').addEventListener('click', () => { say(flow.finishBattle({ won: false, retreated: true, alliesLost: 0, enemiesKilled: 0 }).events); render(); });
+
+  $('mend-new').addEventListener('click', () => { clearSave(storage); open(createFlow({ storage })); });
+  $('mend-menu').addEventListener('click', close);
+  win.addEventListener('resize', render);
+  win.addEventListener('keydown', e => { if (active && e.code === 'Escape') close(); });
+
+  function open(f) {
+    flow = f; active = true; selected = null; log.length = 0;
+    log.push(flow.state.day ? 'A marcha continua.' : 'Um ano de guerra começa nos montes. Clica no mapa para marchar.');
+    $('map').classList.remove('hidden');
+    render();
+  }
+  function close() {
+    if (!active) return;
+    active = false; $('map').classList.add('hidden');
+    onClose();
+  }
+  return {
+    open, close, render, order, select: id => { selected = id; render(); }, view: () => view,
+    get flow() { return flow; }, get active() { return active; },
+    hasSave: () => !!loadFlow(storage),
+    resume: () => { const f = loadFlow(storage); if (f) open(f); return !!f; },
+    fresh: seed => { open(createFlow({ storage, seed })); return flow; },
+  };
+}

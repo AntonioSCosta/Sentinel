@@ -20,13 +20,14 @@ import { followSlot, pickFoe, pickTarget, allyAct, holdSlot, aimGround, allyLook
 import { JAVELINS, throwPower, allyThrows, veliteState } from './missiles.js';
 import { haltLayout, isFighter, companionsFrom, canLeave, alertRadius, REINFORCE_AFTER, RELIEF, CUT_TIME, FREE_TO_LEAVE } from './captives.js';
 import { installHook } from './hook.js';
+import { createCampaignUI } from './campaign/ui.js';
 import { campStart, campGarrison, campPhase, CAMP_MISSIONS, TENTS_TO_BURN, RELIEF_GUARD } from './camp.js';
 
 /**
  * Builds the whole game. Rendering, DOM and window are injected so the game can run headless in tests.
  * @returns game API used by boot() and by tools/smoke.mjs
  */
-export async function createGame({ THREE, renderer, canvas, document, window, rapier = null, loader = null, quality = 'medium', chars = null }) {
+export async function createGame({ THREE, renderer, canvas, document, window, rapier = null, loader = null, quality = 'medium', chars = null, storage = (() => { try { return window.localStorage; } catch (_) { return null; } })() }) {
 clearColliders();
 const $ = id => document.getElementById(id);
 
@@ -2764,8 +2765,17 @@ $('sens2').addEventListener('input', e => { setSens(+e.target.value); $('sens').
 /* =========================================================
    Main loop
    ========================================================= */
+/* Campanha: ecrã do mapa (src/campaign/ui.js). Estado 'map': o 3D não corre nem pede o rato. */
+const campUI = createCampaignUI({ document, window, storage, onClose: () => { state = 'menu'; $('menu').classList.remove('hidden'); refreshCampMenu(); } });
+function refreshCampMenu() { $('camp-cont').classList.toggle('hidden', !campUI.hasSave()); }
+function openCampaign(f) { try { document.exitPointerLock && document.exitPointerLock(); } catch (_) {} releaseAll(); state = 'map'; for (const id of ['menu', 'end', 'pause', 'hud']) $(id).classList.add('hidden'); f(); }
+function startCampaign(seed) { openCampaign(() => campUI.fresh(seed)); }
+$('camp-new').addEventListener('click', () => startCampaign());
+$('camp-cont').addEventListener('click', () => openCampaign(() => campUI.resume()));
+refreshCampMenu();
 let menuT = 0;
 function step(dt) {
+  if (state === 'map') { frameNo++; return; }
   frameNo++;
   WIND.tick(dt);
   skipHint();
@@ -2818,6 +2828,7 @@ setListener(camera);
 resetWorld();
 $('start').disabled = false; $('start').textContent = 'COMEÇAR';
 return {
+  startCampaign, campaignStorage: storage, campaign: campUI,
   start: (d, ch = 'emboscada') => { if (d != null) diff = d; setChapter(ch); startGame(false); }, startIntro: (ch = chapter) => { setChapter(ch); startGame(true); }, get civs() { return civs; }, get riders() { return riders; }, get chapter() { return chapter; }, MEADOW, ESCAPE, CASTRO, get introT() { return introT; }, step, render: () => { cullChunks(CHUNKS, camera.position); cullCharacters(enemies, camera.position); cullCharacters(allies, camera.position); cullCharacters(civs, camera.position); R.render(); }, setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
   P, supplyTents, heightAt, CAMP, scene, camera, CHUNKS,
   get enemies() { return enemies; }, get allies() { return allies; }, setCompanions: n => { companions = n; }, forceDir: d => { forcedDir = d; }, get order() { return order; }, get placing() { return placing; }, flag: FLAG, flagAt, hurtAllyForTest: (a, d) => hurtAlly(a, d, a.pos.clone()), get mission() { return mission; }, get tentsBurnt() { return tentsBurnt; }, alertForTest: e => alert(e), get halt() { return halt; }, get companions() { return companions; }, get alarm() { return alarm; }, get nextChapter() { return nextChapter; }, HALT, WOODS, CSTART, get state() { return state; },

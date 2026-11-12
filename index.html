@@ -10,6 +10,17 @@
   html,body{margin:0;height:100%;overflow:hidden;background:#000;color:var(--ink);font-family:'EB Garamond',Georgia,serif}
   canvas#gl{position:fixed;inset:0;width:100vw;height:100vh;display:block}
   .hidden{display:none!important}
+  #map{position:fixed;inset:0;background:#1a1410;color:var(--ink)}
+  #mapcv{position:absolute;left:0;right:0;top:52px;bottom:64px;width:100%;height:calc(100% - 116px);display:block;cursor:crosshair}
+  #mtop,#mbot{position:absolute;left:0;right:0;display:flex;align-items:center;gap:18px;padding:0 16px;background:rgba(16,13,10,.96);border:0 solid #4a3a2a;font-size:17px}
+  #mtop{top:0;height:52px;border-bottom-width:1px}#mbot{bottom:0;height:64px;border-top-width:1px}
+  #mtop .res b{font-family:'Cinzel',serif;font-size:13px;letter-spacing:.14em;color:var(--gold);margin-right:6px;font-weight:400}
+  #mtop .res span{margin-right:4px}#mtop .grow{flex:1}
+  #mlog{position:absolute;left:12px;bottom:76px;width:min(340px,50vw);margin:0;padding:6px 10px;list-style:none;background:rgba(16,13,10,.72);border:1px solid #4a3a2a;font-size:14px;line-height:1.3;pointer-events:none}
+  #mlog:empty{display:none}
+  #mctx{position:absolute;right:12px;top:64px;width:min(210px,40vw);padding:12px 14px;background:rgba(16,13,10,.94);border:1px solid #4a3a2a}
+  #mctx h3{margin:0 0 2px;font-family:'Cinzel',serif;color:var(--gold);font-size:17px}#mctx p{margin:0 0 8px;color:var(--dim)}#mctx button{display:block;width:100%;margin-top:6px}
+  #mbattle,#mend{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(5,4,3,.8)}
   /* ---------- HUD ---------- */
   #hud{position:fixed;inset:0;pointer-events:none;user-select:none}
   #obj{position:absolute;top:18px;left:22px;max-width:380px;text-shadow:0 1px 3px #000}
@@ -145,7 +156,34 @@
     <p id="physnote" class="hidden" style="font-size:15px;color:var(--dim)">Física simplificada: o motor de física não carregou, o jogo continua jogável.</p>
     <p id="loaderr" class="hidden">Não foi possível carregar o motor 3D. Verifica a ligação e recarrega a página.</p>
     <button type="button" class="go" id="start" disabled>A CARREGAR…</button>
+    <div class="row" style="margin-top:14px"><button type="button" id="camp-new">CAMPANHA — Um Ano de Guerra</button>
+      <button type="button" id="camp-cont" class="hidden">Continuar campanha</button></div>
   </div>
+</div>
+
+<div id="map" class="hidden">
+  <div id="mtop">
+    <div><b id="m-date" style="font-family:'Cinzel',serif;color:var(--gold)"></b> · <span id="m-season"></span></div>
+    <div class="res" role="group" aria-label="Recursos"><b>HOMENS</b><span id="m-men"></span> <b>COMIDA</b><span id="m-food"></span> <b>ARMAS</b><span id="m-arms"></span> <b>FAMA</b><span id="m-fame"></span></div>
+    <div class="grow"></div><div style="color:var(--dim)">Dia <span id="m-day"></span> · faltam <span id="m-left"></span></div>
+  </div>
+  <canvas id="mapcv" aria-label="Mapa da campanha. Clica num ponto vazio para marchar, ou numa povoação para ver as acções."></canvas>
+  <ul id="mlog" role="status" aria-live="polite" aria-label="Registo da campanha"></ul>
+  <div id="mctx" class="hidden" role="region" aria-label="Povoação"></div>
+  <div id="mbot">
+    <button type="button" data-act="acampar" data-order="acampar" id="m-acampar">Acampar</button>
+    <button type="button" data-act="esperar" data-order="esperar" id="m-esperar">Esperar na estrada</button>
+    <button type="button" data-act="esconder" data-order="esconder" id="m-esconder">Esconder</button>
+    <span style="color:var(--dim);font-size:15px">Clica no mapa para marchar um dia nessa direcção · ESC: menu</span>
+  </div>
+  <div id="mbattle" class="hidden" role="dialog" aria-modal="true" aria-labelledby="mb-type"><div class="card">
+    <p class="kicker">BATALHA</p><h2 id="mb-type"></h2><p class="brief" id="mb-info"></p>
+    <div class="row"><button type="button" class="go" id="mb-win">Vencer (simular)</button><button type="button" id="mb-retreat">Recuar</button></div>
+  </div></div>
+  <div id="mend" class="hidden" role="dialog" aria-modal="true" aria-labelledby="mend-title"><div class="card">
+    <p class="kicker">FIM DA CAMPANHA</p><h1 id="mend-title" style="font-size:44px"></h1><p class="brief" id="mend-text"></p>
+    <div class="row"><button type="button" class="go" id="mend-new">Nova campanha</button><button type="button" id="mend-menu">Voltar ao menu</button></div>
+  </div></div>
 </div>
 
 <div id="pause" class="screen hidden">
