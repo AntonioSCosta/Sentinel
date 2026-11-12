@@ -69,3 +69,20 @@ test('grass tufts: a cut-out blade texture when a canvas exists, never an opaque
   const plain = makeGrassMaterial(THREE, null);
   assert.equal(plain.visible, false, 'no texture → tufts hidden rather than drawn as squares');
 });
+
+test('foliage: fern and grass photo cards load as cut-outs with their own depth materials', async () => {
+  const { loadFoliage } = await import('../src/materials.js');
+  const l = stubLoader();
+  const ok = await loadFoliage({ THREE, loader: l, document: null });
+  assert.ok(l.calls.includes('assets/textures/foliage/fern_leaves.png'), 'fetos');
+  assert.ok(l.calls.includes('assets/textures/foliage/grass_tuft.png'), 'ervas');
+  for (const k of ['fern', 'grass']) {
+    assert.ok(ok[k] && ok[k].isMeshStandardMaterial, k);
+    assert.ok(ok[k].map, k + ' usa a carta fotográfica');
+    assert.equal(ok[k].side, THREE.DoubleSide, k);
+    assert.ok(ok[k + 'Depth'] && ok[k + 'Depth'].alphaTest === ok[k].alphaTest, k + ' sombra recortada');
+  }
+  const none = await loadFoliage({ THREE, loader: stubLoader(() => true), document: null });
+  assert.ok(none.fern && none.grass, 'sem ficheiros continua a haver materiais');
+  assert.equal(none.grass.map, null);
+});
