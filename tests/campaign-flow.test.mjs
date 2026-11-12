@@ -138,3 +138,59 @@ test('partida automática de 10 sementes termina em fim sem NaN', () => {
     assert.ok(f.state.over === 'vitoria' || f.state.over === 'derrota');
   }
 });
+
+// --- ronda de correções ---
+function patrolMeeting(f) { // patrulha que, depois de andar, fica a menos de 30 do grupo
+  const road = f.state.world.road;
+  let k = 1; while (Math.hypot(road[k + 1].x - road[k].x, road[k + 1].y - road[k].y) < 45) k++;
+  const a = road[k], b = road[k + 1], d = Math.hypot(b.x - a.x, b.y - a.y);
+  f.state.party.x = a.x + (b.x - a.x) / d * 35; f.state.party.y = a.y + (b.y - a.y) / d * 35;
+  f.state.patrols = [{ id: 'p1', kind: 'patrulha', x: a.x, y: a.y, i: k + 1, men: 6 }];
+  f.state.praetor = null; f.state.done.push('cativos'); f.state.food = 500;
+}
+
+test('patrulha real: vitoria remove-a, cooldown 2, sem novo disparo', () => {
+  const f = createFlow({ storage: fakeStorage(), seed: 5 });
+  patrolMeeting(f); f.order(ACAMPAR);
+  assert.equal(f.phase, 'batalha'); assert.equal(f.battle.foeId, 'p1');
+  f.finishBattle(WON);
+  assert.equal(f.state.patrols.length, 0); assert.equal(f.state.cooldown, 2);
+  for (let i = 0; i < 3; i++) { f.order(ACAMPAR); assert.equal(f.phase, 'mapa'); }
+});
+
+test('patrulha real: retirada mantém-na, cooldown 2, sem disparo nas ordens seguintes', () => {
+  const f = createFlow({ storage: fakeStorage(), seed: 5 });
+  patrolMeeting(f); f.order(ACAMPAR);
+  assert.equal(f.phase, 'batalha');
+  f.finishBattle({ retreated: true, alliesLost: 0 });
+  assert.equal(f.state.patrols.length, 1); assert.equal(f.state.cooldown, 2);
+  for (let i = 0; i < 2; i++) { f.order(ACAMPAR); assert.equal(f.phase, 'mapa', `dia ${i}`); }
+});
+
+test('loadFlow rejeita fim sem over e batalha malformada', () => {
+  const st = fakeStorage();
+  const f = createFlow({ storage: st, seed: 3 });
+  const base = JSON.parse(st.getItem(STORAGE_KEY));
+  const put = o => st.setItem(STORAGE_KEY, JSON.stringify({ ...base, ...o }));
+  put({ phase: 'fim' }); assert.equal(loadFlow(st), null);
+  for (const battle of [{}, { type: 'x', realMen: 5, allies: 5, enemies: {} }, { type: 'historica', allies: 5, enemies: {} },
+    { type: 'historica', realMen: 5, allies: 'a', enemies: {} }, { type: 'historica', realMen: 5, allies: 5 }]) {
+    put({ phase: 'batalha', battle }); assert.equal(loadFlow(st), null, JSON.stringify(battle));
+  }
+  assert.ok(f);
+});
+
+test('setItem a lançar não rebenta nem createFlow, nem order, nem finishBattle', () => {
+  const st = { getItem: () => null, setItem() { throw new Error('quota'); }, removeItem() {} };
+  const f = createFlow({ storage: st, seed: 5 });
+  f.order(ACAMPAR); f.save();
+  f.order(placeEncounter(f));
+  assert.equal(f.phase, 'batalha');
+  f.finishBattle(WON);
+  assert.equal(f.phase, 'mapa');
+});
+
+test('Flow expõe só a interface do contrato', () => {
+  const f = createFlow({ seed: 1 });
+  assert.equal('rng' in f, false); assert.equal('storage' in f, false);
+});

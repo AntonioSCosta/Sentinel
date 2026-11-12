@@ -5,7 +5,7 @@ import { YEAR_DAYS } from './clock.js';
 import { newCampaign, serialize, deserialize } from './state.js';
 import { makePraetor } from './praetor.js';
 import { stepDay } from './simulation.js';
-import { battleSpec, applyResult, ALLY_CAP } from './battles.js';
+import { battleSpec, BATTLE_TYPES, applyResult, ALLY_CAP } from './battles.js';
 import { dueScheduled, rollEvent } from './events.js';
 
 export const STORAGE_KEY = 'viriato.campaign';
@@ -24,15 +24,17 @@ function scheduledSpec(entry, state, rng) {
 
 function build(state, storage, phase, battle) {
   const flow = {
-    state, phase, battle, storage,
-    get rng() { return dayRng(state); },
+    state, phase, battle,
     save() {
       if (!storage || typeof storage.setItem !== 'function') return;
-      storage.setItem(STORAGE_KEY, JSON.stringify({ v: 1, phase: flow.phase, battle: flow.battle, state: JSON.parse(serialize(state)) }));
+      try { // gravar é best-effort (quota, modo privado): nunca rebenta o jogo
+        storage.setItem(STORAGE_KEY, JSON.stringify({ v: 1, phase: flow.phase, battle: flow.battle, state: JSON.parse(serialize(state)) }));
+      } catch { /* ignorado */ }
     },
     order(o) {
       if (flow.phase !== 'mapa') return { events: [], battle: null, refused: true };
       const rng = dayRng(state);
+      // um capítulo agendado devido consome a ordem sem avançar o dia
       const due = dueScheduled(state);
       if (due) {
         state.done.push(due.id);
@@ -81,9 +83,14 @@ export function loadFlow(storage) {
   if (!parsed || typeof parsed !== 'object' || parsed.v !== 1 || !PHASES.includes(parsed.phase)) return null;
   const state = deserialize(JSON.stringify(parsed.state));
   if (!state) return null;
-  const battle = parsed.battle && typeof parsed.battle === 'object' ? parsed.battle : null;
-  if (parsed.phase === 'batalha' && !battle) return null;
-  return build(state, storage, state.over ? 'fim' : parsed.phase, parsed.phase === 'batalha' ? battle : null);
+  if (parsed.phase === 'fim' && !state.over) return null;
+  const battle = parsed.phase === 'batalha' ? parsed.battle : null;
+  if (parsed.phase === 'batalha') {
+    const b = battle, fin = Number.isFinite;
+    if (!b || typeof b !== 'object' || !BATTLE_TYPES.includes(b.type) || !fin(b.realMen) || !fin(b.allies)
+      || !b.enemies || typeof b.enemies !== 'object') return null;
+  }
+  return build(state, storage, state.over ? 'fim' : parsed.phase, battle);
 }
 
 export function clearSave(storage) { storage?.removeItem?.(STORAGE_KEY); }
