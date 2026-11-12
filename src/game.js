@@ -8,6 +8,7 @@ import { cullChunks, cullCharacters } from './chunks.js';
 import { newFps, tickFps } from './fps.js';
 import { shouldPose } from './lod.js';
 import { papilioGeo } from './props.js';
+import { makeWind } from './wind.js';
 import { loadMaterials, terrainMaterial, makeMailMaps, loadFoliage, makeGrassMaterial } from './materials.js';
 import { createPhysics } from './physics.js';
 import { createRender } from './render.js';
@@ -115,6 +116,11 @@ function updateWisps(dt) {
 const phys = await createPhysics({ RAPIER: rapier, heightAt, half: WORLD });
 const MATS = await loadMaterials({ THREE, loader, quality, anisotropy: renderer.capabilities ? renderer.capabilities.getMaxAnisotropy() : 4 });
 const FOL = await loadFoliage({ THREE, loader, document, anisotropy: renderer.capabilities ? renderer.capabilities.getMaxAnisotropy() : 4 });
+const WIND = makeWind();
+// canopies sway most, undergrowth less, grass least: all from one clock (src/wind.js)
+for (const [k, sway, tall] of [['oak', .34, 5], ['pine', .26, 7], ['shrub', .16, 1.2], ['fern', .13, 1.2], ['moss', .07, .6], ['grass', .09, .5]]) {
+  WIND.apply(FOL[k], { sway, tall }); WIND.apply(FOL[k + 'Depth'], { sway, tall });
+}
 { const mm = makeMailMaps(THREE, document); if (mm) { MATS.mail.map = mm.map; MATS.mail.normalMap = mm.normal; MATS.mail.color.setHex(0xffffff); } }
 /** A private copy of a shared PBR material (textures stay shared). */
 const MAT = (name, extra) => { const m = MATS[name].clone(); if (extra) Object.assign(m, extra); return m; };
@@ -2761,6 +2767,7 @@ $('sens2').addEventListener('input', e => { setSens(+e.target.value); $('sens').
 let menuT = 0;
 function step(dt) {
   frameNo++;
+  WIND.tick(dt);
   skipHint();
   if (hitStopT > 0) { hitStopT -= dt; dt *= .15; } // brief impact freeze
   if (state === 'outro') { updateEnemies(dt); updateCivs(dt); updateRiders(dt); updateProjectiles(dt); updateOutro(dt); }
