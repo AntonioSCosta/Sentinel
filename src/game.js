@@ -7,6 +7,7 @@ import { staminaUse, steer, footwork, playerSpeed } from './locomotion.js';
 import { cullChunks, cullCharacters } from './chunks.js';
 import { newFps, tickFps } from './fps.js';
 import { shouldPose } from './lod.js';
+import { papilioGeo } from './props.js';
 import { loadMaterials, terrainMaterial, makeMailMaps, loadFoliage, makeGrassMaterial } from './materials.js';
 import { createPhysics } from './physics.js';
 import { createRender } from './render.js';
@@ -51,6 +52,7 @@ sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 Object.assign(sun.shadow.camera, { left: -46, right: 46, top: 46, bottom: -46, near: 1, far: 300 });   // the mist hides the distance: spend the shadow map on what is near
 sun.shadow.bias = -.0006;
+sun.shadow.normalBias = .035;   // thin canvas and leaf cards shadow-acne into black without this: offset the lookup along the normal
 scene.add(sun); scene.add(sun.target);
 const SUN_DIR = new THREE.Vector3(-.55, .62, .56).normalize();
 
@@ -321,6 +323,10 @@ const supplyTents = [];
 const fireLights = [];
 {
   const wood = MAT('wood'), canvas = MAT('canvas', { flatShading: true }), red = MAT('canvas_red', { flatShading: true }), crate = MAT('wood');
+  // papilio tents were goat leather, not white canvas: the leather photo set, bleached by the sun
+  // leather and canvas let daylight through: without a little emissive the shaded slope renders almost black
+  const hide = MAT('leather', { side: THREE.DoubleSide }); hide.color.setHex(0xb0a083); hide.emissive.setHex(0x4a3c28);
+  red.side = THREE.DoubleSide; red.emissive.setHex(0x3a1210);
   const logs = [], H0 = CAMP.h;
   const h = CAMP.half;
   for (let t = -h; t <= h; t += .7) {
@@ -337,12 +343,11 @@ const fireLights = [];
     mesh(new THREE.BoxGeometry(2.6, .9, .12), wood, x, H0 + 5.1, z + 1.25);
     addCol(x, z, 1.6);
   }
-  const tentG = new THREE.ConeGeometry(2.1, 2.5, 4); tentG.rotateY(Math.PI / 4); tentG.scale(1.5, 1, 1); tentG.translate(0, 1.25, 0);
+  const tentG = papilioGeo(THREE, { w: 3.1, l: 4.4, h: 2.3 });
   const rows = [-16, -8, 8, 16];
-  for (const ox of rows) for (const oz of [-14, -6]) { mesh(tentG, canvas, CAMP.x + ox, H0, CAMP.z + oz); addCol(CAMP.x + ox, CAMP.z + oz, 2.2); }
-  // praetorium
-  const pg = new THREE.ConeGeometry(5, 4.6, 4); pg.rotateY(Math.PI / 4); pg.translate(0, 2.3, 0);
-  mesh(pg, red, CAMP.x, H0, CAMP.z - 18); addCol(CAMP.x, CAMP.z - 18, 4.2);
+  for (const ox of rows) for (const oz of [-14, -6]) { mesh(tentG, hide, CAMP.x + ox, H0, CAMP.z + oz); addCol(CAMP.x + ox, CAMP.z + oz, 2.2); }
+  // praetorium: the commander's tent, the one piece of dyed canvas in the camp
+  mesh(papilioGeo(THREE, { w: 7, l: 9, h: 4.2, rope: 1.6 }), red, CAMP.x, H0, CAMP.z - 18); addCol(CAMP.x, CAMP.z - 18, 4.2);
   // standard
   mesh(new THREE.CylinderGeometry(.06, .06, 6, 6), wood, CAMP.x + 5, H0 + 3, CAMP.z - 12);
   mesh(new THREE.BoxGeometry(1.2, 1.5, .04), red, CAMP.x + 5.6, H0 + 5, CAMP.z - 12);
@@ -351,8 +356,8 @@ const fireLights = [];
   const spots = [[-17, 8], [0, 4], [17, 10]];
   for (const [ox, oz] of spots) {
     const x = CAMP.x + ox, z = CAMP.z + oz;
-    const mat = MAT('canvas', { flatShading: true });
-    const t = mesh(new THREE.ConeGeometry(2.8, 3.2, 4), mat, x, H0 + 1.6, z); t.rotation.y = Math.PI / 4; t.scale.set(1.4, 1, 1);
+    const mat = hide.clone();
+    const t = mesh(papilioGeo(THREE, { w: 4.2, l: 5.4, h: 3, rope: 1.2 }), mat, x, H0, z);
     for (let k = 0; k < 4; k++) mesh(new THREE.BoxGeometry(.9, .9, .9), crate, x + 3.6 + (k % 2) * 1, H0 + .45 + (k > 1 ? .9 : 0), z - .5 + (k % 2) * .2);
     for (let k = 0; k < 3; k++) mesh(new THREE.CylinderGeometry(.22, .3, .9, 8), M(0xa25a32), x - 3.4, H0 + .45, z - .8 + k * .6);
     const flag = mesh(new THREE.BoxGeometry(.05, 1.2, .9), red, x, H0 + 3.6, z);
@@ -871,7 +876,7 @@ function resetWorld() {
   for (const p of pickups) scene.remove(p.mesh);
   enemies = []; projectiles = []; pickups = [];
   for (const p of particles) { p.live = false; p.s.visible = false; } particles.length = 0;
-  for (const t of supplyTents) { t.burnt = false; t.t = 0; t.mat.color.setHex(0xc9b68c); t.light.intensity = 0; t.flag.visible = true; }
+  for (const t of supplyTents) { t.burnt = false; t.t = 0; t.mat.color.setHex(0xb0a083); t.light.intensity = 0; t.flag.visible = true; }
   setSeed(4242);
   endT = 0; endArgs = null;
   Object.assign(P, { throwPending: 0, throwKind: null, aimT: null, throwPow: null, f: C.createFighter({ passiveShield: true }), charging: false, chargeT: 0, acc: { x: 0, y: 0 }, intent: C.createIntent(), post: { x: 0, y: 0 }, prevL: false, swingDir: null, bashCd: 0, bashT: 0, cleanT: 0,
@@ -1207,7 +1212,9 @@ function updateCampOutro(dt) {
    'Os Cativos' (149 BC): the survivors of the massacre, roped to stakes at a Roman halt. Viriato comes alone.
    ========================================================= */
 let halt = null;
-const TENT_MAT = new THREE.MeshStandardMaterial({ color: 0xb9a57c, roughness: 1, metalness: 0, side: THREE.DoubleSide });
+// the marching party's papilio: undyed goat leather, same shape as the ones in the camp
+const TENT_MAT = MAT('leather', { side: THREE.DoubleSide }); TENT_MAT.color.setHex(0xb0a083); TENT_MAT.emissive.setHex(0x4a3c28);
+const HALT_TENT_GEO = papilioGeo(THREE, { w: 3, l: 4.2, h: 2.2 });
 const HALT_COLS = [];   // tent colliders, made once and switched on for this mission only
 function resetCativos() {
   const L = haltLayout(HALT), objs = [], add = o => { scene.add(o); objs.push(o); return o; }, Y = (x, z) => heightAt(x, z);
@@ -1217,8 +1224,7 @@ function resetCativos() {
   if (!HALT_COLS.length) for (const t of L.tents) HALT_COLS.push(addCol(t.x, t.z, 1.25));
   for (const c of HALT_COLS) c.off = false;
   for (const t of L.tents) {
-    const src = chars && chars.props && chars.props.tent, g = src ? src.clone(true) : new THREE.Mesh(new THREE.ConeGeometry(1.5, 2.4, 4), M(0xc9b68c));
-    if (src) { g.scale.setScalar(5.6); g.traverse(o => { if (o.isMesh) o.material = TENT_MAT; }); } else g.position.y = 1.2;   // undyed goat-hair canvas, not the kit's team colours
+    const g = new THREE.Mesh(HALT_TENT_GEO, TENT_MAT); g.castShadow = true; g.receiveShadow = true;
     const h = new THREE.Group(); h.add(g); h.position.set(t.x, Y(t.x, t.z), t.z); h.rotation.y = t.ry; add(h);
   }
   { const f = new THREE.Group(); f.position.set(L.fire.x, Y(L.fire.x, L.fire.z), L.fire.z);
