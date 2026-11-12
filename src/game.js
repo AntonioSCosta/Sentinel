@@ -35,10 +35,10 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 const FOG = 0xb7c2bf;   // the damp blue-grey haze of the Beira hills
-scene.fog = new THREE.FogExp2(FOG, .013);   // thick hill mist: nothing is seen past ~150 m, so nothing is drawn past it either
+scene.fog = new THREE.FogExp2(FOG, .017);   // thick hill mist: nothing is seen past ~120 m, so nothing is drawn past it either
 scene.background = new THREE.Color(FOG);
 const FOG_BASE = scene.fog.density;
-const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, .05, 165);
+const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, .05, 132);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
 window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); if (R) R.resize(window.innerWidth, window.innerHeight); });
@@ -175,7 +175,7 @@ setSeed(777);
 {
   const pines = [], oaks = [], rocks = [], grass = [], shrubs = [], ferns = [];
   const blocked = (x, z, m) => Math.abs(x - roadX(z)) < 7 + m || inCamp(x, z, 12 + m) || Math.hypot(x - CASTRO.x, z - CASTRO.z) < 16 + m || Math.hypot(x - MEADOW.x, z - MEADOW.z) < 30 + m || Math.hypot(x - HALT.x, z - HALT.z) < 15 + m;
-  const DENS = { low: .45, medium: .8, high: 1 }[quality] || .8, TREES = Math.round(4200 * DENS);
+  const DENS = { low: .35, medium: .7, high: 1 }[quality] || .8, TREES = Math.round(4200 * DENS);
   for (let n = 0; n < 26000 && pines.length + oaks.length < TREES; n++) {
     const x = rr(-WORLD + 8, WORLD - 8), z = rr(-WORLD + 8, WORLD - 8);
     if (blocked(x, z, 0)) continue;
@@ -209,7 +209,7 @@ setSeed(777);
     rocks.push({ x, y: y - s * .25, z, s, sy: s * rr(.5, .9), ry: rr(0, TAU), rx: rr(-.3, .3) });
     addCol(x, z, s * .85, s * .55);
   }
-  for (let n = 0; n < 11000 && grass.length < 5800; n++) {
+  for (let n = 0; n < 20000 && grass.length < 9000; n++) {
     const x = rr(-WORLD + 4, WORLD - 4), z = rr(-WORLD + 4, WORLD - 4);
     if (Math.abs(x - roadX(z)) < 3 || inCamp(x, z, 2)) continue;
     const y = heightAt(x, z); if (y > 30) continue;

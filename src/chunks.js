@@ -1,7 +1,7 @@
 // Distance culling for the 50 m scenery blocks (trees, shrubs, rocks, ferns).
-// The mist hides everything past ~150 m, and the sun's shadow camera is 92 m wide,
+// The mist hides everything past ~120 m, and the sun's shadow camera is 92 m wide,
 // so a block outside those ranges costs draw calls for nothing.
-export const DRAW_DIST = 150;
+export const DRAW_DIST = 118;
 export const SHADOW_DIST = 62;
 
 /**

@@ -158,21 +158,25 @@ function needleCanvas(document, size = 512, seed = 3) {
   const g = c.getContext && c.getContext('2d'); if (!g) return null;
   let s = seed; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
   g.clearRect(0, 0, size, size);
-  for (let t = 0; t < 9; t++) {                       // twigs, each with dense needle tufts
-    let x = r() * size, y = size * (.85 + r() * .15); const ang = -Math.PI / 2 + (r() - .5) * .9, len = size * (.5 + r() * .4);
-    g.strokeStyle = '#4a3624'; g.lineWidth = 3; g.beginPath(); g.moveTo(x, y);
-    const ex = x + Math.cos(ang) * len, ey = y + Math.sin(ang) * len; g.lineTo(ex, ey); g.stroke();
-    for (let k = 0; k < 70; k++) {
-      const f = r(), px = x + (ex - x) * f, py = y + (ey - y) * f;
-      for (let n = 0; n < 6; n++) {
-        const a = ang + (r() - .5) * 2.6, l = size * (.04 + r() * .05), sh = 70 + r() * 50;
-        g.strokeStyle = `rgb(${sh * .45 | 0},${sh | 0},${sh * .38 | 0})`; g.lineWidth = 1.4;
+  // a bushy spray, not a few bare twigs: sprigs fan out from the bottom centre and fill the card,
+  // so a canopy card reads as a mass of needles instead of a flag with gaps
+  for (let t = 0; t < 26; t++) {
+    const x = size * (.45 + (r() - .5) * .25), y = size * (.96 + r() * .04);
+    const ang = -Math.PI / 2 + (r() - .5) * 2.0, len = size * (.45 + r() * .5);
+    const ex = x + Math.cos(ang) * len, ey = y + Math.sin(ang) * len;
+    g.strokeStyle = '#4a3624'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(x, y); g.lineTo(ex, ey); g.stroke();
+    for (let k = 0; k < 120; k++) {
+      const f = .06 + r() * .94, px = x + (ex - x) * f, py = y + (ey - y) * f;
+      for (let n = 0; n < 7; n++) {
+        const a = ang + (r() - .5) * 2.8, l = size * (.035 + r() * .055), sh = 62 + r() * 58;
+        g.strokeStyle = `rgb(${sh * .45 | 0},${sh | 0},${sh * .38 | 0})`; g.lineWidth = 1.3;
         g.beginPath(); g.moveTo(px, py); g.lineTo(px + Math.cos(a) * l, py + Math.sin(a) * l); g.stroke();
       }
     }
   }
   return c;
 }
+
 
 /**
  * Cut-out foliage materials. oak/shrub use the CC0 Poly Haven leaf cards (assets/textures/foliage/*.png),
