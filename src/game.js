@@ -15,6 +15,7 @@ import { followSlot, pickFoe, pickTarget, allyAct, holdSlot, aimGround, allyLook
 import { JAVELINS, throwPower, allyThrows, veliteState } from './missiles.js';
 import { haltLayout, isFighter, companionsFrom, canLeave, alertRadius, REINFORCE_AFTER, RELIEF, CUT_TIME, FREE_TO_LEAVE } from './captives.js';
 import { installHook } from './hook.js';
+import { campStart, campGarrison, campPhase, CAMP_MISSIONS, TENTS_TO_BURN, RELIEF_GUARD } from './camp.js';
 
 /**
  * Builds the whole game. Rendering, DOM and window are injected so the game can run headless in tests.
@@ -841,7 +842,7 @@ function dropPack(e) {
 function resetWorld() {
   for (const g of packs) scene.remove(g); packs.length = 0;
   if (halt) { for (const o of halt.objs) scene.remove(o); for (const c of halt.cols) c.off = true; halt = null; }
-  for (const s of fallen) scene.remove(s.mesh); fallen.length = 0; loot = null; catOut = null;
+  for (const s of fallen) scene.remove(s.mesh); fallen.length = 0; loot = null; catOut = null; campOut = null; campSaid = 0;
   scene.fog.density = FOG_BASE;
   if (typeof avatar !== 'undefined') { avatar.shieldLost = false; if (AV.shield) AV.shield.visible = true; }
   // clear dynamic objects
@@ -865,6 +866,7 @@ function resetWorld() {
   P.unarmed = chapter === 'prologo';
   if (chapter === 'prologo') { resetPrologue(); setObjective(); return; }
   if (chapter === 'cativos') { resetCativos(); setObjective(); return; }
+  if (chapter === 'acampamento') { resetCamp(); setObjective(); return; }
   // hidden in the scrub above the road, looking north up the valley where the patrol will come from
   P.pos.set(AMBUSH.x, 0, AMBUSH.z); P.pos.y = heightAt(P.pos.x, P.pos.z);
   P.yaw = Math.PI * .3; P.pitch = -.05;
@@ -872,19 +874,11 @@ function resetWorld() {
   // patrol on the road, marching south
   const col8 = ['legio', 'legio', 'velite', 'legio', 'legio', 'velite', 'legio', 'legio'], col = [...col8, ...col8];   // sixteen men in two files
   col.forEach((k, i) => { const z = -18 - Math.floor(i / 2) * 3.2; spawn(k, roadX(z) + (i % 2 ? 1.1 : -1.1), z, 'patrol'); });
-  // camp garrison (kept for a later chapter: the ambush mission ends on the road)
-  const guards = chapter !== 'acampamento' ? [] : [[-10, 0], [10, -2], [-3, -10], [12, 14], [-12, 16], [3, 14]];
-  for (const [ox, oz] of guards) spawn('legio', CAMP.x + ox, CAMP.z + oz, 'camp');
-  if (chapter === 'acampamento') {
-    spawn('legio', CAMP.x - 3, CAMP.z + CAMP.half + 2, 'camp'); spawn('legio', CAMP.x + 3, CAMP.z + CAMP.half + 2, 'camp');
-    spawn('velite', CAMP.x - 9, CAMP.z + CAMP.half + 6, 'camp'); spawn('velite', CAMP.x + 9, CAMP.z + CAMP.half + 5, 'camp');
-    spawn('velite', CAMP.x, CAMP.z - 6, 'camp');
-  }
   // pickups
   addPickup('dardos', AMBUSH.x + 2.5, AMBUSH.z + 1.5); addPickup('pedras', AMBUSH.x + 3, AMBUSH.z - 1.5); addPickup('odre', AMBUSH.x + .5, AMBUSH.z + 3);
   const route = [[roadX(70) + 14, 70], [roadX(20) - 16, 20], [roadX(-40) + 15, -40], [roadX(-80) - 14, -80], [roadX(-100) + 18, -100]];
   route.forEach(([x, z], i) => addPickup(i % 2 ? 'odre' : 'dardos', x, z));
-  addPickup('pedras', roadX(-60) - 20, -60); if (chapter === 'acampamento') addPickup('odre', CAMP.x + 20, CAMP.z + CAMP.half + 10);
+  addPickup('pedras', roadX(-60) - 20, -60);
   setObjective();
 }
 
@@ -1109,6 +1103,91 @@ function startOutro() {
   outroCam.column = caught; outroCam.w = w; outroCam.q = q;
   outroCam.base = V(P.pos.x, 0, P.pos.z).addScaledVector(u, -2.6).addScaledVector(n, 1.3); outroCam.base.y = heightAt(outroCam.base.x, outroCam.base.z) + 1.6;
 }
+/* =========================================================
+   'O Acampamento' (147 BC): the camp that fed the patrol. Burn its stores, then the centurion comes out.
+   ========================================================= */
+function resetCamp() {
+  const s = campStart(CAMP);
+  P.pos.set(s.x, heightAt(s.x, s.z), s.z); P.yaw = s.yaw; P.pitch = -.03;
+  mission = 1;                                     // the stores: there is no patrol in this chapter
+  for (let i = 0; i < companions; i++) spawnAlly(i);
+  for (const g of campGarrison(CAMP)) spawn(g.kind, g.x, g.z, 'camp');
+  addPickup('dardos', s.x + 2.5, s.z + 1.5); addPickup('pedras', s.x - 2.5, s.z + 1.5); addPickup('odre', s.x + .5, s.z + 3.5);
+  addPickup('odre', CAMP.x + 20, CAMP.z + CAMP.half + 10);
+}
+
+/** Opening: the palisade and its gate, then over the wall to the stores, then down to Viriato in the scrub. */
+let campSaid = 0;
+function updateIntroCamp(dt) {
+  const T = introT, L = CAMP_INTRO, y0 = heightAt(CAMP.x, CAMP.z), gz = CAMP.z + CAMP.half;
+  P.crouch = 1; view = 'third'; updateCamera(dt); view = introView; AV.root.visible = true;
+  introP1.copy(camera.position); introQ1.copy(camera.quaternion);
+  let tgt; const look = (p, q) => { tgt = q; introP0.copy(p); introQ0.setFromRotationMatrix(new THREE.Matrix4().lookAt(p, q, V(0, 1, 0))); };
+  if (T < 4.2) {            // 1 · the gate and its towers, from outside, drifting in
+    const k = T / 4.2, z = gz + 26 - k * 7;
+    look(V(CAMP.x + 5 - k * 3, heightAt(CAMP.x, z) + 3.4, z), V(CAMP.x, y0 + 3.2, gz - 2));
+  } else if (T < 8.4) {     // 2 · over the wall, along the lanes to the three stores
+    const k = (T - 4.2) / 4.2, t = supplyTents[1] || { x: CAMP.x, z: CAMP.z + 4 };
+    look(V(CAMP.x + 22 - k * 10, y0 + 13 - k * 3, CAMP.z + 24 - k * 8), V(t.x, y0 + 2, t.z));
+  } else {                  // 3 · down to Viriato and his men in the scrub, looking at the gate
+    const k = smooth(10.2, L, T), dx = CAMP.x - P.pos.x, dz = CAMP.z - P.pos.z, dl = Math.hypot(dx, dz) || 1;
+    look(V(P.pos.x + dx / dl * 4.4 - dz / dl * 2, P.pos.y + 1.05, P.pos.z + dz / dl * 4.4 + dx / dl * 2), V(P.pos.x, P.pos.y + .95, P.pos.z));
+    introP0.lerp(introP1, k); introQ0.slerp(introQ1, k);
+  }
+  camera.position.copy(introP0); camera.quaternion.copy(introQ0);
+  sun.position.copy(tgt).addScaledVector(SUN_DIR, 120); sun.target.position.copy(tgt);
+  const cut = [0, 4.2, 8.4].reduce((m, c) => Math.min(m, Math.abs(T - c)), 9);
+  if (introVeil) introVeil.style.opacity = String(Math.max(clamp(1 - (T - .2) / 1.6, 0, 1), clamp(1 - cut / .3, 0, 1) * (T > 1 ? .85 : 0)));
+  if (campSaid < 1 && T > .6) { campSaid = 1; showMsg('LUSITÂNIA · 147 A.C.', 'A patrulha caiu na estrada. Resta o acampamento que a sustentava.', 3.4); }
+  if (campSaid < 2 && T > 4.5) { campSaid = 2; showMsg('', 'Três depósitos de mantimentos, e um centurião no pretório.', 3.4); }
+  if (campSaid < 3 && T > 8.7) { campSaid = 3; showMsg('III · O ACAMPAMENTO', 'Entra sem que te oiçam.', 3); }
+  if (T >= L) endIntro();
+}
+
+/** Closing: the band walks out of the gate with the stores burning behind them, and the camera rises on the fire. */
+const CAMP_OUT = 13;
+let campOut = null;
+function startCampOutro() {
+  state = 'outro'; outroT = 0; outroSaid = 0; introView = view;
+  $('hud').classList.add('intro'); $('msg').style.opacity = 0; missionMsgT = 0;
+  releaseAll(); C.endBlock(P.f); C.feint(P.f); P.charging = false; P.aimT = null; order = 'follow'; FLAG.visible = false;
+  for (const e of enemies) if (!e.dead) { e.state = 'guard'; e.home.copy(e.pos); e.wander = V(e.pos.x, 0, e.pos.z); e.wT = 99; e.aware = 0; e.alarmT = null; if (e.f.blocking) C.endBlock(e.f); C.feint(e.f); }
+  for (const a of allies) if (!a.dead) { if (a.f.blocking) C.endBlock(a.f); C.feint(a.f); a.throwPending = 0; a.throwT = 0; a.crouch = false; a.reach = 0; a.state = 'follow'; }
+  const gz = CAMP.z + CAMP.half;
+  campOut = { gate: V(CAMP.x, 0, gz), cam: V(CAMP.x - 7, 0, gz + 17), out: V(CAMP.x - 2, 0, gz + 34) };
+}
+function updateCampOutro(dt) {
+  outroT += dt; const T = outroT, O = campOut;
+  if (missionMsgT > 0) { missionMsgT -= dt; if (missionMsgT <= 0) $('msg').style.opacity = 0; }
+  const walk = (ent, tx, tz, sp) => {
+    const dx = tx - ent.pos.x, dz = tz - ent.pos.z, d = Math.hypot(dx, dz) || 1;
+    ent.pos.x += dx / d * sp * dt; ent.pos.z += dz / d * sp * dt; resolve(ent.pos, .4); ent.pos.y = heightAt(ent.pos.x, ent.pos.z);
+    return { dx, dz, d };
+  };
+  allies.filter(a => !a.dead).forEach((a, i) => {
+    const tx = O.out.x + ((i % 3) - 1) * 2.4, tz = O.out.z + Math.floor(i / 3) * 2.2, m = walk(a, tx, tz, 2.8);
+    a.mv.x = lerp(a.mv.x, m.dx / m.d * 2.8, Math.min(1, dt * 6)); a.mv.z = lerp(a.mv.z, m.dz / m.d * 2.8, Math.min(1, dt * 6)); a.vel.x = a.vel.z = 0;
+    faceTo(a, tx, tz, dt, 5); C.tickFighter(a.f, dt); a.flash = 0; for (const mt of a.m.mats) mt.emissive.setRGB(0, 0, 0);
+    const bob = setPose(a, dt); a.m.root.position.set(a.pos.x, a.pos.y + bob, a.pos.z); a.m.root.rotation.y = a.yaw;
+  });
+  { const sp = T > 1.4 ? 2.5 : 0, m = walk(P, O.out.x + 2.6, O.out.z - 2, sp);   // Viriato last, looking back once
+    P.vel.x = m.dx / (m.d || 1) * sp; P.vel.z = m.dz / (m.d || 1) * sp;
+    const back = T > 5 && T < 7.4, want = back ? Math.atan2(CAMP.x - P.pos.x, CAMP.z - P.pos.z) : Math.atan2(m.dx, m.dz);
+    P.yaw = wrapA(P.yaw + clamp(wrapA(want - P.yaw), -dt * 2.6, dt * 2.6)); P.pitch = 0; P.crouch = lerp(P.crouch, 0, Math.min(1, dt * 5)); }
+  view = 'third'; updateCamera(dt); view = introView; VM.visible = false; AV.root.visible = true;
+  const k = smooth(5, CAMP_OUT, T), cam = O.cam.clone();
+  cam.y = heightAt(cam.x, cam.z) + 1.6 + k * 9;                       // rises to take in the burning camp
+  const tgt = V(lerp(P.pos.x, CAMP.x, k), lerp(P.pos.y + 1.1, heightAt(CAMP.x, CAMP.z) + 4, k), lerp(P.pos.z, CAMP.z, k));
+  camera.position.copy(cam); camera.lookAt(tgt); sun.position.copy(tgt).addScaledVector(SUN_DIR, 120); sun.target.position.copy(tgt);
+  if (outroSaid < 1 && T > 1) { outroSaid = 1; showMsg('O ACAMPAMENTO ARDE', '', 2.6); }
+  if (outroSaid < 2 && T > 5.2) { outroSaid = 2; showMsg('', 'Sem mantimentos e sem centurião, a guarnição não segura o vale.', 3.4); }
+  if (outroSaid < 3 && T > 9.4) { outroSaid = 3; showMsg('', 'Viriato levou os montes. Roma ainda não sabe o nome dele.', 3.2); }
+  if (T >= CAMP_OUT) {
+    campOut = null; $('hud').classList.remove('intro'); state = 'won'; SFX.horn(); endT = .05; nextChapter = null;
+    endArgs = ['III · 147 A.C.', 'Os montes são lusitanos', 'A patrulha caiu, os mantimentos arderam e o centurião está morto.'];
+  }
+}
+
 /* =========================================================
    'Os Cativos' (149 BC): the survivors of the massacre, roped to stakes at a Roman halt. Viriato comes alone.
    ========================================================= */
@@ -1336,12 +1415,14 @@ function updateLoot(dt) {
   if (T >= LOOT_LEN) {
     for (const m of L.men) { m.a.crouch = false; m.a.reach = 0; } avatar.reach = 0; P.crouch = 0; loot = null;
     $('hud').classList.remove('intro'); state = 'won'; SFX.horn(); endT = .05;
-    endArgs = ['VITÓRIA', 'A patrulha caiu', 'Nenhum romano voltou ao acampamento. A notícia da emboscada vai correr os vales.'];
+    nextChapter = 'acampamento';
+    endArgs = ['VITÓRIA', 'A patrulha caiu', 'Nenhum romano voltou ao acampamento. Resta o acampamento que a abastecia, ao fundo da estrada.'];
   }
 }
 function updateOutro(dt) {
   if (loot) return updateLoot(dt);
   if (catOut) return updateCatOutro(dt);
+  if (campOut) return updateCampOutro(dt);
   outroT += dt; const T = outroT, { u } = outroCam;
   if (missionMsgT > 0) { missionMsgT -= dt; if (missionMsgT <= 0) $('msg').style.opacity = 0; }
   // he keeps running, deeper and deeper among the trees, until the wood swallows him
@@ -1420,8 +1501,8 @@ function addPickup(type, x, z, y) {
    ========================================================= */
 const MISSIONS = [
   { m: 'II · A EMBOSCADA', t: () => `Embosca a patrulha romana na estrada do vale (${patrolLeft()} restantes)` },
-  { m: 'II · OS MANTIMENTOS', t: () => `Incendeia as tendas de mantimentos do acampamento (${tentsBurnt}/3)` },
-  { m: 'III · O CENTURIÃO', t: () => 'Mata o centurião' },
+  { m: CAMP_MISSIONS[0].m, t: () => CAMP_MISSIONS[0].t(tentsBurnt) },
+  { m: CAMP_MISSIONS[1].m, t: () => CAMP_MISSIONS[1].t() },
 ];
 const patrolLeft = () => enemies.filter(e => e.group === 'patrol' && !e.dead).length;
 function setObjective() { if (chapter === 'cativos' && halt) { const left = halt.groups.filter(g => g.bound).length, t = halt.reinfT; $('objm').textContent = 'I · OS CATIVOS';
@@ -1435,20 +1516,19 @@ function feed(text) {
 }
 function checkMission() {
   if (chapter === 'prologo' || chapter === 'cativos') return;
-  if (mission === 0 && patrolLeft() === 0 && chapter !== 'acampamento') { if (state === 'play') startLoot(); return; }   // the ambush is the whole mission; the camp waits for a later one
-  if (mission === 0 && patrolLeft() === 0) {
-    mission = 1; setObjective();
-    showMsg('A patrulha caiu', 'O acampamento romano fica a norte, ao fundo da estrada.');
-  } else if (mission === 1 && tentsBurnt === 3) {
-    mission = 2; setObjective();
-    const b = spawn('centurion', CAMP.x, CAMP.z - 13, 'boss');
-    for (const [ox, oz] of [[-3, -12], [3, -12], [-5, -15], [5, -15]]) spawn('legio', CAMP.x + ox, CAMP.z + oz, 'boss');
-    SFX.horn();
-    showMsg('O centurião sai da tenda', 'Derruba-o e o acampamento cairá.');
-  } else if (mission === 2) {
-    const c = enemies.find(e => e.kind === 'centurion');
-    if (c && c.dead) win();
+  if (chapter !== 'acampamento') {
+    if (mission === 0 && patrolLeft() === 0 && state === 'play') startLoot();   // the ambush is the whole chapter
+    return;
   }
+  const cent = enemies.find(e => e.kind === 'centurion');
+  const phase = campPhase(tentsBurnt, !!(cent && cent.dead));
+  if (phase === 'centurion' && mission === 1) {
+    mission = 2; setObjective();
+    spawn('centurion', CAMP.x, CAMP.z - 13, 'boss');
+    for (const [ox, oz] of [[-3, -12], [3, -12], [-5, -15], [5, -15]].slice(0, RELIEF_GUARD)) spawn('legio', CAMP.x + ox, CAMP.z + oz, 'boss');
+    SFX.horn();
+    showMsg('O centurião sai do pretório', 'Derruba-o e o acampamento cai.');
+  } else if (phase === 'won' && state === 'play') startCampOutro();
   if (mission < 3) $('objt').textContent = MISSIONS[mission].t();
 }
 function raiseAlarm() {
@@ -2471,8 +2551,8 @@ function updateHUD(dt) {
    Flow: menu, pause, end
    ========================================================= */
 let introT = 0, introView = 'third';
-const INTRO_LEN = 9.5, CAT_INTRO = 13;
-const introLen = () => chapter === 'prologo' ? INTRO_P : chapter === 'cativos' ? CAT_INTRO : INTRO_LEN;
+const INTRO_LEN = 9.5, CAT_INTRO = 13, CAMP_INTRO = 12;
+const introLen = () => chapter === 'prologo' ? INTRO_P : chapter === 'cativos' ? CAT_INTRO : chapter === 'acampamento' ? CAMP_INTRO : INTRO_LEN;
 let skipEl = null;
 function skipHint() {
   const on = state === 'intro' || state === 'outro';
@@ -2483,6 +2563,7 @@ let introVeil = null, introTitled = false, introHorn = false;
 const OPENING = {
   cativos: ['I · Os Cativos', 'Agacha-te (C), mata os guardas pelas costas ou com dardos, e corta as cordas (E). Os teus dois homens só atacam quando a luta começar.'],
   emboscada: ['II · A Emboscada', 'Agacha-te (C) e aproxima-te sem seres visto. Um golpe pelas costas é mortal.'],
+  acampamento: ['III · O Acampamento', 'Entra sem dar o alarme. Queima os três depósitos (E) e o centurião sai para te enfrentar.'],
 };
 function startGame(intro = false) {
   initAudio();
@@ -2546,6 +2627,7 @@ function updateIntro(dt) {
   if (missionMsgT > 0) { missionMsgT -= dt; if (missionMsgT <= 0) $('msg').style.opacity = 0; }
   if (chapter === 'prologo') return updateIntroPrologue(dt);
   if (chapter === 'cativos' && halt) return updateIntroCativos(dt);
+  if (chapter === 'acampamento') return updateIntroCamp(dt);
   view = 'third'; updateCamera(dt); view = introView;        // avatar posed, camera at its final third-person spot
   AV.root.visible = true;
   introP1.copy(camera.position); introQ1.copy(camera.quaternion);
@@ -2599,7 +2681,7 @@ function endScreen(kicker, title, text) {
   const rows = [['Tempo', `${mm}:${ss}`], ['Romanos abatidos', P.kills], ['Tiros na cabeça', P.heads], ['Pontaria (dardos e funda)', P.shots ? Math.round(P.hits / P.shots * 100) + '%' : '—'], ['Dificuldade', DIFF[diff].name]];
   $('ends').innerHTML = ''; for (const [a, b] of rows) { const x = document.createElement('span'); x.textContent = a; const y = document.createElement('span'); y.textContent = b; $('ends').append(x, y); }
   $('hud').classList.add('hidden'); $('end').classList.remove('hidden');
-  $('next').classList.toggle('hidden', !nextChapter); if (nextChapter) $('next').textContent = 'CONTINUAR · ' + ({ cativos: 'OS CATIVOS', emboscada: 'A EMBOSCADA' }[nextChapter] || '');
+  $('next').classList.toggle('hidden', !nextChapter); if (nextChapter) $('next').textContent = 'CONTINUAR · ' + ({ cativos: 'OS CATIVOS', emboscada: 'A EMBOSCADA', acampamento: 'O ACAMPAMENTO' }[nextChapter] || '');
 }
 let endT = 0, endArgs = null;
 function die() { avatar.deadT = 0; avatar.f = P.f; C.endBlock(P.f); state = 'dead'; SFX.die(); endT = 2.8; endArgs = ['CAÍDO EM COMBATE', 'Viriato tombou', 'Tenta de novo.']; }
@@ -2612,7 +2694,7 @@ const BRIEF = {
   prologo: ['LUSITÂNIA · 150 A.C.', 'Prólogo. O pretor Sérvio Galba promete terras aos lusitanos que entreguem as armas. Viriato está entre os que as entregaram.'],
   emboscada: ['LUSITÂNIA · 147 A.C.', 'Três anos depois de Galba, Roma volta aos vales. Uma patrulha desce a estrada do vale. Viriato e os seus esperam-na escondidos no mato. Não deixes nenhum voltar.'],
   cativos: ['LUSITÂNIA · 149 A.C.', 'Os que Galba não matou vão a caminho dos mercados de escravos. A coluna parou numa clareira. Viriato seguiu-a com dois homens.'],
-  acampamento: ['LUSITÂNIA · 147 A.C.', 'O acampamento romano a norte: os mantimentos e o centurião.'],
+  acampamento: ['LUSITÂNIA · 147 A.C.', 'A patrulha caiu na estrada, mas é o acampamento que a sustenta. Queima-lhe os mantimentos e derruba o centurião, e Roma não aguenta estes vales.'],
 };
 function setChapter(c) {
   chapter = c; for (const o of document.querySelectorAll('[data-ch]')) o.setAttribute('aria-pressed', o.dataset.ch === c ? 'true' : 'false');
@@ -2684,7 +2766,7 @@ $('start').disabled = false; $('start').textContent = 'COMEÇAR';
 return {
   start: (d, ch = 'emboscada') => { if (d != null) diff = d; setChapter(ch); startGame(false); }, startIntro: (ch = chapter) => { setChapter(ch); startGame(true); }, get civs() { return civs; }, get riders() { return riders; }, get chapter() { return chapter; }, MEADOW, ESCAPE, CASTRO, get introT() { return introT; }, step, render: () => R.render(), setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
   P, supplyTents, heightAt, CAMP, scene, camera,
-  get enemies() { return enemies; }, get allies() { return allies; }, setCompanions: n => { companions = n; }, forceDir: d => { forcedDir = d; }, get order() { return order; }, get placing() { return placing; }, flag: FLAG, flagAt, hurtAllyForTest: (a, d) => hurtAlly(a, d, a.pos.clone()), get mission() { return mission; }, alertForTest: e => alert(e), get halt() { return halt; }, get companions() { return companions; }, get alarm() { return alarm; }, get nextChapter() { return nextChapter; }, HALT, WOODS, CSTART, get state() { return state; },
+  get enemies() { return enemies; }, get allies() { return allies; }, setCompanions: n => { companions = n; }, forceDir: d => { forcedDir = d; }, get order() { return order; }, get placing() { return placing; }, flag: FLAG, flagAt, hurtAllyForTest: (a, d) => hurtAlly(a, d, a.pos.clone()), get mission() { return mission; }, get tentsBurnt() { return tentsBurnt; }, alertForTest: e => alert(e), get halt() { return halt; }, get companions() { return companions; }, get alarm() { return alarm; }, get nextChapter() { return nextChapter; }, HALT, WOODS, CSTART, get state() { return state; },
   get projectiles() { return projectiles; }, get pickups() { return pickups; },
   input: { mouse: (l, r) => { mouseL = l; mouseR = r; }, mouseMove: (dx, dy) => { C.nudgeIntent(P.intent, dx, dy); if (P.charging) { P.acc.x += dx; P.acc.y += dy; } if (P.f.phase === 'windup' && !P.f.released) { P.post.x += dx; P.post.y += dy; } } },
   prompt: (t) => showPrompt(t, 1.2),

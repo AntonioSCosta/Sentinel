@@ -41,18 +41,25 @@ try {
   check(`Viriato's men crouch by the fallen Romans and strip them (${crouched} crouched, reach ${reached.toFixed(2)}, ${G.allies.length} men)`, crouched >= 3 && reached > .9);
   check('some of the dead have lost their swords', G.enemies.some(e => e.dead && e.m.weapon && !e.m.weapon.visible) || !G.enemies[0].m.weapon);
   check('the ambush mission is then won', G.state === 'won');
+  // III · the camp: its own chapter now, starting at the camp with no patrol to fight first
   G.start(1, 'acampamento'); forcePlay(); god = true;
-  // mission flow only: melee itself is covered by tools/smoke-combat.mjs
-  for (const e of G.enemies.filter(e => e.group === 'patrol')) if (!e.dead) { G.damageEnemyForTest(e, 999); st(2); }
-  check('patrol killed', G.enemies.filter(e => e.group === 'patrol' && !e.dead).length === 0);
+  check('the camp chapter has a garrison and no patrol on the road',
+    G.enemies.filter(e => e.group === 'camp').length >= 10 && !G.enemies.some(e => e.group === 'patrol'));
+  check('it opens on the stores, not on the ambush', G.mission === 1 && G.tentsBurnt === 0);
+  check('Viriato starts outside the south gate, not inside the camp',
+    G.P.pos.z > G.CAMP.z + G.CAMP.half + 10 && Math.abs(G.P.pos.x - G.CAMP.x) < G.CAMP.half);
   for (const t of G.supplyTents) { G.P.pos.set(t.x + 3.5, G.heightAt(t.x + 3.5, t.z), t.z); G.use(); st(30); }
-  check('mission 3 reached', G.mission === 2);
-  st(600);
+  check(`the three stores burn and the centurion comes out (${G.tentsBurnt}/3)`,
+    G.tentsBurnt === 3 && G.mission === 2 && G.enemies.some(e => e.kind === 'centurion' && !e.dead));
   const c = G.enemies.find(e => e.kind === 'centurion');
-  if (c) { G.damageEnemyForTest(c, 9999); st(2); }
-  st(200);
-  check('won', G.state === 'won');
+  G.damageEnemyForTest(c, 9999); st(5);
+  check('killing him starts the closing scene', G.state === 'outro');
+  const camp0 = G.P.pos.clone();
+  for (let i = 0; i < 13 * 60 + 40; i++) st(1);
+  check('they walk out of the gate as it plays', G.P.pos.distanceTo(camp0) > 8);
+  check('the camp chapter is then won', G.state === 'won');
   check('end screen shown', !doc.getElementById('end').classList.contains('hidden'));
+  check('it is the last chapter, so nothing follows it', !G.nextChapter);
   god = false; G.start(1); forcePlay();
   G.damagePlayer(500, G.P.pos.clone().add(new THREE.Vector3(1, 0, 0)), false); st(200);
   check('death', G.state === 'dead' && doc.getElementById('endt').textContent.length > 0);
