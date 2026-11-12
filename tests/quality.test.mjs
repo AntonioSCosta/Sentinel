@@ -28,3 +28,13 @@ test('setQuality switches effects, shadows and grass density', async () => {
   R.setQuality('nonsense'); assert.equal(R.state.preset, 'medium');
   R.render(); // must not throw without WebGL
 });
+
+test('o mapa de sombras é redesenhado em imagens alternadas, não em todas', async () => {
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera();
+  const r = stubRenderer();
+  const R = await createRender({ THREE, renderer: r, scene, camera, sun: new THREE.DirectionalLight(), grass: { count: 0 }, quality: 'medium' });
+  assert.equal(r.shadowMap.autoUpdate, false, 'o three deixa de as refazer sozinho');
+  const seen = [];
+  for (let i = 0; i < 4; i++) { R.render(); seen.push(r.shadowMap.needsUpdate); }
+  assert.deepEqual(seen, [true, false, true, false]);
+});

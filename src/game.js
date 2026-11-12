@@ -6,6 +6,7 @@ import { decide, REACH } from './ai.js';
 import { staminaUse, steer, footwork, playerSpeed } from './locomotion.js';
 import { cullChunks, cullCharacters } from './chunks.js';
 import { newFps, tickFps } from './fps.js';
+import { shouldPose } from './lod.js';
 import { loadMaterials, terrainMaterial, makeMailMaps, loadFoliage, makeGrassMaterial } from './materials.js';
 import { createPhysics } from './physics.js';
 import { createRender } from './render.js';
@@ -2029,7 +2030,23 @@ function ikArm(m, k) {
   return true;
 }
 /** Pose a soldier from its measured velocity and fighter state. Returns the vertical bob. */
+let frameNo = 0, lodSeq = 0;
+/**
+ * Pose the character, but not necessarily this frame: far-off and settled-dead bodies are posed less often
+ * (src/lod.js). The skipped time is carried over, so the animation plays at the right speed either way.
+ */
 function setPose(e, dt) {
+  if (e.pos) {
+    e.poseDt = (e.poseDt || 0) + dt;
+    if (e.lodId === undefined) e.lodId = lodSeq++;
+    const dist = Math.hypot(e.pos.x - camera.position.x, e.pos.z - camera.position.z);
+    if (!shouldPose({ dist, frame: frameNo, id: e.lodId, dead: !!e.dead, deadT: e.deadT || 0 })) return e.bob || 0;
+    dt = e.poseDt; e.poseDt = 0;
+  }
+  return (e.bob = posePrecise(e, dt));
+}
+
+function posePrecise(e, dt) {
   if (e.m.rig) {
     const fx = Math.sin(e.yaw), fz = Math.cos(e.yaw);
     const tk = e.throwT > 0 ? { k: 1 - e.throwT, rel: e.throwKind === 'sling' ? .83 : .53 } : e.kind === 'velite' && e.atkT > 0 ? { k: 1 - e.atkT / .55, rel: .64 } : null;
@@ -2728,6 +2745,7 @@ $('sens2').addEventListener('input', e => { setSens(+e.target.value); $('sens').
    ========================================================= */
 let menuT = 0;
 function step(dt) {
+  frameNo++;
   skipHint();
   if (hitStopT > 0) { hitStopT -= dt; dt *= .15; } // brief impact freeze
   if (state === 'outro') { updateEnemies(dt); updateCivs(dt); updateRiders(dt); updateProjectiles(dt); updateOutro(dt); }

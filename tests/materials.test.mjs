@@ -44,7 +44,7 @@ test('low quality loads colour maps only', async () => {
   const l = stubLoader();
   await loadMaterials({ THREE, loader: l, quality: 'low' });
   assert.ok(l.calls.length > 0);
-  assert.ok(l.calls.every(u => u.endsWith('/color.jpg')));
+  assert.ok(l.calls.every(u => /\/color(_1k)?\.jpg$/.test(u)), 'só mapas de cor, na variante 1k');
 });
 
 test('terrain material is a standard material that accepts the splat attribute', async () => {
@@ -85,4 +85,21 @@ test('foliage: fern and grass photo cards load as cut-outs with their own depth 
   const none = await loadFoliage({ THREE, loader: stubLoader(() => true), document: null });
   assert.ok(none.fern && none.grass, 'sem ficheiros continua a haver materiais');
   assert.equal(none.grass.map, null);
+});
+
+test('Baixa e Média carregam as texturas 1k; Alta carrega as 2k', async () => {
+  const lo = stubLoader();
+  await loadMaterials({ THREE, loader: lo, quality: 'medium' });
+  assert.ok(lo.calls.length > 0);
+  assert.ok(lo.calls.every(u => /_1k\.jpg$/.test(u)), 'Média pede sempre a variante 1k: ' + lo.calls.find(u => !/_1k\.jpg$/.test(u)));
+  const hi = stubLoader();
+  await loadMaterials({ THREE, loader: hi, quality: 'high' });
+  assert.ok(hi.calls.every(u => !/_1k\.jpg$/.test(u)), 'Alta usa as 2k');
+});
+
+test('sem a variante 1k, cai para a 2k em vez de ficar sem textura', async () => {
+  const l = stubLoader(u => /_1k\.jpg$/.test(u));
+  const mats = await loadMaterials({ THREE, loader: l, quality: 'medium' });
+  assert.ok(mats.wood.map, 'a madeira continua texturada');
+  assert.ok(l.calls.includes('assets/textures/wood/color.jpg'));
 });

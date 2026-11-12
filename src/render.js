@@ -62,7 +62,12 @@ export async function createRender({ THREE, renderer, scene, camera, sun, grass,
     renderer.setSize(w, h, false);
     if (composer) { composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, h); }
   }
+  // the sun follows the player and the scenery stands still: refreshing the shadow map every other
+  // frame halves that pass and is not visible in motion
+  renderer.shadowMap.autoUpdate = false;
+  let n = 0;
   function render() {
+    renderer.shadowMap.needsUpdate = n++ % 2 === 0;
     if (composer && (state.ssao || state.bloom)) composer.render(); else renderer.render(scene, camera);
   }
   setQuality(quality);

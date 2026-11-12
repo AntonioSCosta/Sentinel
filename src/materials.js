@@ -1,3 +1,5 @@
+import { QUALITY, resolveQuality } from './quality.js';
+
 // PBR materials. CC0 photo textures from Poly Haven when the files are present under
 // assets/textures/<name>/{color,normal,rough}.jpg; otherwise a procedural fallback (flat colour + roughness).
 
@@ -49,6 +51,15 @@ async function tryLoad(loader, url) {
   try { return await loader.loadAsync(url); } catch (_) { return null; }
 }
 
+/** The 1k variant sits beside the 2k one as <kind>_1k.jpg. Baixa and Média load it: a 2k map costs four times the video memory. */
+export const texUrl = (url, res) => (res === '1k' ? url.replace(/\.jpg$/, '_1k.jpg') : url);
+
+/** Load the preset's resolution, falling back to the full-size file when the small one isn't there. */
+async function loadTex(loader, url, res) {
+  if (res === '1k') { const t = await tryLoad(loader, texUrl(url, '1k')); if (t) return t; }
+  return tryLoad(loader, url);
+}
+
 /**
  * @param THREE injected Three.js namespace
  * @param loader object with loadAsync(url) (THREE.TextureLoader) or null for no loading
@@ -56,13 +67,13 @@ async function tryLoad(loader, url) {
  * @returns Promise<Record<name, MeshStandardMaterial>> — always one material per MATERIALS entry
  */
 export async function loadMaterials({ THREE, loader, quality = 'medium', anisotropy = 4 }) {
-  const out = {};
+  const out = {}, res = QUALITY[resolveQuality(quality)].texRes;
   await Promise.all(Object.entries(MATERIALS).map(async ([name, def]) => {
     const m = new THREE.MeshStandardMaterial({ color: def.color, roughness: def.rough, metalness: def.metal || 0 });
     const set = TEXTURE_SETS[name];
     if (set && loader) {
       const want = quality === 'low' ? ['color'] : ['color', 'normal', 'rough'];
-      const [color, normal, rough] = await Promise.all(['color', 'normal', 'rough'].map(k => want.includes(k) ? tryLoad(loader, set.files[k]) : null));
+      const [color, normal, rough] = await Promise.all(['color', 'normal', 'rough'].map(k => want.includes(k) ? loadTex(loader, set.files[k], res) : null));
       const prep = (t, srgb) => { if (!t) return null; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(def.repeat, def.repeat); t.anisotropy = anisotropy; if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t; };
       if (color) { m.map = prep(color, true); m.color.setHex(def.tint || 0xffffff); }
       m.normalMap = prep(normal, false);
