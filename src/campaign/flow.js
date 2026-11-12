@@ -10,7 +10,7 @@ import { dueScheduled, rollEvent } from './events.js';
 
 export const STORAGE_KEY = 'viriato.campaign';
 const PHASES = ['mapa', 'batalha', 'fim'];
-const WIN_MEN = 10, WIN_FAME = 30;
+export const WIN_MEN = 10, WIN_FAME = 30;
 
 const dayRng = state => makeRng((state.seed + state.day * 7919) % 2 ** 31);
 

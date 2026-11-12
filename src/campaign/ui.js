@@ -1,7 +1,8 @@
 // Ecrã do mapa da campanha: HUD em HTML + canvas 2D. Liga o DOM ao Flow; não conhece Three.js nem as batalhas 3D.
 import { makeView, drawMap, hitTest, toWorld } from './map-view.js';
-import { createFlow, loadFlow, clearSave } from './flow.js';
-import { dateLabel, season, daysLeft } from './clock.js';
+import { createFlow, loadFlow, clearSave, WIN_MEN, WIN_FAME } from './flow.js';
+import { dateLabel, season, daysLeft, YEAR_DAYS } from './clock.js';
+import { entryFor } from './chronicle.js';
 import { isBridged } from './bridge.js';
 
 const BAR_TOP = 52, BAR_BOTTOM = 64; // alturas das barras HTML (px) que o canvas deixa livres
@@ -22,10 +23,10 @@ export function eventText(ev, state) {
     case 'ajuda-recusada': return `${name(ev.id)}: ainda não podem dar mais ajuda.`;
     case 'fome': return `Fome no bando: morrem ${ev.mortos}.`;
     case 'derrota': return ev.lost !== undefined ? `Derrota: perdes ${ev.lost} homens.` : 'O bando está arruinado.';
-    case 'vitoria': return `Vitória! Perdes ${ev.lost}, ganhas ${ev.food} de comida, ${ev.arms} armas e ${ev.fame} de fama.`;
+    case 'vitoria': return `Vitória: perdes ${ev.lost}, ganhas ${ev.food} de comida, ${ev.arms} armas e ${ev.fame} de fama.`;
     case 'retirada': return ev.serraId ? `O bando recua para ${name(ev.serraId)}; perdes ${ev.lost} homens.` : `Recuas, perdendo ${ev.lost} homens.`;
     case 'fuga': return `A coluna escapou-se com a carga${ev.lost ? `; perdes ${ev.lost} homens` : ''}.`;
-    case 'ano-vencido': return 'O pretor caiu: o ano é teu.';
+    case 'ano-vencido': return 'O exército do pretor foi desfeito.';
     case 'ruina': return 'O bando desfez-se.';
     case 'aldeia-queimada': return `${name(ev.id)} foi queimada pelos romanos.`;
     case 'acontecimento': return ev.text;
@@ -120,17 +121,29 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     $('mb-fight').classList.toggle('hidden', !fight);
     for (const id of ['mb-win', 'mb-retreat']) $(id).classList.toggle('hidden', fight);
     if (!m.dataset.shown) { m.dataset.shown = '1'; $(fight ? 'mb-fight' : 'mb-win').focus?.(); }
-    $('mb-info').textContent = `${b.allies} dos teus contra ${b.enemies.legio + b.enemies.velites + (b.enemies.centurion ? 1 : 0)} romanos.`;
+    const mine = b.allies + (b.bonus?.allies || 0), theirs = b.enemies.legio + b.enemies.velites + (b.bonus?.enemies || 0) + (b.enemies.centurion && !b.commander ? 1 : 0);
+    $('mb-info').textContent = `${mine} dos teus contra ${theirs} romanos.` + (b.commander ? ` Comanda-os ${b.commander}.` : '');
   }
 
   function renderEnd() {
     const e = $('mend'), on = flow.phase === 'fim';
     e.classList.toggle('hidden', !on);
-    if (!on) return;
-    const s = flow.state, burnt = Object.values(s.villages).filter(v => v.burnt).length;
-    $('mend-title').textContent = s.over === 'vitoria' ? 'O ANO É LUSITANO' : 'O BANDO DESFEZ-SE';
-    $('mend-text').textContent = `${s.day} dias de guerra · ${s.men} homens · ${s.fame} de fama · ${burnt} aldeias queimadas.`;
-    $('mend-new').focus?.();
+    if (!on) { delete e.dataset.shown; return; }
+    const s = flow.state, won = s.over === 'vitoria', yearOut = s.day >= YEAR_DAYS, pretor = s.praetor?.name || 'o pretor';
+    $('mend-title').textContent = won || yearOut ? 'Fim do ano de 147 a.C.' : 'O bando desfez-se';
+    $('mend-result').textContent = won ? 'Vitória' : 'Derrota';
+    $('mend-text').textContent = won ? (yearOut ? 'Viriato sobreviveu ao ano. Os romanos recuaram para os quartéis de inverno.' : `O exército de ${pretor} foi desfeito em campo.`)
+      : yearOut ? `O inverno chegou sem ${s.men < WIN_MEN ? (s.fame < WIN_FAME ? 'homens nem fama bastantes' : 'homens bastantes') : 'fama bastante'} para manter a guerra.`
+      : s.men <= 0 ? 'Não restam homens para combater.' : 'Sem fama, as aldeias deixaram de dar homens e comida.';
+    const vals = { days: Math.min(s.day, YEAR_DAYS), men: s.men, burnt: Object.values(s.villages).filter(v => v.burnt).length, kills: s.kills || 0, battles: s.battles || 0 };
+    for (const [k, v] of Object.entries(vals)) e.querySelector(`[data-k="${k}"]`).textContent = v;
+    const chron = $('mend-chron'); chron.textContent = '';
+    if (won) {   // a frase das fontes sobre Vetílio, tal como está na Crónica
+      const ent = entryFor('vetilio'), line = ent.text.split(/(?<=\.)\s+/).find(x => x.includes('Periochae')) || ent.title;
+      const c = doc.createElement('cite'); c.textContent = ent.citation;
+      chron.append(line, c);
+    } else chron.textContent = 'Os montes ficaram em silêncio.';
+    if (!e.dataset.shown) { e.dataset.shown = '1'; $('mend-new').focus?.(); }
   }
 
   // --- acções ---

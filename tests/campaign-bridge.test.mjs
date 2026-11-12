@@ -7,9 +7,9 @@ const spec = (o = {}) => ({ type: 'emboscada', seed: 77, allies: 8, enemies: { l
 const kinds = p => p.enemies.reduce((m, e) => (m[e.kind] = (m[e.kind] || 0) + 1, m), {});
 
 test('tipos com cena 3D', () => {
-  assert.deepEqual(BRIDGED, ['emboscada', 'campo-aberto', 'defesa-aldeia', 'assalto-coluna']);
-  assert.ok(isBridged(spec()) && isBridged(spec({ type: 'campo-aberto' })) && isBridged(spec({ type: 'defesa-aldeia' })));
-  for (const t of ['retirada', 'decisiva', 'historica']) assert.ok(!isBridged(spec({ type: t })));
+  assert.deepEqual(BRIDGED, ['emboscada', 'campo-aberto', 'defesa-aldeia', 'assalto-coluna', 'decisiva']);
+  assert.ok(isBridged(spec()) && isBridged(spec({ type: 'campo-aberto' })) && isBridged(spec({ type: 'defesa-aldeia' })) && isBridged(spec({ type: 'decisiva' })));
+  for (const t of ['retirada', 'historica']) assert.ok(!isBridged(spec({ type: t })));
   assert.ok(!isBridged(null));
 });
 
@@ -115,4 +115,14 @@ test('tallyResult: retirada é derrota sem a morte de Viriato, com retreated', (
   assert.deepEqual(tallyResult({ allies: 8, alliesDead: 3, enemies: 8, enemiesDead: 2, retreated: true }), { won: false, retreated: true, alliesLost: 3, enemiesKilled: 2 });
   // morto antes de chegar à orla: conta a morte
   assert.deepEqual(tallyResult({ allies: 8, alliesDead: 3, enemies: 8, enemiesDead: 2, retreated: true, playerDead: true }), { won: false, retreated: false, alliesLost: 4, enemiesKilled: 2 });
+});
+
+test('decisiva: linha de campo aberto, maior e mais longe (~55 m), com o pretor (centurião) à frente', () => {
+  const p = spawnPlan(spec({ type: 'decisiva', allies: 25, enemies: { legio: 23, velites: 7, centurion: true } }));
+  assert.equal(p.enemies.length, ENEMY_CAP); assert.equal(p.enemies[0].kind, 'centurion');
+  assert.ok(p.enemies[0].along > Math.max(...p.enemies.slice(1).map(e => e.along)));
+  assert.ok(p.gap >= 52 && p.gap <= 58, `gap ${p.gap}`);
+  assert.equal(new Set(p.enemies.slice(1).map(e => Math.round(e.along / 2.2))).size, 3);   // três fileiras de até 10
+  assert.deepEqual(p.carts, []);
+  assert.deepEqual(spawnPlan(spec({ type: 'decisiva', enemies: { legio: 23, velites: 7, centurion: true } })), spawnPlan(spec({ type: 'decisiva', enemies: { legio: 23, velites: 7, centurion: true } })));
 });

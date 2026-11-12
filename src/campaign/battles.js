@@ -50,6 +50,7 @@ export function battleSpec(enc, state, rng) {
   if (chapter) spec.chapter = chapter;
   if (enc.villageId !== undefined) spec.villageId = enc.villageId;
   if (enc.foe?.id !== undefined) spec.foeId = enc.foe.id;
+  if (type === 'decisiva' && enc.foe?.name) spec.commander = enc.foe.name;   // o pretor em pessoa, como centurião à frente da linha
   return spec;
 }
 
@@ -65,6 +66,9 @@ function lootOf(spec, result) {
 
 export function applyResult(state, spec, result) {
   if (state.over) return [];
+  const killed = Number.isFinite(result.enemiesKilled) ? Math.max(0, Math.floor(result.enemiesKilled)) : 0;
+  state.kills = (state.kills || 0) + killed;        // para o ecrã de fim do ano
+  state.battles = (state.battles || 0) + 1;
   const raw = Number.isFinite(result.alliesLost) ? Math.max(0, result.alliesLost) : 0;
   const scaled = Math.round(raw * spec.realMen / Math.max(1, spec.allies));
   const lost = Math.min(state.men, scaled);

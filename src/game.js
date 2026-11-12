@@ -22,6 +22,7 @@ import { haltLayout, isFighter, companionsFrom, canLeave, alertRadius, REINFORCE
 import { installHook } from './hook.js';
 import { createCampaignUI } from './campaign/ui.js';
 import { spawnPlan, tallyResult, isBridged } from './campaign/bridge.js';
+import { YEAR_DAYS } from './campaign/clock.js';
 import { campStart, campGarrison, campPhase, CAMP_MISSIONS, TENTS_TO_BURN, RELIEF_GUARD } from './camp.js';
 
 /**
@@ -927,11 +928,15 @@ function resetWorld() {
 function resetCampaignBattle() {
   const { spec, plan } = campBattle;
   setSeed(1 + Math.abs(Math.floor(spec.seed) || 0) % 2147483646);
-  if (plan.type === 'campo-aberto') {
-    // o prado do vale (sem árvores num raio de 30 m): Viriato a sul, a linha romana a norte, de frente para ele
+  if (plan.type === 'campo-aberto' || plan.type === 'decisiva') {
+    // o prado do vale (sem árvores num raio de 30 m): Viriato a sul, a linha romana a norte, de frente para ele;
+    // na decisiva a linha é maior, começa mais longe e o centurião à frente é o próprio pretor
     const fx = MEADOW.x + plan.shift, pz = MEADOW.z + 20, front = pz - plan.gap;
     P.pos.set(fx, heightAt(fx, pz), pz); P.yaw = 0; P.pitch = -.03;
-    for (const k of plan.enemies) { const e = spawn(k.kind, fx + k.side, front + k.along, 'field'); e.yaw = 0; e.barkT = 1; alert(e); }
+    for (const k of plan.enemies) {
+      const e = spawn(k.kind, fx + k.side, front + k.along, 'field'); e.yaw = 0; e.barkT = 1; alert(e);
+      if (k.kind === 'centurion' && plan.type === 'decisiva') e.commander = spec.commander || 'o pretor';
+    }
   } else if (plan.type === 'defesa-aldeia') resetVillage(plan);
   else {
     // a emboscada do capítulo: escondido no mato sobre a estrada, a patrulha a descer em duas filas
@@ -1021,6 +1026,7 @@ const CAMP_OPENING = {
   'campo-aberto': ['Campo aberto', 'Os romanos já te viram e vêm em linha. Z segue-me · X bandeira · T ao ataque.'],
   'assalto-coluna': ['Assalto à coluna', 'Os carros descem a estrada com a escolta. Mata-a antes que saiam do vale; chega-te a um carro para o tomar.'],
   'defesa-aldeia': ['Defesa da aldeia', 'Os romanos vêm pela estrada para a queimar. Não os deixes chegar ao centro.'],
+  decisiva: ['Batalha decisiva', 'O pretor está à frente da linha, com o grosso do exército. Z segue-me · X bandeira · T ao ataque.'],
 };
 function checkCampaignBattle(dt = 0) {
   if (!campBattle || campBattle.result) return;
@@ -1712,6 +1718,7 @@ function setObjective() { $('objh').classList.toggle('hidden', !campBattle?.retr
   if (campBattle) { $('objm').textContent = 'CAMPANHA · ' + CAMP_OPENING[campBattle.plan.type][0].toUpperCase(); const left = enemies.filter(e => !e.dead).length, rt = campBattle.retreat;
     if (rt) $('objh').textContent = rt.on ? 'G desfaz a retirada.' : `Retirada possível: a serra fica a ${rt.dir} (G).`;
     if (rt && rt.on) { $('objt').textContent = `Retirada — chega à orla a ${rt.dir}`; return; }
+    if (campBattle.plan.type === 'decisiva') { $('objt').textContent = `Decisiva — ${campBattle.spec.commander || 'o pretor'} (${left} romanos)`; return; }
     $('objt').textContent = carts.length ? `Assalta a coluna — carros ${carts.filter(c => !c.gone).length}/${carts.length}` : campBattle.plan.type === 'defesa-aldeia' ? `Defende a aldeia — ${left} romanos` + (campBattle.holdT > 0 ? ' · estão a tomar o centro!' : '') : `Derrota os romanos (${left} restantes)`; return; }
   if (chapter === 'cativos' && halt) { const left = halt.groups.filter(g => g.bound).length, t = halt.reinfT; $('objm').textContent = 'I · OS CATIVOS';
     $('objt').textContent = (left ? `Liberta os cativos (${3 - left}/3 grupos)` + (canLeave(halt.freed) ? ' ou leva-os para o fumo na floresta' : '') : 'Leva-os para o fumo na floresta') + (t > 0 ? ` · reforços romanos em ${Math.ceil(t)} s` : ''); return; }
@@ -2135,7 +2142,7 @@ function damageEnemy(e, dmg, head, where, special, byAlly) {
     e.dead = true; e.deadT = 0; if (!byAlly) P.kills++; SFX.die(spatial(e.pos)); if (e.group === 'patrol') dropPack(e);
     { const d = V(e.pos.x - P.pos.x, 0, e.pos.z - P.pos.z).normalize(); e.corpse = phys.addCorpse(e.pos, e.yaw, { x: d.x, y: .3, z: d.z }); }
     const name = { legio: 'Legionário', velite: 'Vélite', centurion: 'Centurião' }[e.kind];
-    feed(`${name} abatido${byAlly ? ' por um companheiro' : special ? ' — ' + special : head ? ' — na cabeça' : ''}`);
+    if (e.commander) feed(`${e.commander} caiu`); else feed(`${name} abatido${byAlly ? ' por um companheiro' : special ? ' — ' + special : head ? ' — na cabeça' : ''}`);
     if (e.kind !== 'centurion' && rand() < .4) addPickup(rand() < .5 ? 'odre' : (rand() < .5 ? 'dardos' : 'pedras'), e.pos.x + rr(-.6, .6), e.pos.z + rr(-.6, .6));
     // the fallen alert their comrades
     for (const o of enemies) if (!o.dead && o.pos.distanceTo(e.pos) < alertRadius(quiet)) alert(o);
@@ -2812,7 +2819,7 @@ function startGame(intro = false) {
     introVeil.style.display = 'block'; introVeil.style.opacity = 1;
   }
   else if (chapter === 'prologo') { setRing(RING_R1); for (const e of enemies) if (e.group === 'cordon') { e.pos.set(e.home.x, heightAt(e.home.x, e.home.z), e.home.z); e.m.root.position.copy(e.pos); } betray(); }
-  else showMsg(...(campBattle ? CAMP_OPENING[campBattle.plan.type] : OPENING[chapter] || OPENING.emboscada), 5);
+  else showMsg(...(campBattle ? CAMP_OPENING[campBattle.plan.type].map(t => campBattle.spec.commander ? t.replace('O pretor', campBattle.spec.commander) : t) : OPENING[chapter] || OPENING.emboscada), 5);
   lock();
 }
 const INTRO_P = 17;
@@ -3012,7 +3019,7 @@ resetWorld();
 $('start').disabled = false; $('start').textContent = 'COMEÇAR';
 return {
   startCampaign, campaignStorage: storage, campaign: campUI, startCampaignBattle,
-  campaignTest: { get retreat() { const r = campBattle?.retreat; return r ? { on: r.on, at: { ...r.at }, dir: r.dir } : { on: false, at: null }; }, forceBattle: spec => { const f = campUI.flow; f.battle = spec; f.phase = 'batalha'; campUI.render(); return f; } },
+  campaignTest: { YEAR_DAYS, get retreat() { const r = campBattle?.retreat; return r ? { on: r.on, at: { ...r.at }, dir: r.dir } : { on: false, at: null }; }, forceBattle: spec => { const f = campUI.flow; f.battle = spec; f.phase = 'batalha'; campUI.render(); return f; } },
   start: (d, ch = 'emboscada') => { if (d != null) diff = d; setChapter(ch); startGame(false); }, startIntro: (ch = chapter) => { setChapter(ch); startGame(true); }, get civs() { return civs; }, get riders() { return riders; }, get chapter() { return chapter; }, MEADOW, ESCAPE, CASTRO, roadX, get carts() { return carts; }, get introT() { return introT; }, step, render: () => { if (state === 'map') return; cullChunks(CHUNKS, camera.position); cullCharacters(enemies, camera.position); cullCharacters(allies, camera.position); cullCharacters(civs, camera.position); R.render(); }, setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
   P, supplyTents, heightAt, CAMP, scene, camera, CHUNKS,
   get enemies() { return enemies; }, get allies() { return allies; }, setCompanions: n => { companions = n; }, forceDir: d => { forcedDir = d; }, get order() { return order; }, get placing() { return placing; }, flag: FLAG, flagAt, hurtAllyForTest: (a, d) => hurtAlly(a, d, a.pos.clone()), get mission() { return mission; }, get tentsBurnt() { return tentsBurnt; }, alertForTest: e => alert(e), get halt() { return halt; }, get companions() { return companions; }, get alarm() { return alarm; }, get nextChapter() { return nextChapter; }, HALT, WOODS, CSTART, get state() { return state; },

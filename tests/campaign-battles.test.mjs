@@ -241,3 +241,31 @@ test('retirada sem serra no spec (provisória, gravações antigas) não mexe no
   applyResult(s, old, res({ won: false, retreated: true }));
   assert.deepEqual(s.party, { x: 3, y: 4 });
 });
+
+// Task 17: batalha decisiva e contas do fim do ano
+test('decisiva: o pretor comanda (nome no spec), a força é limitada a 30 e o excedente é bónus', () => {
+  const s = st(14);
+  const b = battleSpec(enc('pretor', false, { id: 'vetilio', name: 'Caio Vetílio', men: 60 }), s, rng());
+  assert.equal(b.type, 'decisiva'); assert.equal(b.commander, 'Caio Vetílio');
+  assert.equal(b.enemies.legio + b.enemies.velites, 30); assert.equal(b.enemies.centurion, true); assert.equal(b.bonus.enemies, 30);
+  assert.equal(battleSpec(enc('patrulha'), s, rng()).commander, undefined);
+});
+
+test('romanos abatidos e batalhas travadas acumulam no estado (campos criados quando preciso)', () => {
+  const s = st(14);
+  assert.equal(s.kills ?? 0, 0); assert.equal(s.battles ?? 0, 0);
+  applyResult(s, battleSpec(enc('patrulha'), s, rng()), res({ enemiesKilled: 6 }));
+  applyResult(s, battleSpec(enc('patrulha'), s, rng()), res({ won: false, enemiesKilled: 2 }));
+  applyResult(s, battleSpec(enc('patrulha'), s, rng()), res({ won: false, retreated: true, enemiesKilled: -4 }));
+  applyResult(s, battleSpec(enc('patrulha'), s, rng()), res({ won: false, enemiesKilled: NaN }));
+  assert.equal(s.kills, 8); assert.equal(s.battles, 4);
+  s.over = 'derrota';
+  applyResult(s, battleSpec(enc('patrulha'), s, rng()), res({ enemiesKilled: 9 }));
+  assert.equal(s.kills, 8); assert.equal(s.battles, 4);
+});
+
+test('decisiva vencida também conta os abatidos e a batalha', () => {
+  const s = st(14);
+  applyResult(s, battleSpec(enc('pretor', false, { men: 60 }), s, rng()), res({ enemiesKilled: 30 }));
+  assert.equal(s.over, 'vitoria'); assert.equal(s.kills, 30); assert.equal(s.battles, 1);
+});

@@ -41,7 +41,7 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   let n = 0; while (f.phase === 'mapa' && n < 300) { G.campaign.order({ kind: 'acampar' }); n++; }
   check(`camping leads to a battle or the end (${n} orders)`, f.phase !== 'mapa');
   if (f.phase === 'batalha') {
-    const fight = ['emboscada', 'campo-aberto', 'defesa-aldeia'].includes(f.battle.type);
+    const fight = f.battle.type !== 'historica';
     check('battle modal shows', shown('mbattle') && !/\(/.test($('mb-type').textContent) && doc.activeElement === $(fight ? 'mb-fight' : 'mb-win'));
     G.campaign.simulateBattle({ won: true, alliesLost: 1, enemiesKilled: 6 });
     check('a simulated victory returns to the map (or end)', !shown('mbattle') && f.phase !== 'batalha');
@@ -74,6 +74,7 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   villageDefence({ G, doc, win, check, st, setGod, $, shown });
   convoyAssault({ G, doc, win, check, st, setGod, $, shown });
   retreat({ G, doc, win, check, st, setGod, $, shown });
+  decisive({ G, doc, win, check, st, setGod, $, shown });
 }
 
 // Task 13: a ponte para as batalhas 3D (emboscada e campo aberto) e o regresso ao mapa.
@@ -130,8 +131,8 @@ function battleBridge({ G, doc, win, check, st, setGod, $, shown }) {
     st(60); check('… once only', w.calls() === 1);
   }
   { // types without a 3D scene yet keep the placeholder
-    const w = wire(spec('decisiva', { enemies: { legio: 20, velites: 6, centurion: true } }));
-    check('decisiva keeps the placeholder buttons', shown('mb-win') && !shown('mb-fight'));
+    const w = wire(spec('historica', { chapter: 'acampamento', enemies: { legio: 6, velites: 2, centurion: false } }));
+    check('historica keeps the placeholder buttons', shown('mb-win') && !shown('mb-fight'));
     check('startCampaignBattle refuses it and stays on the map', G.startCampaignBattle(w.f.battle) === false && G.state === 'map');
     G.campaign.simulateBattle({ won: false, retreated: true, alliesLost: 0, enemiesKilled: 0 });
     check('simulateBattle finishes any battle', w.f.phase !== 'batalha' && w.calls() === 1);
@@ -325,4 +326,61 @@ function retreat({ G, doc, win, check, st, setGod, $, shown }) {
   check('sem serra: the pause has no «Retirar»', G.state === 'pause' && !shown('pretreat') && shown('abandon'));
   $('abandon').click();
   G.campaign.close();
+}
+
+// Task 17: a batalha decisiva contra o pretor, e o ecrã de fim do ano (vitória, derrota, resumo, botões).
+function decisive({ G, doc, win, check, st, setGod, $, shown }) {
+  const begin = (seed = 88) => {
+    G.campaignStorage.clear(); G.startCampaign(seed);
+    const f = G.campaign.flow; f.state.men = 8; f.state.fame = 20; f.state.food = 60;
+    let calls = 0; const fb = f.finishBattle; f.finishBattle = r => { calls++; return fb(r); };
+    G.campaignTest.forceBattle({ type: 'decisiva', seed: 4242, site: 'campo', allies: 8, realMen: 8, enemies: { legio: 23, velites: 7, centurion: true },
+      bonus: { allies: 0, enemies: 30 }, commander: 'Caio Vetílio', foeId: 'vetilio', retreat: { possible: false, serraId: null } });
+    return { f, calls: () => calls };
+  };
+  const sum = k => +($('mend-sum')?.querySelector(`[data-k="${k}"]`)?.textContent ?? NaN);
+  const endText = () => $('mend').textContent;
+  let w = begin();
+  check('decisiva: the modal offers «Lutar»', shown('mbattle') && shown('mb-fight') && !shown('mb-win'));
+  $('mb-fight').click();
+  check('decisiva: «Lutar» starts the 3D battle', G.state === 'play' && shown('hud') && !shown('map'));
+  const cents = G.enemies.filter(e => e.kind === 'centurion');
+  check(`decisiva: 8 allies, 30 Romans, one centurion commanding (${G.allies.length}/${G.enemies.length}/${cents.length})`, G.allies.length === 8 && G.enemies.length === 30 && cents.length === 1 && cents[0].commander === 'Caio Vetílio');
+  check(`decisiva: HUD names the praetor (${$('objt').textContent})`, /^Decisiva — Caio Vetílio/.test($('objt').textContent));
+  const near = Math.min(...G.enemies.map(e => Math.hypot(e.pos.x - G.P.pos.x, e.pos.z - G.P.pos.z)));
+  check(`decisiva: the line is ~55 m off and already coming (${near.toFixed(1)} m)`, near >= 48 && near <= 62 && G.enemies.every(e => e.state === 'chase' || e.state === 'skirmish'));
+  check('decisiva: no retreat hint without a serra', !shown('objh'));
+  setGod(true); for (const e of G.enemies) G.damageEnemyForTest(e, 9999); st(200); setGod(false);
+  const s = w.f.state;
+  check('decisiva won: the end screen, not the map', G.state === 'map' && shown('mend') && w.f.phase === 'fim' && s.over === 'vitoria' && w.calls() === 1);
+  check(`end screen: title and result (${$('mend-title').textContent} / ${$('mend-result').textContent})`, $('mend-title').textContent === 'Fim do ano de 147 a.C.' && $('mend-result').textContent === 'Vitória');
+  check(`end screen: summary (${$('mend-sum').textContent})`, sum('days') === s.day && sum('men') === s.men && sum('burnt') === 0 && sum('kills') === 30 && sum('battles') === 1);
+  check('end screen: a closing line from the Crónica', /Vetílio/.test($('mend-chron').textContent) && /Periochae/.test($('mend-chron').textContent));
+  check('end screen: «Nova campanha», «Crónica» (not yet), «Voltar ao menu»', shown('mend-new') && $('mend-cronica').disabled && $('mend-cronica').title === 'disponível em breve' && shown('mend-menu') && doc.activeElement === $('mend-new'));
+  check('end screen: sober copy, no exclamation marks', !/!/.test(endText()));
+  st(60); check('… finishBattle once only', w.calls() === 1);
+  $('mend-new').click();
+  check('«Nova campanha» starts over', G.state === 'map' && !shown('mend') && G.campaign.flow.state.day === 0 && !G.campaign.flow.state.kills && G.campaign.flow.phase === 'mapa');
+  // losing the decisive battle: back on the map, fame down, the praetor still there
+  w = begin(); $('mb-fight').click(); st(5);
+  G.damagePlayer(999, G.P.pos.clone().add(new G.V3(1, 0, 0)), false); st(400);
+  check(`decisiva lost: back on the map, campaign goes on (fame ${w.f.state.fame})`, G.state === 'map' && shown('map') && !shown('mend') && w.f.phase === 'mapa' && w.f.state.over === null && w.f.state.fame === 15 && !!w.f.state.praetor);
+  // the year runs out: the same end screen, with the flow's verdict
+  for (const [men, fame, verdict] of [[12, 40, 'Vitória'], [12, 10, 'Derrota']]) {
+    G.campaignStorage.clear(); G.startCampaign(5); const f = G.campaign.flow;
+    f.state.day = G.campaignTest.YEAR_DAYS - 1; f.state.men = men; f.state.fame = fame; f.state.cooldown = 5;
+    G.campaign.order({ kind: 'acampar' });
+    if (f.phase === 'batalha') G.campaign.simulateBattle({ won: false, retreated: true, alliesLost: 0, enemiesKilled: 0 });
+    check(`year end (${verdict}): the end screen with the flow's result (${$('mend-result').textContent})`, f.phase === 'fim' && shown('mend') && $('mend-title').textContent === 'Fim do ano de 147 a.C.'
+      && $('mend-result').textContent === (f.state.over === 'vitoria' ? 'Vitória' : 'Derrota') && $('mend-result').textContent === verdict && sum('days') === f.state.day);
+    check(`year end (${verdict}): closing line`, verdict === 'Vitória' ? /Periochae/.test($('mend-chron').textContent) : $('mend-chron').textContent === 'Os montes ficaram em silêncio.');
+  }
+  // ruin before the end of the year
+  { G.campaignStorage.clear(); G.startCampaign(5); const f = G.campaign.flow; f.state.fame = 1;
+    G.campaignTest.forceBattle({ type: 'historica', seed: 1, site: 'castro', allies: 8, realMen: 8, enemies: { legio: 6, velites: 2, centurion: false }, bonus: { allies: 0, enemies: 0 } });
+    G.campaign.simulateBattle({ won: false, alliesLost: 1, enemiesKilled: 0 });
+    check(`ruin: the end screen says so (${$('mend-title').textContent})`, f.phase === 'fim' && shown('mend') && $('mend-title').textContent === 'O bando desfez-se' && $('mend-result').textContent === 'Derrota'); }
+  $('mend-menu').click();
+  G.campaign.close();
+  cappedTris({ G, doc, win, check, st, $, type: 'decisiva', extra: { site: 'campo', commander: 'Caio Vetílio' } });
 }

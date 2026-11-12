@@ -3,7 +3,7 @@ import { makeRng } from './rng.js';
 import { ALLY_CAP, ENEMY_CAP } from './battles.js';
 
 /** Tipos de batalha que já têm cena 3D; os outros continuam no modal provisório. */
-export const BRIDGED = ['emboscada', 'campo-aberto', 'defesa-aldeia', 'assalto-coluna'];
+export const BRIDGED = ['emboscada', 'campo-aberto', 'defesa-aldeia', 'assalto-coluna', 'decisiva'];
 export const isBridged = spec => !!spec && BRIDGED.includes(spec.type);
 
 const COL_GAP = 3.2, FILE = 1.1;          // emboscada: coluna em duas filas na estrada, como a patrulha do capítulo
@@ -29,7 +29,7 @@ export function spawnPlan(spec) {
   // vélites espalhados pela coluna, não todos ao fundo
   for (let i = 0; i < n; i++) kinds.push(Math.floor((i + 1) * vel / n) > Math.floor(i * vel / n) ? 'velite' : 'legio');
   const enemies = [];
-  const field = spec.type === 'campo-aberto', convoy = spec.type === 'assalto-coluna';
+  const decisive = spec.type === 'decisiva', field = spec.type === 'campo-aberto' || decisive, convoy = spec.type === 'assalto-coluna';
   // coluna de abastecimento: os carros vão no meio da escolta, um a cada `per` filas
   const rows = Math.ceil(n / 2), nCarts = convoy && n ? (n >= 8 ? 3 : 2) : 0, per = Math.max(1, Math.ceil(rows / (nCarts + 1)));
   const rowAlong = r => -r * COL_GAP - (nCarts ? Math.floor(r / per) * CART_GAP : 0);
@@ -46,7 +46,7 @@ export function spawnPlan(spec) {
   return {
     type: spec.type, allies: Math.min(ALLY_CAP, count(spec.allies)), enemies, carts,
     shift: rng.range(-6, 6),                  // a coluna (ou a linha) não começa sempre no mesmo metro
-    gap: field ? rng.range(42, 48) : 0,       // campo aberto: metros entre Viriato e a frente romana
+    gap: field ? (decisive ? rng.range(52, 58) : rng.range(42, 48)) : 0,   // campo aberto/decisiva: metros entre Viriato e a frente romana
   };
 }
 
