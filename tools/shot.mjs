@@ -1,4 +1,5 @@
-// Headless screenshot harness: serves the repo, maps CDN imports to node_modules, runs a JS scenario, saves PNGs.
+// Headless screenshot harness: serves the repo, runs a JS scenario, saves PNGs.
+// three.js comes from vendor/three, exactly as it does in a real browser, so a shot proves the real load path.
 import { createRequire } from 'module'; import http from 'http'; import fs from 'fs'; import path from 'path';
 const require = createRequire('/opt/npm-tools/node_modules/');
 const puppeteer = require('puppeteer');
@@ -18,7 +19,6 @@ page.on('console', m => console.log('[page]', m.text().slice(0, 300))); page.on(
 await page.setRequestInterception(true);
 page.on('request', q => {
   const u = q.url();
-  if (u.startsWith('https://cdn.jsdelivr.net/npm/three@0.160.0/')) { const f = path.join(ROOT, 'node_modules/three', u.split('three@0.160.0/')[1]); return q.respond({ status: 200, contentType: 'text/javascript', headers: { 'access-control-allow-origin': '*' }, body: fs.readFileSync(f) }); }
   if (u.includes('rapier3d-compat')) return q.respond({ status: 404, body: '' });
   q.continue();
 });

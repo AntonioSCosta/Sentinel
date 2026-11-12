@@ -173,7 +173,8 @@
   </div>
 </div>
 
-<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<!-- three.js is served from the game's own folder, not a CDN: a blocked jsdelivr would be a black screen. node tools/vendor-three.mjs refreshes vendor/three after an upgrade. -->
+<script type="importmap">{"imports":{"three":"./vendor/three/three.module.js","three/addons/":"./vendor/three/addons/"}}</script>
 <script type="module">
 import { boot } from './src/game.js';
 boot().catch(err => { console.error(err, err.stack); document.getElementById('loaderr').classList.remove('hidden'); document.getElementById('start').disabled = true; });
