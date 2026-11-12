@@ -15,7 +15,7 @@ test('newCampaign starts with START values, party at world.start, villages only 
 });
 test('formulas', () => {
   assert.equal(foodPerDay(14), 2); assert.equal(foodPerDay(24), 2); assert.equal(foodPerDay(25), 3);   // MEN_PER_FOOD 12 (Task 18)
-   assert.equal(foodPerDay(1), 1); assert.equal(foodPerDay(0), 1);
+  assert.equal(foodPerDay(1), 1); assert.equal(foodPerDay(0), 1);
   assert.equal(recruitsFrom(20), 2);
 });
 test('spend saturates at 0 and ignores undefined fields', () => {
@@ -86,4 +86,11 @@ test('deserialize: seen, quando existe, é uma lista de strings', () => {
   assert.ok(deserialize(JSON.stringify({ ...base(), seen: ['seca', 'pastores'] })));
   for (const bad of [{ seen: 'seca' }, { seen: [1] }, { seen: null }, { seen: { a: 1 } }, { seen: ['ok', null] }])
     assert.equal(deserialize(JSON.stringify({ ...base(), ...bad })), null, JSON.stringify(bad));
+});
+
+test('deserialize: praetor.rest, quando existe, é um número entre 0 e 365', () => {
+  const base = rest => { const o = JSON.parse(serialize(newCampaign(3))); o.praetor = { id: 'vetilio', x: 1, y: 2, men: 60, speed: 22, traits: {} }; if (rest !== undefined) o.praetor.rest = rest; return JSON.stringify(o); };
+  assert.ok(deserialize(base()));
+  for (const ok of [0, 6, 365]) assert.ok(deserialize(base(ok)), String(ok));
+  for (const bad of [-1, 366, 'x', null, 1e999]) assert.equal(deserialize(base(bad)), null, String(bad));
 });

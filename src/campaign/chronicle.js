@@ -22,7 +22,8 @@ export const CHRONICLE = {
   },
   cativos: {
     title: 'Os Cativos', source: 'inspirado',
-    text: 'Esta missão é uma dramatização. Inspira-se no contexto de 149 a.C. (as consequências da traição de Galba, com relatos posteriores de sobreviventes vendidos como escravos), mas o jogo coloca-a no ano de campanha de 147 a.C. O resgate em si, a clareira, os doze cativos e os homens que Viriato leva consigo são invenção do jogo; não há fonte antiga que descreva este episódio.',
+    citation: 'Tito Lívio, Periochae, 49',
+    text: 'Esta missão é uma dramatização. Inspira-se no contexto de 149 a.C. (as consequências da traição de Galba: as fontes posteriores referem sobreviventes vendidos na Gália), mas o jogo coloca-a no ano de campanha de 147 a.C. O resgate em si, a clareira, os doze cativos e os homens que Viriato leva consigo são invenção do jogo; não há fonte antiga que descreva este episódio.',
   },
   enviado: { title: 'Voluntários das aldeias', source: 'invenção',
     text: 'Um mensageiro traz voluntários para o bando. ' + INVENCAO + ' É um episódio plausível, não um facto registado.' },
@@ -35,7 +36,7 @@ export const CHRONICLE = {
   aldeia: { title: 'Aldeias', source: 'invenção',
     text: 'As aldeias do mapa e os seus nomes (do Vale, da Ribeira, do Souto…) são gerados pelo jogo e não são topónimos históricos. ' + INVENCAO },
   castro: { title: 'Castros', source: 'invenção',
-    text: 'Um castro era um povoado fortificado, em regra no alto de um monte, com muralhas de pedra e casas redondas: forma comum de habitat no noroeste da Península. Os castros do mapa, porém, são gerados pelo jogo e os nomes (do Penedo, da Cabeça…) são inventados, não correspondem a sítios reais. ' + INVENCAO },
+    text: 'No jogo, os castros são povoados fortificados no alto, com muralhas e casas redondas, à imagem dos castros da Idade do Ferro no noroeste peninsular. Os castros do mapa e os seus nomes são invenção do jogo.' },
   serra: { title: 'Serras de refúgio', source: 'invenção',
     text: 'As serras do mapa e os seus nomes (da Neve, do Vento, da Águia…) são gerados pelo jogo e não são topónimos históricos. ' + INVENCAO },
   posto: { title: 'Postos romanos', source: 'invenção',

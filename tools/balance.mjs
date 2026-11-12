@@ -3,7 +3,6 @@
 import { createFlow } from '../src/campaign/flow.js';
 import { YEAR_DAYS } from '../src/campaign/clock.js';
 import { foodPerDay } from '../src/campaign/state.js';
-
 import { makeRng } from '../src/campaign/rng.js';
 import { HELP_GAP } from '../src/campaign/simulation.js';
 
@@ -63,7 +62,7 @@ function policy(s, mem) {
 
 function play(seed) {
   const flow = createFlow({ seed }), s = flow.state, rng = makeRng(seed * 101 + 7);
-  const mem = { lastRecruit: -99, flip: false };
+  const mem = { lastRecruit: -99 };
   let burnt30 = 0, guard = 0;
   const losses = [];   // { day, fome, batalha } homens perdidos, para atribuir a causa da ruína
   const types = {};

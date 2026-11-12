@@ -1,6 +1,6 @@
+// Task 12: o ecrã do mapa da campanha (estado 'map'), HUD, ordens, modal de batalha provisório e ecrã final.
 import { rollEvent } from '../src/campaign/events.js';
 import { CHRONICLE } from '../src/campaign/chronicle.js';
-// Task 12: o ecrã do mapa da campanha (estado 'map'), HUD, ordens, modal de batalha provisório e ecrã final.
 export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   const $ = id => doc.getElementById(id), shown = id => !!$(id) && !$(id).classList.contains('hidden');
   // espião do contexto 2D (o jsdom não traz canvas): conta as chamadas de desenho
@@ -437,6 +437,12 @@ function chronicle({ G, doc, win, check, $, shown }) {
     return cit?.textContent === CHRONICLE[id].citation && !!(txt.compareDocumentPosition(cit) & 4);
   }));
   check('invented entries carry no citation', !card('castro').querySelector('.cit'));
+  { const desc = c => (c.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+    check('unlocked entries are described by their chip, text and citation', unlockedNow.every(id => {
+      const c = card(id), ids = desc(c), want = [...c.querySelectorAll('.chip, .txt, .cit')];
+      return ids.length === want.length && ids.every(x => doc.getElementById(x) && c.contains(doc.getElementById(x))) && want.every(n => ids.includes(n.id));
+    }));
+    check('locked entries are described by «Ainda não vivido»', desc(card('seca')).length === 1 && /Ainda não vivido/.test(doc.getElementById(desc(card('seca'))[0])?.textContent || '')); }
   const locked = id => /Ainda não vivido/.test(card(id).textContent) && card(id).querySelector('h3')?.textContent === CHRONICLE[id].title && !card(id).querySelector('.txt') && !card(id).querySelector('.chip');
   check('the captives and the deck are locked at the start', ['cativos', 'seca', 'pastores', 'enviado', 'traidor'].every(locked));
   check('entries are keyboard reachable', [...dlg.querySelectorAll('[data-entry]')].every(c => c.tabIndex === 0));

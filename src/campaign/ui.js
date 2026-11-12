@@ -195,11 +195,14 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
       li.setAttribute('aria-labelledby', h.id);
       if (!isUnlocked(id, flow?.state)) {
         li.classList.add('locked');
-        const p = doc.createElement('p'); p.className = 'lk'; p.textContent = 'Ainda não vivido'; li.append(p);
+        const p = doc.createElement('p'); p.className = 'lk'; p.id = 'mcron-l-' + id; p.textContent = 'Ainda não vivido'; li.append(p);
+        li.setAttribute('aria-describedby', p.id);
       } else {
-        const chip = doc.createElement('span'); chip.className = 'chip'; chip.textContent = SOURCE_LABELS[e.source]; li.append(chip);
-        const p = doc.createElement('p'); p.className = 'txt'; p.textContent = e.text; li.append(p);
-        if (e.citation) { const c = doc.createElement('p'); c.className = 'cit'; c.textContent = e.citation; li.append(c); }
+        const chip = doc.createElement('span'); chip.className = 'chip'; chip.id = 'mcron-s-' + id; chip.textContent = SOURCE_LABELS[e.source]; li.append(chip);
+        const p = doc.createElement('p'); p.className = 'txt'; p.id = 'mcron-t-' + id; p.textContent = e.text; li.append(p);
+        const desc = [chip.id, p.id];
+        if (e.citation) { const c = doc.createElement('p'); c.className = 'cit'; c.id = 'mcron-c-' + id; c.textContent = e.citation; li.append(c); desc.push(c.id); }
+        li.setAttribute('aria-describedby', desc.join(' '));
       }
       ul.append(li);
     }

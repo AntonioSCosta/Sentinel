@@ -61,8 +61,17 @@ test('etiquetas de origem', () => {
   assert.deepEqual(SOURCE_LABELS, { fontes: 'Fontes antigas', 'invenção': 'Invenção do jogo', inspirado: 'Cena inspirada' });
 });
 
-test('cativos fala de sobreviventes vendidos como escravos; traição cita Apiano', () => {
-  assert.match(CHRONICLE.cativos.text, /relatos posteriores de sobreviventes vendidos como escravos/);
-  assert.doesNotMatch(CHRONICLE.cativos.text, /levados cativos/);
+test('cativos: os vendidos na Gália vêm das Periochae, com citação; traição cita Apiano', () => {
+  assert.doesNotMatch(CHRONICLE.cativos.text, /levados cativos|vendidos como escravos/);
+  if (/vendidos/.test(CHRONICLE.cativos.text)) assert.equal(CHRONICLE.cativos.citation, 'Tito Lívio, Periochae, 49');
+  assert.match(CHRONICLE.cativos.text, /as fontes posteriores referem sobreviventes vendidos na Gália/);
   assert.match(CHRONICLE.traicao.text, /\(segundo Apiano\)/);
+});
+
+test('castros: descreve o que o jogo mostra, sem afirmar arqueologia como invenção', () => {
+  const t = CHRONICLE.castro.text;
+  assert.match(t, /^No jogo, os castros são povoados fortificados no alto/);
+  assert.match(t, /Os castros do mapa e os seus nomes são invenção do jogo\.$/);
+  assert.doesNotMatch(t, /Esta entrada é invenção do jogo/);
+  assert.equal(CHRONICLE.castro.source, 'invenção');
 });
