@@ -26,3 +26,10 @@ Todas as texturas abaixo são do Poly Haven e estão sob licença **CC0** (domí
 
 `assets/chars/horse.glb.js` — cavalo animado (galope) dos exemplos do three.js (`examples/models/gltf/Horse.glb`, repositório sob licença MIT), modelo original do projeto ro.me (mirada).
 - Adereços (saco de marcha, barril, caixas, tenda, balde, armeiro): **KayKit Medieval Hexagon Pack** — Kay Lousberg (CC0 1.0). https://github.com/KayKit-Game-Assets/KayKit-Medieval-Hexagon-Pack-1.0
+
+## Bibliotecas servidas a partir de `vendor/` (ver `tools/vendor-deps.mjs`)
+
+- **three.js** 0.160.0 — MIT. https://threejs.org
+- **Rapier** (`@dimforge/rapier3d-compat`) 0.12.0 — Apache-2.0. https://rapier.rs
+- **Cinzel** e **EB Garamond** — SIL Open Font License 1.1, via `@fontsource`. https://fonts.google.com
+
