@@ -10,10 +10,10 @@
 
 ## Engine & Language
 
-- **Engine**: [TO BE CONFIGURED — run /setup-engine]
-- **Language**: [TO BE CONFIGURED]
-- **Rendering**: [TO BE CONFIGURED]
-- **Physics**: [TO BE CONFIGURED]
+- **Engine**: Web (no bundler; three ^0.160.0)
+- **Language**: JavaScript
+- **Rendering**: three.js (WebGL)
+- **Physics**: the project's own (`src/physics.js`)
 
 ## Input & Platform
 

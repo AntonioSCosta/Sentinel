@@ -24,11 +24,11 @@ Roman camp is built but kept for a later chapter.
 
 ## Technology Stack
 
-- **Engine**: Web (Three.js 0.160, ES modules, no build step)
-- **Language**: JavaScript (ES modules), no framework
+- **Engine**: Web (no bundler: the files as they are; three ^0.160.0)
+- **Language**: JavaScript
 - **Version Control**: Git
-- **Build System**: none -- `index.html` loads `src/*.js` directly
-- **Asset Pipeline**: CC0 glTF packed to base64 `.glb.js` by `tools/pack-chars.mjs`
+- **Build System**: none — `index.html` loads `src/*.js` directly; no build script, no single-file build
+- **Asset Pipeline**: the project's own, as it is — CC0 glTF packed to base64 `.glb.js` by `tools/pack-chars.mjs`
 
 > **Note**: Engine-specialist agents exist for Godot, Unity, and Unreal with
 > dedicated sub-specialists. Use the set matching your engine.
@@ -44,6 +44,8 @@ Roman camp is built but kept for a later chapter.
      step and /project-settings (engine.name) write
      @docs/engine-reference/<engine>/VERSION.md here for the chosen engine. Skills
      that need the pinned version read that file on demand either way. -->
+
+@docs/engine-reference/web/VERSION.md
 
 
 ## Technical Preferences
