@@ -36,7 +36,9 @@ export function battleSpec(enc, state, rng) {
 }
 
 export function applyResult(state, spec, result) {
-  const scaled = Math.round(Math.max(0, result.alliesLost) * spec.realMen / Math.max(1, spec.allies));
+  if (state.over) return [];
+  const raw = Number.isFinite(result.alliesLost) ? Math.max(0, result.alliesLost) : 0;
+  const scaled = Math.round(raw * spec.realMen / Math.max(1, spec.allies));
   const lost = Math.min(state.men, scaled);
   spend(state, { men: lost });
   const events = [];

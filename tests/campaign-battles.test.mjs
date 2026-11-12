@@ -106,3 +106,35 @@ test('cooldown = 2 em todos os resultados', () => {
     assert.equal(s.cooldown, 2);
   }
 });
+
+test('alliesLost malformado (undefined/NaN/Infinity) deixa men finito e inalterado', () => {
+  for (const bad of [undefined, NaN, Infinity, -Infinity, 'x']) {
+    const s = st(14), b = battleSpec(enc('patrulha'), s, rng());
+    applyResult(s, b, { won: true, alliesLost: bad });
+    assert.equal(s.men, 14);
+    assert.ok(Number.isFinite(s.men));
+  }
+});
+
+test('realMen > men do estado é limitado', () => {
+  const s = st(10), b = battleSpec(enc('patrulha'), s, rng());
+  b.realMen = 40; b.allies = 25;
+  applyResult(s, b, res({ alliesLost: 25 }));
+  assert.equal(s.men, 0);
+});
+
+test('retirada e derrota na decisiva não terminam o ano', () => {
+  for (const r of [res({ won: false }), res({ won: false, retreated: true })]) {
+    const s = st(14); s.praetor = { id: 'vetilio', men: 60 };
+    applyResult(s, battleSpec(enc('pretor', false, { id: 'vetilio', men: 60 }), s, rng()), r);
+    assert.equal(s.over, null); assert.equal(s.praetor.id, 'vetilio');
+  }
+});
+
+test('applyResult em estado terminado não altera nada', () => {
+  const s = st(14); s.over = 'derrota';
+  const b = battleSpec(enc('pretor', false, { men: 60 }), s, rng());
+  const before = JSON.stringify(s);
+  assert.deepEqual(applyResult(s, b, res({ alliesLost: 3 })), []);
+  assert.equal(JSON.stringify(s), before);
+});
