@@ -53,3 +53,20 @@ test('deserialize returns null for bad input without throwing', () => {
   for (const t of bad) assert.equal(deserialize(t), null, t.slice(0, 40));
   assert.equal(deserialize(undefined), null);
 });
+test('deserialize rejects every structurally corrupt save', () => {
+  const good = JSON.parse(serialize(newCampaign(5)));
+  const cases = {
+    'villages missing': { villages: undefined }, 'villages number': { villages: 5 }, 'villages array': { villages: [] },
+    'patrols string': { patrols: 'x' }, 'done missing': { done: undefined }, 'done string': { done: 'x' },
+    'party empty': { party: {} }, 'party array': { party: [] }, 'party x string': { party: { x: 'a', y: 1 } },
+    'over x': { over: 'x' }, 'over undefined': { over: undefined },
+    'settlements [null]': { world: { ...good.world, settlements: [null] } },
+    'settlement no id': { world: { ...good.world, settlements: [{ x: 1, y: 1 }] } },
+    'settlement bad x': { world: { ...good.world, settlements: [{ id: 'a', x: 'q', y: 1 }] } },
+    'world.start missing': { world: { ...good.world, start: undefined } },
+    'men negative': { men: -1 }, 'food negative': { food: -1 }, 'arms negative': { arms: -1 }, 'fame negative': { fame: -1 },
+    'men NaN': { men: null },
+  };
+  for (const [name, patch] of Object.entries(cases)) assert.equal(deserialize(JSON.stringify({ ...good, ...patch })), null, name);
+  for (const over of [null, 'vitoria', 'derrota']) assert.ok(deserialize(JSON.stringify({ ...good, over })), String(over));
+});
