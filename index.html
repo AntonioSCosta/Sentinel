@@ -178,7 +178,7 @@
   </div>
   <div id="mbattle" class="hidden" role="dialog" aria-modal="true" aria-labelledby="mb-type"><div class="card">
     <p class="kicker">BATALHA</p><h2 id="mb-type"></h2><p class="brief" id="mb-info"></p>
-    <div class="row"><button type="button" class="go" id="mb-win">Vencer (simular)</button><button type="button" id="mb-retreat">Recuar</button></div>
+    <div class="row"><button type="button" class="go hidden" id="mb-fight">Lutar</button><button type="button" class="go" id="mb-win">Vencer (simular)</button><button type="button" id="mb-retreat">Recuar</button></div>
   </div></div>
   <div id="mend" class="hidden" role="dialog" aria-modal="true" aria-labelledby="mend-title"><div class="card">
     <p class="kicker">FIM DA CAMPANHA</p><h1 id="mend-title" style="font-size:44px"></h1><p class="brief" id="mend-text"></p>
@@ -198,7 +198,7 @@
     <div class="row"><label class="lbl" for="sens2">RATO</label><input id="sens2" type="range" min="1" max="10" value="5"></div>
     <p id="fps" role="status" style="font-size:15px;opacity:.7;margin-top:6px"></p>
     <p id="pausehint" role="status" style="font-size:16px;color:var(--gold)"></p>
-    <div class="row"><button type="button" class="go" id="resume">CONTINUAR</button><button type="button" id="restart">RECOMEÇAR</button></div>
+    <div class="row"><button type="button" class="go" id="resume">CONTINUAR</button><button type="button" id="restart">RECOMEÇAR</button><button type="button" id="abandon" class="hidden">ABANDONAR (DERROTA)</button></div>
   </div>
 </div>
 

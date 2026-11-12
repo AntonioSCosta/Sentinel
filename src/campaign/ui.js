@@ -2,6 +2,7 @@
 import { makeView, drawMap, hitTest, toWorld } from './map-view.js';
 import { createFlow, loadFlow, clearSave } from './flow.js';
 import { dateLabel, season, daysLeft } from './clock.js';
+import { isBridged } from './bridge.js';
 
 const BAR_TOP = 52, BAR_BOTTOM = 64; // alturas das barras HTML (px) que o canvas deixa livres
 const LOG_LINES = 6;
@@ -32,7 +33,12 @@ export function eventText(ev, state) {
   }
 }
 
-export function createCampaignUI({ document: doc, window: win, storage, onClose = () => {} }) {
+/**
+ * @param {{document, window, storage, onClose?: () => void, startBattle?: (spec) => boolean}} o
+ * `startBattle(spec)` arranca a batalha 3D (emboscada, campo aberto) e devolve true se o fez; o ecrã do mapa fica
+ * suspenso até o jogo chamar `battleDone(result, line)`.
+ */
+export function createCampaignUI({ document: doc, window: win, storage, onClose = () => {}, startBattle = () => false }) {
   const $ = id => doc.getElementById(id);
   let flow = null, view = null, active = false, selected = null, logDirty = true;
   const log = [];
@@ -109,7 +115,10 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (!on) { delete m.dataset.shown; return; }
     const b = flow.battle;
     $('mb-type').textContent = BATTLE_NAMES[b.type] || 'Batalha';
-    if (!m.dataset.shown) { m.dataset.shown = '1'; $('mb-win').focus?.(); }
+    const fight = isBridged(b);   // com cena 3D: «Lutar»; os outros tipos ficam com o modal provisório até às suas tarefas
+    $('mb-fight').classList.toggle('hidden', !fight);
+    for (const id of ['mb-win', 'mb-retreat']) $(id).classList.toggle('hidden', fight);
+    if (!m.dataset.shown) { m.dataset.shown = '1'; $(fight ? 'mb-fight' : 'mb-win').focus?.(); }
     $('mb-info').textContent = `${b.allies} dos teus contra ${b.enemies.legio + b.enemies.velites + (b.enemies.centurion ? 1 : 0)} romanos.`;
   }
 
@@ -136,9 +145,29 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   $('mapcv').addEventListener('click', mapClick);
   for (const b of $('map').querySelectorAll('[data-order]')) b.addEventListener('click', () => order({ kind: b.dataset.order }));
 
-  // TODO(task13): substituir pelo arranque da batalha 3D
-  $('mb-win').addEventListener('click', () => { say(flow.finishBattle({ won: true, alliesLost: 1, enemiesKilled: 6 }).events); render(); });
-  $('mb-retreat').addEventListener('click', () => { say(flow.finishBattle({ won: false, retreated: true, alliesLost: 0, enemiesKilled: 0 }).events); render(); });
+  /** Termina a batalha pendente com um resultado já pronto (modal provisório e testes). */
+  function simulateBattle(result) {
+    if (!flow || flow.phase !== 'batalha') return null;
+    const r = flow.finishBattle(result); say(r.events); render(); return r;
+  }
+  const placeholder = result => () => { if (flow?.phase === 'batalha' && !isBridged(flow.battle)) simulateBattle(result); };
+  $('mb-win').addEventListener('click', placeholder({ won: true, alliesLost: 1, enemiesKilled: 6 }));
+  $('mb-retreat').addEventListener('click', placeholder({ won: false, retreated: true, alliesLost: 0, enemiesKilled: 0 }));
+  $('mb-fight').addEventListener('click', () => {
+    if (!active || flow?.phase !== 'batalha' || !isBridged(flow.battle)) return;
+    startBattle(flow.battle);   // o jogo chama suspend() ao arrancar
+  });
+  /** O 3D tomou conta do ecrã: esconde o mapa sem voltar ao menu. */
+  function suspend() { active = false; $('map').classList.add('hidden'); }
+  /** A batalha 3D acabou: entrega o resultado ao fluxo (uma vez) e mostra o mapa outra vez. */
+  function battleDone(result, line) {
+    let r = { events: [] };
+    if (flow && flow.phase === 'batalha') r = flow.finishBattle(result);
+    if (line) { log.push(line); logDirty = true; }
+    say(r.events);
+    active = true; $('map').classList.remove('hidden'); render();
+    return r;
+  }
 
   $('mend-new').addEventListener('click', () => { try { clearSave(storage); } catch { /* ignorado */ }
     open(createFlow({ storage })); });
@@ -158,7 +187,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     onClose();
   }
   return {
-    open, close, render, order, select: id => { selected = id; render(); }, view: () => view,
+    open, close, render, order, simulateBattle, suspend, battleDone, select: id => { selected = id; render(); }, view: () => view,
     get flow() { return flow; }, get active() { return active; },
     hasSave: () => !!loadFlow(storage),
     resume: () => { const f = loadFlow(storage); if (f) open(f); return !!f; },

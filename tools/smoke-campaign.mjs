@@ -1,5 +1,5 @@
 // Task 12: o ecrã do mapa da campanha (estado 'map'), HUD, ordens, modal de batalha provisório e ecrã final.
-export default async function ({ G, win, doc, check, renderer }) {
+export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   const $ = id => doc.getElementById(id), shown = id => !!$(id) && !$(id).classList.contains('hidden');
   // espião do contexto 2D (o jsdom não traz canvas): conta as chamadas de desenho
   let fills = 0;
@@ -41,13 +41,14 @@ export default async function ({ G, win, doc, check, renderer }) {
   let n = 0; while (f.phase === 'mapa' && n < 300) { G.campaign.order({ kind: 'acampar' }); n++; }
   check(`camping leads to a battle or the end (${n} orders)`, f.phase !== 'mapa');
   if (f.phase === 'batalha') {
-    check('battle modal shows', shown('mbattle') && !/\(/.test($('mb-type').textContent) && doc.activeElement === $('mb-win'));
-    $('mb-win').click();
-    check('placeholder victory returns to the map (or end)', !shown('mbattle') && f.phase !== 'batalha');
+    const fight = ['emboscada', 'campo-aberto'].includes(f.battle.type);
+    check('battle modal shows', shown('mbattle') && !/\(/.test($('mb-type').textContent) && doc.activeElement === $(fight ? 'mb-fight' : 'mb-win'));
+    G.campaign.simulateBattle({ won: true, alliesLost: 1, enemiesKilled: 6 });
+    check('a simulated victory returns to the map (or end)', !shown('mbattle') && f.phase !== 'batalha');
   }
   n = 0; while (f.phase !== 'fim' && n < 800) {
     G.campaign.order({ kind: 'acampar' }); n++;
-    if (f.phase === 'batalha') $('mb-retreat').click();
+    if (f.phase === 'batalha') G.campaign.simulateBattle({ won: false, retreated: true, alliesLost: 0, enemiesKilled: 0 });
   }
   check(`year ends with the end screen (${n} orders)`, f.phase === 'fim' && shown('mend') && ['vitoria', 'derrota'].includes(f.state.over) && $('mend').textContent.length > 20);
   $('mend-menu').click();
@@ -68,4 +69,89 @@ export default async function ({ G, win, doc, check, renderer }) {
   $('mend').classList.remove('hidden'); $('mend-new').click(); G.campaignStorage.removeItem = rm;
   check('new campaign survives a throwing removeItem', G.state === 'map' && G.campaign.flow.state.day === 0);
   G.campaign.close();
+
+  battleBridge({ G, doc, win, check, st, setGod, $, shown });
+}
+
+// Task 13: a ponte para as batalhas 3D (emboscada e campo aberto) e o regresso ao mapa.
+function battleBridge({ G, doc, win, check, st, setGod, $, shown }) {
+  const spec = (type, o = {}) => ({ type, seed: 4242, site: type === 'emboscada' ? 'estrada' : 'campo', allies: 8, realMen: 8,
+    enemies: { legio: 6, velites: 2, centurion: false }, bonus: { allies: 0, enemies: 0 }, ...o });
+  const wire = (sp, seed = 77) => {
+    G.campaignStorage.clear(); G.startCampaign(seed);
+    const f = G.campaign.flow; f.state.men = sp.realMen; f.state.fame = 20;
+    let calls = 0; const fb = f.finishBattle; f.finishBattle = r => { calls++; return fb(r); };
+    G.campaignTest.forceBattle(sp);
+    return { f, calls: () => calls };
+  };
+  const alive = list => list.filter(x => !x.dead).length;
+  const backOnMap = () => G.state === 'map' && shown('map') && !shown('hud') && !shown('end') && !shown('pause') && !shown('mbattle');
+  for (const type of ['emboscada', 'campo-aberto']) {
+    const w = wire(spec(type));
+    check(`${type}: the modal offers «Lutar», not the placeholder`, shown('mbattle') && shown('mb-fight') && !shown('mb-win') && doc.activeElement === $('mb-fight'));
+    $('mb-fight').click();
+    check(`${type}: «Lutar» leaves the map for the 3D battle`, G.state === 'play' && !shown('map') && shown('hud') && G.chapter === 'emboscada');
+    check(`${type}: exactly 8 allies and 8 Romans (${G.allies.length}/${G.enemies.length})`, G.allies.length === 8 && alive(G.allies) === 8 && G.enemies.length === 8 && alive(G.enemies) === 8);
+    check(`${type}: 6 legionaries and 2 velites`, G.enemies.filter(e => e.kind === 'legio').length === 6 && G.enemies.filter(e => e.kind === 'velite').length === 2);
+    const near = Math.min(...G.enemies.map(e => Math.hypot(e.pos.x - G.P.pos.x, e.pos.z - G.P.pos.z)));
+    if (type === 'emboscada') check(`emboscada: the patrol marches on the road, unaware (${near.toFixed(0)} m)`, G.enemies.every(e => e.state === 'march') && near > 25);
+    else check(`campo-aberto: the Romans face Viriato 40–60 m away and come on (${near.toFixed(1)} m)`, near >= 38 && near <= 60 && G.enemies.every(e => e.state === 'chase' || e.state === 'skirmish'));
+    check(`${type}: nobody spawned inside the ground`, [...G.allies, ...G.enemies].every(x => Math.abs(x.pos.y - G.heightAt(x.pos.x, x.pos.z)) < .05));
+    setGod(true); st(30);
+    for (const e of G.enemies) G.damageEnemyForTest(e, 9999);
+    st(200); setGod(false);
+    const lost = G.allies.filter(a => a.dead).length;
+    check(`${type}: killing every Roman goes back to the map`, backOnMap() && w.f.phase === 'mapa' && w.calls() === 1);
+    check(`${type}: the victory is applied (${w.f.state.men} men)`, w.f.state.men === 8 - lost && w.f.state.fame === 25 && /Vitória/.test($('mlog').textContent));
+    st(120); G.campaign.render();
+    check(`${type}: finishBattle is called once only`, w.calls() === 1 && G.state === 'map');
+  }
+  { // Viriato falls: a defeat, not the end of the campaign, and no old 'dead' end screen
+    const w = wire(spec('emboscada'));
+    $('mb-fight').click(); st(5);
+    G.hurtAllyForTest(G.allies[0], 999);
+    G.damagePlayer(999, G.P.pos.clone().add(new G.V3(1, 0, 0)), false);
+    check('the player\'s death is noticed', G.state === 'dead');
+    st(400);
+    check('his death is a defeat: back on the map, campaign goes on', backOnMap() && w.calls() === 1 && w.f.phase === 'mapa' && w.f.state.over === null);
+    check(`one man plus Viriato counted as lost (${w.f.state.men})`, w.f.state.men === 6 && /Derrota/.test($('mlog').textContent));
+    check('the old «Viriato tombou» end screen is not shown', !shown('end'));
+  }
+  { // ESC → pause → «Abandonar (derrota)»
+    const w = wire(spec('campo-aberto'));
+    $('mb-fight').click(); st(5);
+    doc.dispatchEvent(new win.Event('pointerlockchange'));
+    check('the pause in a campaign battle offers «Abandonar (derrota)» and no restart', G.state === 'pause' && shown('abandon') && !shown('restart'));
+    $('abandon').click();
+    check('abandoning is a defeat and goes back to the map', backOnMap() && w.calls() === 1 && w.f.phase === 'mapa' && w.f.state.men === 7 && /Derrota/.test($('mlog').textContent));
+    st(60); check('… once only', w.calls() === 1);
+  }
+  { // types without a 3D scene yet keep the placeholder
+    const w = wire(spec('decisiva', { enemies: { legio: 20, velites: 6, centurion: true } }));
+    check('decisiva keeps the placeholder buttons', shown('mb-win') && !shown('mb-fight'));
+    check('startCampaignBattle refuses it and stays on the map', G.startCampaignBattle(w.f.battle) === false && G.state === 'map');
+    G.campaign.simulateBattle({ won: false, retreated: true, alliesLost: 0, enemiesKilled: 0 });
+    check('simulateBattle finishes any battle', w.f.phase !== 'batalha' && w.calls() === 1);
+  }
+  { // the biggest battle the caps allow stays inside the envelope of the story chapters (the prologue: 36 Romans + 25 villagers)
+    const tris = obj => { let n = 0; obj.traverse(o => { if (!o.isMesh || !o.geometry) return; const g = o.geometry; n += (g.index ? g.index.count : g.attributes.position.count) / 3 * (o.isInstancedMesh ? o.count : 1); }); return n; };
+    G.setQuality('high'); G.campaign.close(); G.start(1, 'prologo'); const prologue = tris(G.scene);
+    wire(spec('campo-aberto', { allies: 25, realMen: 40, enemies: { legio: 23, velites: 7, centurion: true } }));
+    $('mb-fight').click(); st(5);
+    const total = tris(G.scene);
+    check(`a capped battle shows 25 allies and 30 Romans (${G.allies.length}/${G.enemies.length})`, G.allies.length === 25 && G.enemies.length === 30);
+    check(`a capped battle has no more triangles on Alta than the prologue (${Math.round(total)} ≤ ${Math.round(prologue)})`, total <= prologue);
+    G.setQuality('medium');
+    $('abandon').click?.(); // not paused: does nothing
+    check('«Abandonar» only acts from the pause', G.state === 'play');
+    doc.dispatchEvent(new win.Event('pointerlockchange')); $('abandon').click();
+  }
+  { // the story chapters are untouched after a campaign battle
+    G.campaign.close();
+    G.start(1); if (G.state === 'pause') G.resume();
+    check('after a campaign battle the story ambush is the old one again', G.chapter === 'emboscada' && G.enemies.filter(e => e.group === 'patrol').length === 16);
+    doc.dispatchEvent(new win.Event('pointerlockchange'));
+    check('and its pause has «Recomeçar» and no «Abandonar»', G.state === 'pause' && !shown('abandon') && shown('restart'));
+    G.resume();
+  }
 }

@@ -21,6 +21,7 @@ import { JAVELINS, throwPower, allyThrows, veliteState } from './missiles.js';
 import { haltLayout, isFighter, companionsFrom, canLeave, alertRadius, REINFORCE_AFTER, RELIEF, CUT_TIME, FREE_TO_LEAVE } from './captives.js';
 import { installHook } from './hook.js';
 import { createCampaignUI } from './campaign/ui.js';
+import { spawnPlan, tallyResult, isBridged } from './campaign/bridge.js';
 import { campStart, campGarrison, campPhase, CAMP_MISSIONS, TENTS_TO_BURN, RELIEF_GUARD } from './camp.js';
 
 /**
@@ -841,6 +842,7 @@ function updateFlag() {
 }
 let mission = 0, tentsBurnt = 0, missionMsgT = 0, alarm = false;
 let riders = [];
+let campBattle = null;   // campanha: { spec, plan, prevChapter, result, how } enquanto dura uma batalha vinda do mapa
 let chapter = 'prologo', civs = [], betrayed = false, betrayT = 0, envoy = null, elder = null;   // 'prologo' = Galba's massacre (150 BC), 'emboscada' = the ambush campaign
 Object.defineProperty(P, 'st', { get() { return P.f.stamina; }, set(v) { P.f.stamina = v; }, enumerable: false });
 Object.defineProperty(P, 'block', { get() { return P.f.blocking != null; }, enumerable: false });
@@ -900,6 +902,7 @@ function resetWorld() {
     kills: 0, shots: 0, hits: 0, heads: 0, time: 0, swing: 0, throwT: 0, hurtT: 0 });
   mission = 0; tentsBurnt = 0; alarm = false;
   P.unarmed = chapter === 'prologo';
+  if (campBattle) { resetCampaignBattle(); setObjective(); return; }
   if (chapter === 'prologo') { resetPrologue(); setObjective(); return; }
   if (chapter === 'cativos') { resetCativos(); setObjective(); return; }
   if (chapter === 'acampamento') { resetCamp(); setObjective(); return; }
@@ -916,6 +919,64 @@ function resetWorld() {
   route.forEach(([x, z], i) => addPickup(i % 2 ? 'odre' : 'dardos', x, z));
   addPickup('pedras', roadX(-60) - 20, -60);
   setObjective();
+}
+
+/* Campanha: a batalha que o mapa pediu (src/campaign/bridge.js decide quem entra e onde; aqui só se põe no mundo). */
+function resetCampaignBattle() {
+  const { spec, plan } = campBattle;
+  setSeed(1 + Math.abs(Math.floor(spec.seed) || 0) % 2147483646);
+  if (plan.type === 'campo-aberto') {
+    // o prado do vale (sem árvores num raio de 30 m): Viriato a sul, a linha romana a norte, de frente para ele
+    const fx = MEADOW.x + plan.shift, pz = MEADOW.z + 20, front = pz - plan.gap;
+    P.pos.set(fx, heightAt(fx, pz), pz); P.yaw = 0; P.pitch = -.03;
+    for (const k of plan.enemies) { const e = spawn(k.kind, fx + k.side, front + k.along, 'field'); e.yaw = 0; e.barkT = 1; alert(e); }
+  } else {
+    // a emboscada do capítulo: escondido no mato sobre a estrada, a patrulha a descer em duas filas
+    P.pos.set(AMBUSH.x, heightAt(AMBUSH.x, AMBUSH.z), AMBUSH.z); P.yaw = Math.PI * .3; P.pitch = -.05;
+    const z0 = -18 + plan.shift;
+    for (const k of plan.enemies) { const z = z0 + k.along; spawn(k.kind, roadX(z) + k.side, z, 'patrol'); }
+    addPickup('dardos', AMBUSH.x + 2.5, AMBUSH.z + 1.5); addPickup('pedras', AMBUSH.x + 3, AMBUSH.z - 1.5); addPickup('odre', AMBUSH.x + .5, AMBUSH.z + 3);
+  }
+  for (let i = 0; i < plan.allies; i++) spawnAlly(i);   // os homens que levas, em vez dos companheiros fixos
+}
+const CAMP_OPENING = {
+  emboscada: ['Emboscada', 'A patrulha vem pela estrada. Espera que passe por baixo de ti e cai-lhe em cima.'],
+  'campo-aberto': ['Campo aberto', 'Os romanos já te viram e vêm em linha. Z segue-me · X bandeira · T ao ataque.'],
+};
+function checkCampaignBattle() {
+  if (!campBattle || campBattle.result) return;
+  setObjective();
+  if (state === 'play' && enemies.every(e => e.dead)) {
+    endCampaignBattle('won'); state = 'won'; SFX.horn(); endT = 2.2; endArgs = null;
+    showMsg('VITÓRIA', 'Nenhum romano ficou de pé.', 2.2);
+  }
+}
+/** Fecha a contagem da batalha (uma só vez): 'won' | 'dead' | 'abandon'. */
+function endCampaignBattle(how) {
+  if (!campBattle || campBattle.result) return;
+  campBattle.how = how;
+  campBattle.result = tallyResult({ allies: allies.length, alliesDead: allies.filter(a => a.dead).length, playerDead: how === 'dead', abandoned: how === 'abandon',
+    enemies: enemies.length, enemiesDead: enemies.filter(e => e.dead).length });
+}
+/** Arranca a batalha 3D de um encontro do mapa. Só emboscada e campo aberto por agora; os outros tipos → false (fica o modal). */
+function startCampaignBattle(spec) {
+  if (!isBridged(spec) || campBattle) return false;
+  campBattle = { spec, plan: spawnPlan(spec), prevChapter: chapter, result: null, how: null };
+  chapter = 'emboscada';   // o resto do jogo trata a batalha como o capítulo da emboscada (sem sinal de fumo, sem prólogo)
+  campUI.suspend();
+  startGame(false);
+  return true;
+}
+/** Entrega o resultado ao fluxo e volta ao ecrã do mapa. */
+function backToMap() {
+  const cb = campBattle; if (!cb || !cb.result) return;
+  campBattle = null; chapter = cb.prevChapter; endT = 0; endArgs = null; resumePending = false;
+  try { document.exitPointerLock && document.exitPointerLock(); } catch (_) {}
+  releaseAll(); state = 'map';
+  for (const id of ['hud', 'end', 'pause']) $(id).classList.add('hidden');
+  $('hud').classList.remove('intro'); $('msg').style.opacity = 0; missionMsgT = 0; CLOG.length = 0; drawClog();   // nada desta batalha fica no ecrã da seguinte
+  const r = cb.result;
+  campUI.battleDone(r, cb.how === 'won' ? `${r.enemiesKilled} romanos ficaram no campo.` : cb.how === 'dead' ? 'Viriato caiu ferido; os homens tiraram-no do campo.' : 'Abandonaste a batalha.');
 }
 
 function spawn(kind, x, z, group) {
@@ -1542,7 +1603,8 @@ const MISSIONS = [
   { m: CAMP_MISSIONS[1].m, t: () => CAMP_MISSIONS[1].t() },
 ];
 const patrolLeft = () => enemies.filter(e => e.group === 'patrol' && !e.dead).length;
-function setObjective() { if (chapter === 'cativos' && halt) { const left = halt.groups.filter(g => g.bound).length, t = halt.reinfT; $('objm').textContent = 'I · OS CATIVOS';
+function setObjective() { if (campBattle) { $('objm').textContent = 'CAMPANHA · ' + CAMP_OPENING[campBattle.plan.type][0].toUpperCase(); $('objt').textContent = `Derrota os romanos (${enemies.filter(e => !e.dead).length} restantes)`; return; }
+  if (chapter === 'cativos' && halt) { const left = halt.groups.filter(g => g.bound).length, t = halt.reinfT; $('objm').textContent = 'I · OS CATIVOS';
     $('objt').textContent = (left ? `Liberta os cativos (${3 - left}/3 grupos)` + (canLeave(halt.freed) ? ' ou leva-os para o fumo na floresta' : '') : 'Leva-os para o fumo na floresta') + (t > 0 ? ` · reforços romanos em ${Math.ceil(t)} s` : ''); return; }
   if (chapter === 'prologo') { $('objm').textContent = 'PRÓLOGO · A TRAIÇÃO DE GALBA'; $('objt').textContent = `Foge pela brecha até ao fumo na floresta (${Math.round(Math.hypot(P.pos.x - ESCAPE.x, P.pos.z - ESCAPE.z))} m)`; return; } $('objm').textContent = MISSIONS[mission].m; $('objt').textContent = MISSIONS[mission].t(); }
 function showMsg(title, sub, dur = 3.2) { $('msg').innerHTML = ''; const s = document.createElement('span'); s.textContent = title; $('msg').appendChild(s); if (sub) { const sm = document.createElement('small'); sm.textContent = sub; $('msg').appendChild(sm); } $('msg').style.opacity = 1; missionMsgT = dur; }
@@ -1552,6 +1614,7 @@ function feed(text) {
   while ($('feed').children.length > 5) $('feed').lastChild.remove();
 }
 function checkMission() {
+  if (campBattle) { checkCampaignBattle(); return; }
   if (chapter === 'prologo' || chapter === 'cativos') return;
   if (chapter !== 'acampamento') {
     if (mission === 0 && patrolLeft() === 0 && state === 'play') startLoot();   // the ambush is the whole chapter
@@ -2633,7 +2696,7 @@ function startGame(intro = false) {
     introVeil.style.display = 'block'; introVeil.style.opacity = 1;
   }
   else if (chapter === 'prologo') { setRing(RING_R1); for (const e of enemies) if (e.group === 'cordon') { e.pos.set(e.home.x, heightAt(e.home.x, e.home.z), e.home.z); e.m.root.position.copy(e.pos); } betray(); }
-  else showMsg(...OPENING[chapter] || OPENING.emboscada, 5);
+  else showMsg(...(campBattle ? CAMP_OPENING[campBattle.plan.type] : OPENING[chapter] || OPENING.emboscada), 5);
   lock();
 }
 const INTRO_P = 17;
@@ -2716,7 +2779,7 @@ function releaseAll() {
   for (const k in keys) keys[k] = false; mouseL = mouseR = false;
   P.prevL = false; P.charging = false; P.aimT = null; C.feint(P.f); C.endBlock(P.f);
 }
-function pauseGame() { releaseAll(); state = 'pause'; $('pauseobj').textContent = $('objt').textContent; $('sens2').value = $('sens').value; $('pause').classList.remove('hidden'); }
+function pauseGame() { releaseAll(); state = 'pause'; $('abandon').classList.toggle('hidden', !campBattle); $('restart').classList.toggle('hidden', !!campBattle); $('pauseobj').textContent = $('objt').textContent; $('sens2').value = $('sens').value; $('pause').classList.remove('hidden'); }
 // Resume only once the browser has actually granted pointer lock (Chrome refuses it for ~1 s after Esc).
 let resumePending = false;
 function finishResume() { resumePending = false; state = 'play'; $('pause').classList.add('hidden'); $('pausehint').textContent = ''; releaseAll(); }
@@ -2737,7 +2800,8 @@ function endScreen(kicker, title, text) {
   $('next').classList.toggle('hidden', !nextChapter); if (nextChapter) $('next').textContent = 'CONTINUAR · ' + ({ cativos: 'OS CATIVOS', emboscada: 'A EMBOSCADA', acampamento: 'O ACAMPAMENTO' }[nextChapter] || '');
 }
 let endT = 0, endArgs = null;
-function die() { avatar.deadT = 0; avatar.f = P.f; C.endBlock(P.f); state = 'dead'; SFX.die(); endT = 2.8; endArgs = ['CAÍDO EM COMBATE', 'Viriato tombou', 'Tenta de novo.']; }
+function die() { avatar.deadT = 0; avatar.f = P.f; C.endBlock(P.f); state = 'dead'; SFX.die(); endT = 2.8; endArgs = ['CAÍDO EM COMBATE', 'Viriato tombou', 'Tenta de novo.'];
+  if (campBattle) { endArgs = null; endCampaignBattle('dead'); showMsg('VIRIATO CAIU', 'Os homens levam-no ferido do campo.', 2.6); } }   // na campanha é uma derrota, não o fim
 function win() { state = 'won'; SFX.horn(); endT = 1.8; endArgs = chapter === 'acampamento' ? ['VITÓRIA', 'Os montes são lusitanos', 'A patrulha caiu, os mantimentos arderam e o centurião está morto.'] : ['VITÓRIA', 'A patrulha caiu', 'Nenhum romano voltou ao acampamento. A notícia da emboscada vai correr os vales.']; }
 
 $('start').addEventListener('click', () => startGame(!navigator.webdriver));
@@ -2756,7 +2820,8 @@ function setChapter(c) {
 for (const b of document.querySelectorAll('[data-ch]')) b.addEventListener('click', () => setChapter(b.dataset.ch));
 setChapter(chapter);
 $('resume').addEventListener('click', resume);
-$('restart').addEventListener('click', () => startGame(false));
+$('restart').addEventListener('click', () => { if (!campBattle) startGame(false); });
+$('abandon').addEventListener('click', () => { if (!campBattle || state !== 'pause') return; endCampaignBattle('abandon'); backToMap(); });
 for (const b of document.querySelectorAll('[data-diff]')) b.addEventListener('click', () => { diff = +b.dataset.diff; for (const o of document.querySelectorAll('[data-diff]')) o.setAttribute('aria-pressed', o === b ? 'true' : 'false'); });
 const setSens = v => { sens = .0006 * v; };
 $('sens').addEventListener('input', e => setSens(+e.target.value));
@@ -2766,7 +2831,7 @@ $('sens2').addEventListener('input', e => { setSens(+e.target.value); $('sens').
    Main loop
    ========================================================= */
 /* Campanha: ecrã do mapa (src/campaign/ui.js). Estado 'map': o 3D não corre nem pede o rato. */
-const campUI = createCampaignUI({ document, window, storage, onClose: () => { state = 'menu'; $('menu').classList.remove('hidden'); refreshCampMenu(); } });
+const campUI = createCampaignUI({ document, window, storage, startBattle: spec => startCampaignBattle(spec), onClose: () => { state = 'menu'; $('menu').classList.remove('hidden'); refreshCampMenu(); } });
 function refreshCampMenu() { $('camp-cont').classList.toggle('hidden', !campUI.hasSave()); }
 function openCampaign(f) { try { document.exitPointerLock && document.exitPointerLock(); } catch (_) {} releaseAll(); if (!f()) { refreshCampMenu(); return; } state = 'map'; for (const id of ['menu', 'end', 'pause', 'hud']) $(id).classList.add('hidden'); }
 function startCampaign(seed) { openCampaign(() => !!campUI.fresh(seed)); }
@@ -2784,7 +2849,7 @@ function step(dt) {
   else if (state === 'intro') { updateAllies(dt); updateEnemies(dt); updateCivs(dt); updateRiders(dt); updateProjectiles(dt); updateIntro(dt); }
   else if (state === 'play') { if (chapter === 'cativos') updateCaptives(dt); updatePlayer(dt); updateEnemies(dt); updateAllies(dt); updateProjectiles(dt); updateFallen(dt); updateCivs(dt); updateRiders(dt); updateCamera(dt); tickClog(dt); updateFlag(); updateHUD(dt); if (chapter === 'prologo') checkPrologue(); }
   else if (state === 'dead' || state === 'won') {
-    if (endT > 0) { endT -= dt; if (endT <= 0 && endArgs) { endScreen(...endArgs); endArgs = null; } }
+    if (endT > 0) { endT -= dt; if (endT <= 0 && campBattle) backToMap(); else if (endT <= 0 && endArgs) { endScreen(...endArgs); endArgs = null; } }
     updateEnemies(dt); updateAllies(dt); updateCivs(dt); updateProjectiles(dt);
     if (state === 'dead') {
       avatar.dead = true; avatar.deadT = (avatar.deadT || 0) + dt; avatar.mv.x = avatar.mv.z = 0;
@@ -2802,6 +2867,7 @@ function step(dt) {
     sun.position.set(cx, 0, cz).addScaledVector(SUN_DIR, 150); sun.target.position.set(cx, 0, cz);
     VM.visible = false;
   }
+  if (campBattle && state === 'play') checkCampaignBattle();   // também quando um romano cai sem passar por damageEnemy
   if (state !== 'menu') VM.visible = view === 'first' && (state === 'play' || state === 'pause');
   updateFires(dt); updateParticles(dt); updateTrails(dt); updateSignal(dt); updateWisps(dt);
 }
@@ -2828,7 +2894,8 @@ setListener(camera);
 resetWorld();
 $('start').disabled = false; $('start').textContent = 'COMEÇAR';
 return {
-  startCampaign, campaignStorage: storage, campaign: campUI,
+  startCampaign, campaignStorage: storage, campaign: campUI, startCampaignBattle,
+  campaignTest: { forceBattle: spec => { const f = campUI.flow; f.battle = spec; f.phase = 'batalha'; campUI.render(); return f; } },
   start: (d, ch = 'emboscada') => { if (d != null) diff = d; setChapter(ch); startGame(false); }, startIntro: (ch = chapter) => { setChapter(ch); startGame(true); }, get civs() { return civs; }, get riders() { return riders; }, get chapter() { return chapter; }, MEADOW, ESCAPE, CASTRO, get introT() { return introT; }, step, render: () => { if (state === 'map') return; cullChunks(CHUNKS, camera.position); cullCharacters(enemies, camera.position); cullCharacters(allies, camera.position); cullCharacters(civs, camera.position); R.render(); }, setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
   P, supplyTents, heightAt, CAMP, scene, camera, CHUNKS,
   get enemies() { return enemies; }, get allies() { return allies; }, setCompanions: n => { companions = n; }, forceDir: d => { forcedDir = d; }, get order() { return order; }, get placing() { return placing; }, flag: FLAG, flagAt, hurtAllyForTest: (a, d) => hurtAlly(a, d, a.pos.clone()), get mission() { return mission; }, get tentsBurnt() { return tentsBurnt; }, alertForTest: e => alert(e), get halt() { return halt; }, get companions() { return companions; }, get alarm() { return alarm; }, get nextChapter() { return nextChapter; }, HALT, WOODS, CSTART, get state() { return state; },
