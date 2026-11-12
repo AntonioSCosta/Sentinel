@@ -73,6 +73,7 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   battleBridge({ G, doc, win, check, st, setGod, $, shown });
   villageDefence({ G, doc, win, check, st, setGod, $, shown });
   convoyAssault({ G, doc, win, check, st, setGod, $, shown });
+  retreat({ G, doc, win, check, st, setGod, $, shown });
 }
 
 // Task 13: a ponte para as batalhas 3D (emboscada e campo aberto) e o regresso ao mapa.
@@ -273,4 +274,55 @@ function convoyAssault({ G, doc, win, check, st, setGod, $, shown }) {
   doc.dispatchEvent(new win.Event('pointerlockchange')); $('abandon').click();
   G.campaign.close();
   cappedTris({ G, doc, win, check, st, $, type: 'assalto-coluna', extra: { site: 'estrada' } });
+}
+
+// Task 16: retirada. Com uma serra perto no mapa, uma linha de ajuda, a tecla G e «Retirar» na pausa; chegar à orla
+// devolve { retreated: true } e o bando aparece na serra. Sem serra, nada disto existe.
+function retreat({ G, doc, win, check, st, setGod, $, shown }) {
+  const key = code => win.dispatchEvent(new win.KeyboardEvent('keydown', { code })), up = code => win.dispatchEvent(new win.KeyboardEvent('keyup', { code }));
+  const begin = (possible, type = 'campo-aberto') => {
+    G.campaignStorage.clear(); G.startCampaign(77);
+    const f = G.campaign.flow, serra = f.state.world.settlements.find(x => x.kind === 'serra');
+    f.state.men = 8; f.state.fame = 20; f.state.food = 60; f.state.party = { x: serra.x + 30, y: serra.y };
+    let calls = 0; const fb = f.finishBattle; f.finishBattle = r => { calls++; return fb(r); };
+    G.campaignTest.forceBattle({ type, seed: 4242, site: 'campo', allies: 8, realMen: 8, enemies: { legio: 6, velites: 2, centurion: false },
+      bonus: { allies: 0, enemies: 0 }, retreat: possible ? { possible: true, serraId: serra.id } : { possible: false, serraId: null } });
+    $('mb-fight').click();
+    return { f, serra, calls: () => calls };
+  };
+  const backOnMap = () => G.state === 'map' && shown('map') && !shown('hud') && !shown('mbattle');
+  let w = begin(true);
+  check(`retirada: a sober one-line hint at the start (${$('objh').textContent})`, shown('objh') && /^Retirada possível: a serra fica a [a-z]+ \(G\)\.$/.test($('objh').textContent));
+  const r = G.campaignTest.retreat;
+  const en = G.enemies.reduce((a, e) => ({ x: a.x + e.pos.x / G.enemies.length, z: a.z + e.pos.z / G.enemies.length }), { x: 0, z: 0 });
+  const away = (r.at.x - G.P.pos.x) * (G.P.pos.x - en.x) + (r.at.z - G.P.pos.z) * (G.P.pos.z - en.z);
+  check(`retirada: the edge lies away from the Roman line (${Math.round(Math.hypot(r.at.x - G.P.pos.x, r.at.z - G.P.pos.z))} m)`, away > 0 && Math.hypot(r.at.x - G.P.pos.x, r.at.z - G.P.pos.z) > 40);
+  st(10); key('KeyT'); up('KeyT');
+  check('retirada: (the men were charging)', G.order === 'charge');
+  key('KeyG'); up('KeyG');
+  check(`retirada: G orders the retreat (${$('objt').textContent})`, G.campaignTest.retreat.on && /^Retirada — chega à orla a [a-z]+$/.test($('objt').textContent) && G.order === 'follow');
+  key('KeyG'); up('KeyG');
+  check('retirada: G again cancels it', !G.campaignTest.retreat.on && !/Retirada/.test($('objt').textContent));
+  key('KeyG'); up('KeyG');
+  setGod(true);
+  G.P.pos.set(r.at.x, G.heightAt(r.at.x, r.at.z), r.at.z); st(200); setGod(false);
+  check('retirada: reaching the edge goes back to the map once', backOnMap() && w.calls() === 1 && w.f.phase === 'mapa' && w.f.state.over === null);
+  check(`retirada: the band is at the serra, -5 food, -3 fame (${w.f.state.food}/${w.f.state.fame})`, w.f.state.party.x === w.serra.x && w.f.state.party.y === w.serra.y
+    && w.f.state.food === 55 && w.f.state.fame === 17 && /Serra/.test($('mlog').textContent));
+  // «Retirar» in the pause orders the same retreat
+  w = begin(true); st(5);
+  doc.dispatchEvent(new win.Event('pointerlockchange'));
+  check('retirada: the pause offers «Retirar» beside «Abandonar»', G.state === 'pause' && shown('pretreat') && shown('abandon'));
+  $('pretreat').click();
+  check('retirada: «Retirar» resumes with the retreat ordered', G.state === 'play' && G.campaignTest.retreat.on && /Retirada/.test($('objt').textContent));
+  doc.dispatchEvent(new win.Event('pointerlockchange')); $('abandon').click();
+  // no serra near: no hint, no key, no button
+  w = begin(false); st(5);
+  check('sem serra: no retreat hint', !shown('objh'));
+  key('KeyG'); up('KeyG'); st(2);
+  check('sem serra: G does nothing', !G.campaignTest.retreat.on && !/Retirada/.test($('objt').textContent));
+  doc.dispatchEvent(new win.Event('pointerlockchange'));
+  check('sem serra: the pause has no «Retirar»', G.state === 'pause' && !shown('pretreat') && shown('abandon'));
+  $('abandon').click();
+  G.campaign.close();
 }

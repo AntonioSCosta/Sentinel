@@ -26,6 +26,7 @@
   #obj{position:absolute;top:18px;left:22px;max-width:380px;text-shadow:0 1px 3px #000}
   #obj .m{font-family:'Cinzel',serif;font-size:14px;letter-spacing:.2em;color:var(--gold)}
   #obj .t{font-size:20px;line-height:1.25;margin-top:2px}
+  #obj .h{font-size:16px;line-height:1.25;margin-top:6px;color:var(--dim)}
   #compass{position:absolute;top:14px;left:50%;transform:translateX(-50%);width:420px;height:34px}
   #charge{position:absolute;left:50%;top:calc(50% + 22px);width:64px;height:5px;transform:translateX(-50%);background:rgba(0,0,0,.45);border-radius:3px;overflow:hidden;opacity:0;transition:opacity .15s}
   #charge i{display:block;height:100%;width:0;background:#e8c87a}
@@ -97,7 +98,7 @@
 <canvas id="gl"></canvas>
 
 <div id="hud" class="hidden">
-  <div id="obj"><div class="m" id="objm"></div><div class="t" id="objt"></div></div>
+  <div id="obj"><div class="m" id="objm"></div><div class="t" id="objt"></div><div class="h hidden" id="objh"></div></div>
   <canvas id="compass" width="420" height="34"></canvas>
   <div id="eye"></div>
   <div id="cross"></div>
@@ -198,7 +199,7 @@
     <div class="row"><label class="lbl" for="sens2">RATO</label><input id="sens2" type="range" min="1" max="10" value="5"></div>
     <p id="fps" role="status" style="font-size:15px;opacity:.7;margin-top:6px"></p>
     <p id="pausehint" role="status" style="font-size:16px;color:var(--gold)"></p>
-    <div class="row"><button type="button" class="go" id="resume">CONTINUAR</button><button type="button" id="restart">RECOMEÇAR</button><button type="button" id="abandon" class="hidden">ABANDONAR (DERROTA)</button></div>
+    <div class="row"><button type="button" class="go" id="resume">CONTINUAR</button><button type="button" id="restart">RECOMEÇAR</button><button type="button" id="pretreat" class="hidden">RETIRAR</button><button type="button" id="abandon" class="hidden">ABANDONAR (DERROTA)</button></div>
   </div>
 </div>
 

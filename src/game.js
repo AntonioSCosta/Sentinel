@@ -943,6 +943,25 @@ function resetCampaignBattle() {
   }
   for (let i = 0; i < plan.allies; i++) spawnAlly(i);   // os homens que levas, em vez dos companheiros fixos
   for (const x of [...enemies, ...allies]) { resolve(x.pos, .4); x.pos.y = heightAt(x.pos.x, x.pos.z); }   // ninguém nasce dentro de uma árvore
+  campBattle.retreat = spec.retreat?.possible ? retreatEdge() : null;
+}
+/* Retirada (só com uma serra perto no mapa): a orla fica do lado oposto à força romana, a RETREAT_D m de Viriato. */
+const RETREAT_D = 70, RETREAT_R = 9;
+const COMPASS_PT = ['norte', 'nordeste', 'este', 'sudeste', 'sul', 'sudoeste', 'oeste', 'noroeste'];
+function retreatEdge() {
+  let ex = 0, ez = 0; for (const e of enemies) { ex += e.pos.x / enemies.length; ez += e.pos.z / enemies.length; }
+  let dx = P.pos.x - ex, dz = P.pos.z - ez; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+  const lim = WORLD - 8, x = clamp(P.pos.x + dx * RETREAT_D, -lim, lim), z = clamp(P.pos.z + dz * RETREAT_D, -lim, lim);
+  const a = Math.atan2(x - P.pos.x, -(z - P.pos.z));   // 0 = norte (-z), a rodar para este (+x)
+  return { at: { x, z }, dir: COMPASS_PT[((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8], on: false };
+}
+/** Tecla G (e «Retirar» na pausa): ordena a retirada, ou desfaz a ordem. Os homens passam a seguir Viriato. */
+function orderRetreat(on) {
+  const r = campBattle && !campBattle.result && campBattle.retreat;
+  if (!r || (state !== 'play' && state !== 'pause')) return;
+  r.on = on ?? !r.on;
+  if (r.on) { placing = false; order = 'follow'; FLAG.visible = false; feed('Ordem: retirada'); } else feed('Ordem: retirada desfeita');
+  setObjective();
 }
 /* Assalto a coluna: a emboscada, com carros de abastecimento no meio da escolta, a rolar estrada abaixo até sair do vale. */
 let carts = [], CART_PARTS = null;
@@ -1022,14 +1041,19 @@ function checkCampaignBattle(dt = 0) {
   }
   if (state === 'play' && enemies.every(e => e.dead)) {
     endCampaignBattle('won'); state = 'won'; SFX.horn(); endT = 2.2; endArgs = null;
-    showMsg('VITÓRIA', 'Nenhum romano ficou de pé.', 2.2);
+    showMsg('VITÓRIA', 'Nenhum romano ficou de pé.', 2.2); return;
+  }
+  const r = campBattle.retreat;
+  if (r && r.on && state === 'play' && Math.hypot(P.pos.x - r.at.x, P.pos.z - r.at.z) < RETREAT_R) {
+    endCampaignBattle('retreat'); state = 'won'; endT = 2.2; endArgs = null;
+    showMsg('RETIRADA', 'O bando deixa o campo e recua para a serra.', 2.2);
   }
 }
-/** Fecha a contagem da batalha (uma só vez): 'won' | 'dead' | 'abandon' | 'burnt' | 'escaped'. */
+/** Fecha a contagem da batalha (uma só vez): 'won' | 'dead' | 'abandon' | 'burnt' | 'escaped' | 'retreat'. */
 function endCampaignBattle(how) {
   if (!campBattle || campBattle.result) return;
   campBattle.how = how;
-  campBattle.result = tallyResult({ allies: allies.length, alliesDead: allies.filter(a => a.dead).length, playerDead: how === 'dead', abandoned: how === 'abandon', escaped: how === 'escaped',
+  campBattle.result = tallyResult({ allies: allies.length, alliesDead: allies.filter(a => a.dead).length, playerDead: how === 'dead', abandoned: how === 'abandon', escaped: how === 'escaped', retreated: how === 'retreat',
     carts: carts.length ? { captured: carts.filter(c => !c.gone).length, total: carts.length } : null,
     enemies: enemies.length, enemiesDead: enemies.filter(e => e.dead).length });
 }
@@ -1051,7 +1075,7 @@ function backToMap() {
   for (const id of ['hud', 'end', 'pause']) $(id).classList.add('hidden');
   $('hud').classList.remove('intro'); $('msg').style.opacity = 0; missionMsgT = 0; CLOG.length = 0; drawClog();   // nada desta batalha fica no ecrã da seguinte
   const r = cb.result;
-  campUI.battleDone(r, cb.how === 'won' ? `${r.enemiesKilled} romanos ficaram no campo` + (r.cartsTotal ? `; tomaste ${r.cartsCaptured} de ${r.cartsTotal} carros.` : '.') : cb.how === 'escaped' ? 'A coluna escapou-se pela estrada.' : cb.how === 'dead' ? 'Viriato caiu ferido; os homens tiraram-no do campo.' : cb.how === 'burnt' ? 'Os romanos tomaram o centro da aldeia.' : 'Abandonaste a batalha.');
+  campUI.battleDone(r, cb.how === 'won' ? `${r.enemiesKilled} romanos ficaram no campo` + (r.cartsTotal ? `; tomaste ${r.cartsCaptured} de ${r.cartsTotal} carros.` : '.') : cb.how === 'escaped' ? 'A coluna escapou-se pela estrada.' : cb.how === 'dead' ? 'Viriato caiu ferido; os homens tiraram-no do campo.' : cb.how === 'burnt' ? 'Os romanos tomaram o centro da aldeia.' : cb.how === 'retreat' ? 'O bando recuou do campo.' : 'Abandonaste a batalha.');
 }
 
 function spawn(kind, x, z, group) {
@@ -1638,9 +1662,10 @@ const SIGNAL = new THREE.Group(); SIGNAL.visible = false; scene.add(SIGNAL);
   const ring = new THREE.Mesh(new THREE.RingGeometry(7.4, 8, 48), new THREE.MeshBasicMaterial({ color: 0xe8c36a, transparent: true, opacity: .35, side: THREE.DoubleSide, depthWrite: false })); ring.rotation.x = -Math.PI / 2; ring.position.y = .08; SIGNAL.add(ring);
 }
 function updateSignal(dt) {
-  SIGNAL.visible = (chapter === 'prologo' || chapter === 'cativos') && state !== 'menu' && (state !== 'outro' || chapter === 'cativos');
+  const rt = campBattle?.retreat?.on && campBattle.retreat;   // na retirada da campanha, o fumo marca a orla
+  SIGNAL.visible = !!rt || (!campBattle && (chapter === 'prologo' || chapter === 'cativos') && state !== 'menu' && (state !== 'outro' || chapter === 'cativos'));
   if (!SIGNAL.visible) return;
-  const sg = chapter === 'cativos' ? WOODS : ESCAPE; SIGNAL.position.set(sg.x, heightAt(sg.x, sg.z), sg.z);
+  const sg = rt ? rt.at : chapter === 'cativos' ? WOODS : ESCAPE; SIGNAL.position.set(sg.x, heightAt(sg.x, sg.z), sg.z);
   SIGNAL.children[0].rotation.y += dt * .25; SIGNAL.children[1].intensity = 2 + Math.sin(performance.now() * .013) * .5;
 }
 
@@ -1683,7 +1708,10 @@ const MISSIONS = [
   { m: CAMP_MISSIONS[1].m, t: () => CAMP_MISSIONS[1].t() },
 ];
 const patrolLeft = () => enemies.filter(e => e.group === 'patrol' && !e.dead).length;
-function setObjective() { if (campBattle) { $('objm').textContent = 'CAMPANHA · ' + CAMP_OPENING[campBattle.plan.type][0].toUpperCase(); const left = enemies.filter(e => !e.dead).length;
+function setObjective() { $('objh').classList.toggle('hidden', !campBattle?.retreat);
+  if (campBattle) { $('objm').textContent = 'CAMPANHA · ' + CAMP_OPENING[campBattle.plan.type][0].toUpperCase(); const left = enemies.filter(e => !e.dead).length, rt = campBattle.retreat;
+    if (rt) $('objh').textContent = rt.on ? 'G desfaz a retirada.' : `Retirada possível: a serra fica a ${rt.dir} (G).`;
+    if (rt && rt.on) { $('objt').textContent = `Retirada — chega à orla a ${rt.dir}`; return; }
     $('objt').textContent = carts.length ? `Assalta a coluna — carros ${carts.filter(c => !c.gone).length}/${carts.length}` : campBattle.plan.type === 'defesa-aldeia' ? `Defende a aldeia — ${left} romanos` + (campBattle.holdT > 0 ? ' · estão a tomar o centro!' : '') : `Derrota os romanos (${left} restantes)`; return; }
   if (chapter === 'cativos' && halt) { const left = halt.groups.filter(g => g.bound).length, t = halt.reinfT; $('objm').textContent = 'I · OS CATIVOS';
     $('objt').textContent = (left ? `Liberta os cativos (${3 - left}/3 grupos)` + (canLeave(halt.freed) ? ' ou leva-os para o fumo na floresta' : '') : 'Leva-os para o fumo na floresta') + (t > 0 ? ` · reforços romanos em ${Math.ceil(t)} s` : ''); return; }
@@ -1730,6 +1758,7 @@ window.addEventListener('keydown', e => {
   if (e.code === 'KeyE') use();
   if (e.code === 'KeyV') view = view === 'third' ? 'first' : 'third';
   if (e.code === 'KeyR') cleanShield();
+  if (e.code === 'KeyG') orderRetreat();
   if (e.code === 'KeyZ') giveOrder('follow'); if (e.code === 'KeyX') giveOrder('hold'); if (e.code === 'KeyT') giveOrder('charge');
   if (e.code === 'Space') e.preventDefault();
 });
@@ -2688,6 +2717,7 @@ function updateFires(dt) {
    ========================================================= */
 const cmp = $('compass'); const cctx = cmp.getContext && cmp.getContext('2d');
 function objectiveTarget() {
+  if (campBattle?.retreat?.on) return V(campBattle.retreat.at.x, 0, campBattle.retreat.at.z);
   if (chapter === 'prologo') return V(ESCAPE.x, 0, ESCAPE.z);
   if (chapter === 'cativos') { let best = null, bd = 1e9; if (halt) for (const g of halt.groups) if (g.bound) { const d = Math.hypot(g.x - P.pos.x, g.z - P.pos.z); if (d < bd) { bd = d; best = V(g.x, 0, g.z); } } return best || V(WOODS.x, 0, WOODS.z); }
   if (mission === 0) { let best = null, bd = 1e9; for (const e of enemies) if (e.group === 'patrol' && !e.dead) { const d = e.pos.distanceTo(P.pos); if (d < bd) { bd = d; best = e.pos; } } return best; }
@@ -2865,7 +2895,7 @@ function releaseAll() {
   for (const k in keys) keys[k] = false; mouseL = mouseR = false;
   P.prevL = false; P.charging = false; P.aimT = null; C.feint(P.f); C.endBlock(P.f);
 }
-function pauseGame() { releaseAll(); state = 'pause'; $('abandon').classList.toggle('hidden', !campBattle); $('restart').classList.toggle('hidden', !!campBattle); $('pauseobj').textContent = $('objt').textContent; $('sens2').value = $('sens').value; $('pause').classList.remove('hidden'); }
+function pauseGame() { releaseAll(); state = 'pause'; $('abandon').classList.toggle('hidden', !campBattle); $('pretreat').classList.toggle('hidden', !(campBattle?.retreat && !campBattle.retreat.on && !campBattle.result)); $('restart').classList.toggle('hidden', !!campBattle); $('pauseobj').textContent = $('objt').textContent; $('sens2').value = $('sens').value; $('pause').classList.remove('hidden'); }
 // Resume only once the browser has actually granted pointer lock (Chrome refuses it for ~1 s after Esc).
 let resumePending = false;
 function finishResume() { resumePending = false; state = 'play'; $('pause').classList.add('hidden'); $('pausehint').textContent = ''; releaseAll(); }
@@ -2907,6 +2937,7 @@ for (const b of document.querySelectorAll('[data-ch]')) b.addEventListener('clic
 setChapter(chapter);
 $('resume').addEventListener('click', resume);
 $('restart').addEventListener('click', () => { if (!campBattle) startGame(false); });
+$('pretreat').addEventListener('click', () => { if (!campBattle?.retreat || state !== 'pause') return; orderRetreat(true); resume(); });
 $('abandon').addEventListener('click', () => { if (!campBattle || state !== 'pause') return; endCampaignBattle('abandon'); backToMap(); });
 for (const b of document.querySelectorAll('[data-diff]')) b.addEventListener('click', () => { diff = +b.dataset.diff; for (const o of document.querySelectorAll('[data-diff]')) o.setAttribute('aria-pressed', o === b ? 'true' : 'false'); });
 const setSens = v => { sens = .0006 * v; };
@@ -2981,7 +3012,7 @@ resetWorld();
 $('start').disabled = false; $('start').textContent = 'COMEÇAR';
 return {
   startCampaign, campaignStorage: storage, campaign: campUI, startCampaignBattle,
-  campaignTest: { forceBattle: spec => { const f = campUI.flow; f.battle = spec; f.phase = 'batalha'; campUI.render(); return f; } },
+  campaignTest: { get retreat() { const r = campBattle?.retreat; return r ? { on: r.on, at: { ...r.at }, dir: r.dir } : { on: false, at: null }; }, forceBattle: spec => { const f = campUI.flow; f.battle = spec; f.phase = 'batalha'; campUI.render(); return f; } },
   start: (d, ch = 'emboscada') => { if (d != null) diff = d; setChapter(ch); startGame(false); }, startIntro: (ch = chapter) => { setChapter(ch); startGame(true); }, get civs() { return civs; }, get riders() { return riders; }, get chapter() { return chapter; }, MEADOW, ESCAPE, CASTRO, roadX, get carts() { return carts; }, get introT() { return introT; }, step, render: () => { if (state === 'map') return; cullChunks(CHUNKS, camera.position); cullCharacters(enemies, camera.position); cullCharacters(allies, camera.position); cullCharacters(civs, camera.position); R.render(); }, setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
   P, supplyTents, heightAt, CAMP, scene, camera, CHUNKS,
   get enemies() { return enemies; }, get allies() { return allies; }, setCompanions: n => { companions = n; }, forceDir: d => { forcedDir = d; }, get order() { return order; }, get placing() { return placing; }, flag: FLAG, flagAt, hurtAllyForTest: (a, d) => hurtAlly(a, d, a.pos.clone()), get mission() { return mission; }, get tentsBurnt() { return tentsBurnt; }, alertForTest: e => alert(e), get halt() { return halt; }, get companions() { return companions; }, get alarm() { return alarm; }, get nextChapter() { return nextChapter; }, HALT, WOODS, CSTART, get state() { return state; },

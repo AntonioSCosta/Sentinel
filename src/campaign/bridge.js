@@ -52,14 +52,15 @@ export function spawnPlan(spec) {
 
 /**
  * Resultado de uma batalha 3D para Flow.finishBattle. A morte de Viriato conta como um homem perdido;
- * abandonar a batalha é uma derrota que conta como a morte dele. No assalto a coluna, `carts` diz quantos carros
+ * abandonar a batalha é uma derrota que conta como a morte dele; `retreated` = Viriato chegou à orla com a retirada
+ * ordenada (derrota sem a morte dele). No assalto a coluna, `carts` diz quantos carros
  * ficaram nas tuas mãos, e `escaped` que a coluna se foi toda com a escolta viva (sem vitória nem derrota).
- * @returns {{won:boolean, retreated:false, escaped?:true, alliesLost:number, enemiesKilled:number, cartsCaptured?:number, cartsTotal?:number}}
+ * @returns {{won:boolean, retreated:boolean, escaped?:true, alliesLost:number, enemiesKilled:number, cartsCaptured?:number, cartsTotal?:number}}
  */
-export function tallyResult({ alliesDead = 0, playerDead = false, enemies = 0, enemiesDead = 0, abandoned = false, escaped = false, carts = null } = {}) {
+export function tallyResult({ alliesDead = 0, playerDead = false, enemies = 0, enemiesDead = 0, abandoned = false, escaped = false, retreated = false, carts = null } = {}) {
   const fell = count(alliesDead), killed = count(enemiesDead);
-  const out = playerDead || abandoned, fled = escaped && !out;
-  const r = { won: !out && !fled && killed >= count(enemies), retreated: false };
+  const out = playerDead || abandoned, fled = escaped && !out, ran = retreated && !out;
+  const r = { won: !out && !fled && !ran && killed >= count(enemies), retreated: ran };
   if (fled) r.escaped = true;
   Object.assign(r, { alliesLost: fell + (out ? 1 : 0), enemiesKilled: killed });
   if (carts) Object.assign(r, { cartsCaptured: count(carts.captured), cartsTotal: count(carts.total) });

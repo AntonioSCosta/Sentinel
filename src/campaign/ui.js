@@ -23,7 +23,7 @@ export function eventText(ev, state) {
     case 'fome': return `Fome no bando: morrem ${ev.mortos}.`;
     case 'derrota': return ev.lost !== undefined ? `Derrota: perdes ${ev.lost} homens.` : 'O bando está arruinado.';
     case 'vitoria': return `Vitória! Perdes ${ev.lost}, ganhas ${ev.food} de comida, ${ev.arms} armas e ${ev.fame} de fama.`;
-    case 'retirada': return `Recuas, perdendo ${ev.lost} homens.`;
+    case 'retirada': return ev.serraId ? `O bando recua para ${name(ev.serraId)}; perdes ${ev.lost} homens.` : `Recuas, perdendo ${ev.lost} homens.`;
     case 'fuga': return `A coluna escapou-se com a carga${ev.lost ? `; perdes ${ev.lost} homens` : ''}.`;
     case 'ano-vencido': return 'O pretor caiu: o ano é teu.';
     case 'ruina': return 'O bando desfez-se.';

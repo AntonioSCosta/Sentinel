@@ -110,3 +110,9 @@ test('assalto-coluna: 3 carros (2 com escolta < 8) entre as filas da escolta, se
   }
   assert.deepEqual(spawnPlan(spec()).carts, []);
 });
+
+test('tallyResult: retirada é derrota sem a morte de Viriato, com retreated', () => {
+  assert.deepEqual(tallyResult({ allies: 8, alliesDead: 3, enemies: 8, enemiesDead: 2, retreated: true }), { won: false, retreated: true, alliesLost: 3, enemiesKilled: 2 });
+  // morto antes de chegar à orla: conta a morte
+  assert.deepEqual(tallyResult({ allies: 8, alliesDead: 3, enemies: 8, enemiesDead: 2, retreated: true, playerDead: true }), { won: false, retreated: false, alliesLost: 4, enemiesKilled: 2 });
+});

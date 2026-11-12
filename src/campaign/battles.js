@@ -13,6 +13,19 @@ const LOOT = {
 const DEFEAT = { food: 3, fame: 5 }, RETREAT = { food: 5, fame: 3 };
 const VILLAGE_FAME = 3;
 const ESCAPED_FAME = 2;   // assalto a coluna: os carros fugiram todos com a escolta viva   // defesa de aldeia: a mais na vitória, a menos quando arde
+export const RETREAT_RANGE = 80;   // retirada: uma serra a esta distância (no mapa) do sítio onde a batalha começa
+const RETREAT_TYPES = ['campo-aberto', 'decisiva', 'defesa-aldeia'];   // nas outras foste tu que escolheste lutar
+
+/** A serra mais próxima do bando a <= RETREAT_RANGE, para onde recua se a batalha correr mal. */
+function retreatOf(type, state) {
+  let best = null, bd = Infinity;
+  if (RETREAT_TYPES.includes(type) && state.party) for (const s of state.world?.settlements || []) {
+    if (s.kind !== 'serra') continue;
+    const d = Math.hypot(s.x - state.party.x, s.y - state.party.y);
+    if (d <= RETREAT_RANGE && d < bd) { bd = d; best = s; }
+  }
+  return { possible: !!best, serraId: best ? best.id : null };
+}
 
 function typeOf(enc) {
   if (enc.kind === 'pretor') return { type: 'decisiva', site: 'campo' };
@@ -32,6 +45,7 @@ export function battleSpec(enc, state, rng) {
     allies: Math.min(state.men, ALLY_CAP), realMen: state.men,
     enemies: { legio: shown - velites, velites, centurion: type === 'decisiva' || type === 'historica' },
     bonus: { allies: Math.max(0, state.men - ALLY_CAP), enemies: Math.max(0, total - ENEMY_CAP) },
+    retreat: retreatOf(type, state),
   };
   if (chapter) spec.chapter = chapter;
   if (enc.villageId !== undefined) spec.villageId = enc.villageId;
@@ -58,7 +72,9 @@ export function applyResult(state, spec, result) {
   const events = [];
   if (result.retreated) {
     spend(state, RETREAT);
-    events.push({ type: 'retirada', lost });
+    const serra = spec.retreat?.possible && state.world?.settlements?.find(s => s.id === spec.retreat.serraId && s.kind === 'serra');
+    if (serra) state.party = { x: serra.x, y: serra.y };   // a retirada leva o bando para a serra: escapa, não só perde
+    events.push(serra ? { type: 'retirada', lost, serraId: serra.id } : { type: 'retirada', lost });
   } else if (result.escaped) {
     spend(state, { fame: ESCAPED_FAME });
     events.push({ type: 'fuga', lost });

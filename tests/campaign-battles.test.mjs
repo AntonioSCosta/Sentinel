@@ -192,3 +192,52 @@ test('a coluna escapou-se: sem saque, só -2 de fama e os homens que caíram; o 
   assert.deepEqual([s.men, s.food, s.arms, s.fame], [12, 60, 10, 18]);
   assert.equal(s.patrols.length, 1); assert.equal(ev[0].type, 'fuga'); assert.equal(ev[0].lost, 2);
 });
+
+// Task 16: retirada (só em campo aberto, decisiva e defesa de aldeia, com uma serra a <= 80 no mapa)
+const serras = s => s.world.settlements.filter(x => x.kind === 'serra');
+const at = (s, x, y) => { s.party = { x, y }; return s; };
+test('retirada: possível com uma serra a <= 80, escolhe a mais próxima', () => {
+  const s = st(14), [a] = serras(s);
+  at(s, a.x + 50, a.y);
+  for (const e of [enc('patrulha'), enc('pretor', false, { men: 60 }), { kind: 'defesa', foe: { id: 'p', kind: 'patrulha' }, villageId: 'v1', waiting: false }]) {
+    const b = battleSpec(e, s, rng());
+    assert.deepEqual(b.retreat, { possible: true, serraId: a.id }, b.type);
+  }
+  at(s, a.x + 80, a.y); assert.equal(battleSpec(enc('patrulha'), s, rng()).retreat.possible, true);
+  at(s, a.x + 81, a.y); const near = serras(s).some(x => Math.hypot(x.x - s.party.x, x.y - s.party.y) <= 80);
+  assert.equal(battleSpec(enc('patrulha'), s, rng()).retreat.possible, near);
+});
+
+test('retirada: longe das serras não há; emboscada, assalto e histórica nunca', () => {
+  const s = st(14);
+  let far = null;   // um ponto do mapa a mais de 80 de todas as serras
+  for (let x = 0; x <= s.world.w && !far; x += 10) for (let y = 0; y <= s.world.h && !far; y += 10)
+    if (serras(s).every(q => Math.hypot(q.x - x, q.y - y) > 80)) far = { x, y };
+  at(s, far.x, far.y);
+  assert.deepEqual(battleSpec(enc('patrulha'), s, rng()).retreat, { possible: false, serraId: null });
+  const [a] = serras(s); at(s, a.x, a.y);
+  for (const e of [enc('patrulha', true), enc('comboio', true), enc('posto')]) assert.equal(battleSpec(e, s, rng()).retreat.possible, false, e.kind);
+});
+
+test('retirada: o bando vai para a serra, além de -5 comida e -3 fama', () => {
+  const s = st(14), [a, b] = serras(s);
+  at(s, b.x + 40, b.y);
+  const spec = battleSpec(enc('patrulha'), s, rng());
+  assert.equal(spec.retreat.serraId, b.id);
+  at(s, 1, 1);   // o mapa pode ter mudado entretanto: conta a serra do spec
+  const ev = applyResult(s, spec, res({ won: false, retreated: true, alliesLost: 1 }));
+  assert.deepEqual(s.party, { x: b.x, y: b.y });
+  assert.equal(s.food, 55); assert.equal(s.fame, 17); assert.equal(s.over, null);
+  assert.equal(ev[0].type, 'retirada'); assert.equal(ev[0].serraId, b.id);
+  assert.notEqual(a.id, b.id);
+});
+
+test('retirada sem serra no spec (provisória, gravações antigas) não mexe no bando', () => {
+  const s = st(14); at(s, 3, 4);
+  const spec = battleSpec(enc('patrulha', true), s, rng());
+  applyResult(s, spec, res({ won: false, retreated: true }));
+  assert.deepEqual(s.party, { x: 3, y: 4 });
+  const old = { ...spec }; delete old.retreat;
+  applyResult(s, old, res({ won: false, retreated: true }));
+  assert.deepEqual(s.party, { x: 3, y: 4 });
+});
