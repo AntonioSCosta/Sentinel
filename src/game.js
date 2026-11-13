@@ -439,7 +439,7 @@ const BOX = (w, h, d) => new THREE.BoxGeometry(w, h, d);
 function makeSoldier(kind) {
   const mats = [];
   const mm = (name, extra) => { const m = MAT(name, extra); mats.push(m); return m; };
-  const tunic = mm(kind === 'velite' || kind === 'lusitano' ? 'wool_brown' : 'wool_red'), armor = mm('iron'), skin = mm('skin'),
+  const tunic = mm(kind === 'lusitano' ? 'wool_brown' : 'wool_red'), armor = mm('iron'), skin = mm('skin'),
         helm = mm(kind === 'centurion' ? 'bronze' : 'iron'), metal = mm('iron', { roughness: .3 }), leather = mm('leather'),
         shieldM = mm(kind === 'velite' ? 'leather' : 'canvas_red', { side: THREE.DoubleSide }), gold = mm('bronze'),
         crestM = mm('wool_red'), fur = mm('wool_brown'), wood = mm('wood');
@@ -611,7 +611,7 @@ function rigSoldier(kind, look = null) {
   if (hair.includes('hair_long') && !hair.includes('hair_buzzed')) hair = ['hair_buzzed', ...hair];   // the long cut leaves the crown bare: a close-cropped layer underneath covers it
   // one garment, one cloth: the tunic over the chest and the skirt below the belt share colour and weave
   if (!chars.weave) chars.weave = weaveTexture(THREE);
-  const cloth = outfit === 'roman_mail' ? null : (look && look.palette && look.palette.dress) || { lusitano: 0x7a5a36, lusitano_b: 0x5c4630, lusitano_c: 0x96682c, lusitano_d: 0x605440, roman_red: 0x9a2a20, roman_white: 0xd8d0bc, velite: 0x5c4630 }[outfit] || 0x6b4a2e;
+  const cloth = outfit === 'roman_mail' ? null : (look && look.palette && look.palette.dress) || { lusitano: 0x7a5a36, lusitano_b: 0x5c4630, lusitano_c: 0x96682c, lusitano_d: 0x605440, roman_red: 0x9a2a20, roman_white: 0xd8d0bc, velite: 0x9a2a20 }[outfit] || 0x6b4a2e;
   const tint = rr(.86, 1.05);
   const rig = makeRig(THREE, chars.clone, chars, { female: !!(look && look.female), palette: look && look.palette, outfit, hair, shielded: !!shield, cloth, tint, hairColor: look ? look.hairColor : [0x2a1d14, 0x3b2a1e, 0x1c1410, 0x4a3524][Math.floor(rand() * 4)] });
   // helmet / cap: everything on the old head except the skin
@@ -729,7 +729,7 @@ function rigSoldier(kind, look = null) {
     const col = outfit === 'roman_white' ? 0xd8d0bc : 0x9a2a20;
     skirt(col, { rTop: .2, rBot: .24, y1: .52, amp: .03, zs: .86 });
     if (outfit === 'roman_mail') { const mm = MATS.mail.clone(); if (mm.map) { mm.map = mm.map.clone(); mm.map.repeat.set(2.6, 1); mm.map.wrapS = mm.map.wrapT = THREE.RepeatWrapping; mm.map.needsUpdate = true; } mm.side = THREE.DoubleSide; mm.color.setHex(0xb4b4b4); mm.roughness = .75; skirt(0xffffff, { rTop: .2, rBot: .25, y0: 1.04, y1: .74, amp: .02, mat: mm, folds: 8, zs: .84 }); }
-  } else { skirt(0x5c4630, { rTop: .19, rBot: .27, y1: .68 }); }
+  } else { skirt(0x9a2a20, { rTop: .19, rBot: .27, y1: .68 }); }   // vélite: túnica de lã vermelha como os legionários
   if (look && look.unarmed && !look.female) slimBody(rig.bones);   // the people of the villages are not built like warriors (done last: everything is already fitted to the body)
   Object.assign(rig.root.userData, ud);
   const mats = [...new Set([...rig.mats, ...p.mats, bMat, gMat, sMat, ...extraMats])];
