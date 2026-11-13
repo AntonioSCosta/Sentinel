@@ -737,6 +737,29 @@ function rigSoldier(kind, look = null) {
 }
 const soldier = (kind, look) => { const m = chars ? rigSoldier(kind, look) : makeSoldier(kind); if (look) m.root.scale.setScalar(look.scale); return m; };
 
+/* Signum: a estandarte do signifer — pau alto com faleras de bronze, uma travessa e uma coroa no topo.
+   Pólo ao longo de +Y, centrado para o punho pegar no terço de baixo; triângulos modestos (mais leve que o scutum que substitui). */
+function buildSignum() {
+  const g = new THREE.Group(); g.name = 'signum';
+  const wood = MAT('wood'), bronze = MAT('bronze'), iron = MAT('iron', { roughness: .3, metalness: .7 });
+  const add = (geo, mat, y) => { const o = new THREE.Mesh(geo, mat); o.position.y = y; o.castShadow = true; g.add(o); return o; };
+  add(new THREE.CylinderGeometry(.022, .022, 2.2, 6), wood, .55);          // o pau (base ~ -0.55, topo ~ +1.65)
+  add(new THREE.ConeGeometry(.055, .2, 6), iron, 1.78);                    // ponta de lança no topo
+  add(new THREE.TorusGeometry(.1, .018, 5, 12), bronze, 1.5).rotation.x = Math.PI / 2;   // coroa (corona)
+  add(new THREE.BoxGeometry(.52, .022, .022), bronze, 1.32);               // travessa
+  for (const y of [1.14, .94, .74]) add(new THREE.CylinderGeometry(.075, .075, .02, 10).rotateX(Math.PI / 2), bronze, y);   // faleras
+  return g;
+}
+/* Converte um legionário em signifer: o estandarte toma o lugar do escudo na mão esquerda, o gladius fica desembainhado
+   na direita (como em todos os legio). Mantém-se o grupo do escudo (dá a pose/IK do braço), mas troca-se a prancha pelo signum. */
+function makeSignifer(e) {
+  const m = e.m, sh = m.shield || m.root.userData.scutum || m.root.userData.parma;
+  if (sh) { for (const c of [...sh.children]) sh.remove(c); sh.add(buildSignum()); }   // tira a prancha, põe o signum no mesmo grupo
+  e.signifer = true; e.shieldLost = true; e.f.shieldHP = 0;   // perfil sem escudo; shieldLost evita que o escudo (já trocado) "caia" no chão
+  m.root.userData.signifer = true;
+  return e;
+}
+
 /* =========================================================
    Viewmodel (first-person weapons)
    ========================================================= */
@@ -933,9 +956,16 @@ function resetCampaignBattle() {
     // na decisiva a linha é maior, começa mais longe e o centurião à frente é o próprio pretor
     const fx = MEADOW.x + plan.shift, pz = MEADOW.z + 20, front = pz - plan.gap;
     P.pos.set(fx, heightAt(fx, pz), pz); P.yaw = 0; P.pitch = -.03;
+    let cmd = null;
     for (const k of plan.enemies) {
       const e = spawn(k.kind, fx + k.side, front + k.along, 'field'); e.yaw = 0; e.barkT = 1; alert(e);
-      if (k.kind === 'centurion' && plan.type === 'decisiva') e.commander = spec.commander || 'o pretor';
+      if (k.kind === 'centurion' && plan.type === 'decisiva') { e.commander = spec.commander || 'o pretor'; cmd = e; }
+    }
+    if (plan.type === 'decisiva' && cmd) {
+      // o pretor leva dois signiferi ao lado: os dois legionários mais próximos passam a porta-estandartes (ocupam o lugar, não somam)
+      enemies.filter(e => e.kind === 'legio' && e !== cmd && !e.signifer)
+        .sort((a, b) => a.pos.distanceToSquared(cmd.pos) - b.pos.distanceToSquared(cmd.pos))
+        .slice(0, 2).forEach(makeSignifer);
     }
   } else if (plan.type === 'defesa-aldeia') resetVillage(plan);
   else {
