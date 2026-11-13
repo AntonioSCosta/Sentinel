@@ -27,26 +27,55 @@ export function hitTest(view, state, sx, sy, r = 14) {
   return best;
 }
 
+// Pequena figura desenhada a tinta para cada tipo de marcador. Centrada em (x,y),
+// ~15 px de altura. A versão queimada/tomada muda só as cores e acrescenta UMA
+// risca (um lineTo + um stroke a mais) — invariante de que os testes dependem.
 function icon(ctx, kind, x, y, burnt) {
-  ctx.fillStyle = burnt ? '#2b2420' : '#7a5a34';
-  ctx.strokeStyle = burnt ? '#120e0c' : '#3b2a14';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
+  const ink = burnt ? '#120e0c' : '#3b2a14';
+  const fill = burnt ? '#2b2420' : (kind === 'serra' ? '#8a8478' : '#7a5a34');
+  ctx.lineWidth = 1.3;
+  ctx.strokeStyle = ink;
+  ctx.fillStyle = fill;
+
   if (kind === 'castro') {
-    ctx.moveTo(x - 8, y + 6); ctx.lineTo(x, y - 8); ctx.lineTo(x + 8, y + 6); ctx.closePath();
+    // castro: montículo amuralhado com ameias
+    ctx.beginPath();
+    ctx.moveTo(x - 10, y + 7); ctx.lineTo(x - 7, y - 1); ctx.lineTo(x + 7, y - 1); ctx.lineTo(x + 10, y + 7); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x - 7, y - 1); ctx.lineTo(x - 7, y - 4); ctx.lineTo(x - 3, y - 4); ctx.lineTo(x - 3, y - 1);
+    ctx.lineTo(x + 1, y - 1); ctx.lineTo(x + 1, y - 4); ctx.lineTo(x + 5, y - 4); ctx.lineTo(x + 5, y - 1);
+    ctx.stroke();
   } else if (kind === 'serra') {
-    ctx.moveTo(x - 12, y + 6); ctx.lineTo(x - 5, y - 6); ctx.lineTo(x + 1, y + 6);
-    ctx.lineTo(x + 6, y - 9); ctx.lineTo(x + 13, y + 6); ctx.closePath();
-    ctx.fillStyle = '#8a8478';
+    // serra: silhueta de dois picos com aresta
+    ctx.beginPath();
+    ctx.moveTo(x - 12, y + 7); ctx.lineTo(x - 4, y - 8); ctx.lineTo(x + 1, y - 1); ctx.lineTo(x + 6, y - 9); ctx.lineTo(x + 13, y + 7); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + 6, y - 9); ctx.lineTo(x + 2, y + 2); ctx.stroke();
   } else if (kind === 'posto') {
-    ctx.moveTo(x - 6, y - 6); ctx.lineTo(x + 6, y - 6); ctx.lineTo(x + 6, y + 6); ctx.lineTo(x - 6, y + 6); ctx.closePath();
-    ctx.fillStyle = '#a3302a';
+    // posto romano: tenda com flâmula vermelha num mastro
+    ctx.beginPath();
+    ctx.moveTo(x - 8, y + 7); ctx.lineTo(x, y - 3); ctx.lineTo(x + 8, y + 7); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x - 2, y + 7); ctx.lineTo(x, y + 1); ctx.lineTo(x + 2, y + 7); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, y - 3); ctx.lineTo(x, y - 11); ctx.stroke();
+    ctx.fillStyle = burnt ? '#5a1510' : '#a3302a';
+    ctx.beginPath(); ctx.moveTo(x, y - 11); ctx.lineTo(x + 7, y - 9); ctx.lineTo(x, y - 6); ctx.closePath();
+    ctx.fill(); ctx.stroke();
   } else {
-    ctx.arc(x, y, 6, 0, Math.PI * 2);
+    // aldeia: casinha (corpo + telhado de empena + porta)
+    ctx.beginPath();
+    ctx.moveTo(x - 6, y + 7); ctx.lineTo(x - 6, y); ctx.lineTo(x + 6, y); ctx.lineTo(x + 6, y + 7); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x - 8, y); ctx.lineTo(x, y - 8); ctx.lineTo(x + 8, y); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = ink;
+    ctx.fillRect(x - 1.5, y + 2, 3, 5);
   }
-  ctx.fill();
-  ctx.stroke();
+
   if (burnt) {
+    // destruída: risca a tinta escura (uma só — ver invariante acima)
     ctx.strokeStyle = '#120e0c';
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(x - 10, y + 8); ctx.lineTo(x + 10, y - 8); ctx.stroke();
@@ -97,44 +126,67 @@ export function drawMap(ctx, view, state) {
     ctx.fillStyle = '#b3261e';
     ctx.strokeStyle = '#4a0f0b';
     ctx.lineWidth = 1;
-    ctx.beginPath();
     if (p.kind === 'comboio') {
-      ctx.moveTo(q.x - 4, q.y - 4); ctx.lineTo(q.x + 4, q.y - 4); ctx.lineTo(q.x + 4, q.y + 4); ctx.lineTo(q.x - 4, q.y + 4); ctx.closePath();
+      // comboio: carroça com duas rodas
+      ctx.beginPath();
+      ctx.moveTo(q.x - 5, q.y - 1); ctx.lineTo(q.x + 5, q.y - 1); ctx.lineTo(q.x + 5, q.y + 2); ctx.lineTo(q.x - 5, q.y + 2); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(q.x - 3, q.y + 4, 2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(q.x + 3, q.y + 4, 2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     } else {
-      ctx.arc(q.x, q.y, 4, 0, Math.PI * 2);
+      // ronda: soldado em marcha com lança
+      ctx.beginPath(); ctx.arc(q.x, q.y - 4, 2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(q.x, q.y - 2); ctx.lineTo(q.x, q.y + 3);
+      ctx.moveTo(q.x, q.y + 3); ctx.lineTo(q.x - 3, q.y + 7);
+      ctx.moveTo(q.x, q.y + 3); ctx.lineTo(q.x + 3, q.y + 7);
+      ctx.moveTo(q.x - 3, q.y); ctx.lineTo(q.x + 2, q.y);
+      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(q.x + 4, q.y - 7); ctx.lineTo(q.x + 4, q.y + 6); ctx.stroke();
     }
-    ctx.fill();
-    ctx.stroke();
     ctx.restore();
   }
 
-  // pretor
+  // pretor: figura romana com elmo de crista (o maior marcador inimigo)
   if (state.praetor) {
     const q = toScreen(view, state.praetor);
     ctx.save();
     ctx.fillStyle = '#c0211a';
     ctx.strokeStyle = '#3a0805';
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(q.x, q.y, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(q.x - 6, q.y + 9); ctx.lineTo(q.x - 4, q.y + 1); ctx.lineTo(q.x + 4, q.y + 1); ctx.lineTo(q.x + 6, q.y + 9); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(q.x, q.y - 2, 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(q.x - 5, q.y - 5); ctx.lineTo(q.x, q.y - 11); ctx.lineTo(q.x + 5, q.y - 5); ctx.closePath();
+    ctx.fill(); ctx.stroke();
     ctx.fillStyle = '#7a1510';
     ctx.font = '11px serif';
     ctx.textAlign = 'center';
-    ctx.fillText(state.praetor.name || 'Pretor', q.x, q.y - 12);
+    ctx.fillText(state.praetor.name || 'Pretor', q.x, q.y - 15);
     ctx.restore();
   }
 
-  // grupo do jogador
+  // grupo do jogador: guerreiro lusitano (lança, escudo redondo), ouro
   {
     const q = toScreen(view, state.party);
     ctx.save();
     ctx.fillStyle = '#ffc928';
     ctx.strokeStyle = '#4a3200';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.arc(q.x, q.y, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(q.x - 5, q.y + 9); ctx.lineTo(q.x + 6, q.y - 10); ctx.stroke();
+    ctx.beginPath(); ctx.arc(q.x, q.y - 6, 2.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(q.x, q.y - 3); ctx.lineTo(q.x, q.y + 3);
+    ctx.moveTo(q.x, q.y + 3); ctx.lineTo(q.x - 3, q.y + 8);
+    ctx.moveTo(q.x, q.y + 3); ctx.lineTo(q.x + 3, q.y + 8);
+    ctx.stroke();
+    ctx.beginPath(); ctx.arc(q.x - 3, q.y + 1, 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.fillStyle = '#4a3200';
     ctx.font = '11px serif';
     ctx.textAlign = 'center';
-    ctx.fillText('Viriato', q.x, q.y - 12);
+    ctx.fillText('Viriato', q.x, q.y - 13);
     ctx.restore();
   }
 

@@ -101,6 +101,21 @@ test('burnt village is drawn with an extra strike-through', () => {
   assert.equal(count(c2, 'stroke'), count(c1, 'stroke') + 1);
 });
 
+test('desenha uma figura para cada tipo de povoação, com e sem queimar, sem rebentar', () => {
+  const s = newCampaign(3), v = makeView(s.world, 800, 600);
+  const kinds = new Set(s.world.settlements.map(x => x.kind));
+  assert.ok(kinds.size >= 2, 'o mundo deve ter vários tipos de marcador');
+  // queima/toma tudo o que for queimável e volta a desenhar
+  for (const id of Object.keys(s.villages)) s.villages[id].burnt = true;
+  s.posts = {};
+  for (const p of s.world.settlements) if (p.kind === 'posto') s.posts[p.id] = { taken: true };
+  s.praetor = { id: 'pr', x: 100, y: 100, name: 'Vetílio' };
+  s.patrols = [{ id: 'a', kind: 'ronda', x: 50, y: 50 }, { id: 'b', kind: 'comboio', x: 60, y: 60 }];
+  const c = fakeCtx();
+  assert.doesNotThrow(() => drawMap(c, v, s));
+  assert.equal(count(c, 'save'), count(c, 'restore'));
+});
+
 test('posto tomado: riscado como uma aldeia queimada', () => {
   const s = newCampaign(3), v = makeView(s.world, 800, 600), p = s.world.settlements.find(x => x.kind === 'posto');
   const c1 = fakeCtx(); drawMap(c1, v, s);
