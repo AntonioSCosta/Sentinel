@@ -966,6 +966,13 @@ function resetCampaignBattle() {
       enemies.filter(e => e.kind === 'legio' && e !== cmd && !e.signifer)
         .sort((a, b) => a.pos.distanceToSquared(cmd.pos) - b.pos.distanceToSquared(cmd.pos))
         .slice(0, 2).forEach(makeSignifer);
+      // cavalaria dos dois lados, atrás das linhas (cosmética: não entra em enemies[]/allies[], não conta no desfecho)
+      if (chars && chars.horse) {
+        spawnBattleRider('legio', fx - 6, front - 4, 0);
+        spawnBattleRider('legio', fx + 6, front - 4, 0);
+        spawnBattleRider('lusitano', fx - 6, pz + 6, Math.PI);
+        spawnBattleRider('lusitano', fx + 6, pz + 6, Math.PI);
+      }
     }
   } else if (plan.type === 'defesa-aldeia') resetVillage(plan);
   else {
@@ -1209,18 +1216,49 @@ function armEnvoy(on) {
 }
 /* Cavalry: two riders sweep in with the legions, circle the field cutting down whoever runs, then flank the captives. */
 const SADDLE = 1.0;   // rider root height above the horse (crouched legs astride its back)
-function spawnRider(ang, dir) {
+const HORSE_COAT = { legio: 0x8f7464, lusitano: 0x5a4a3a };   // baio romano; montada lusitana mais escura
+/** Clona o cavalo (GLTF) com uma pelagem, põe-lhe o cavaleiro em cima e devolve as peças comuns a qualquer montada. */
+function makeMount(coat, riderKind) {
   const h = chars.horse, hg = h.scene.clone(true); hg.scale.setScalar(.0095);
-  hg.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.material = o.material.clone(); o.material.color.setHex(0x8f7464); } });   // a darker bay
+  hg.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.material = o.material.clone(); o.material.color.setHex(coat); } });
   const grp = new THREE.Group(); grp.add(hg); scene.add(grp);
   const mixer = new THREE.AnimationMixer(hg), act = mixer.clipAction(h.clip); act.play();
-  const m = soldier('legio'); scene.add(m.root);
+  const m = soldier(riderKind); scene.add(m.root);
+  return { grp, mixer, act, m };
+}
+function spawnRider(ang, dir) {
+  const { grp, mixer, act, m } = makeMount(HORSE_COAT.legio, 'legio');
   const r = { kind: 'legio', m, f: C.createFighter(), state: 'chase', crouch: true, mv: { x: 0, z: 0 }, yaw: 0, stride: 0, ph: 0, flash: 0, dead: false, deadT: 0, hits: 0,
     pos: V(MEADOW.x + Math.cos(ang) * 70, 0, MEADOW.z + Math.sin(ang) * 70), horse: grp, mixer, act, ang, dir, hitCd: 0, i: riders.length };
   riders.push(r); return r;
 }
+/* Cavaleiro da batalha decisiva (romano ou lusitano): carga curta para a frente e depois gira atrás da sua própria linha.
+   Cosmético — não dá dano, não entra em enemies[]/allies[], não pesa no desfecho. yaw 0 vira para +z, pi vira para -z. */
+function spawnBattleRider(kind, x, z, yaw) {
+  const { grp, mixer, act, m } = makeMount(HORSE_COAT[kind] || HORSE_COAT.legio, kind);
+  const toFoe = Math.cos(yaw);   // sentido do inimigo: +z (romano) ou -z (lusitano)
+  const r = { kind, m, f: C.createFighter(), state: 'chase', crouch: true, mv: { x: 0, z: 0 }, yaw, stride: 0, ph: 0, flash: 0, dead: false, deadT: 0, hits: 0,
+    pos: V(x, heightAt(x, z), z), horse: grp, mixer, act, hitCd: 0, i: riders.length, battle: true, t: 0,
+    adv: V(x, 0, z + toFoe * 10), mill: V(x, 0, z), spin: Math.random() < .5 ? 1 : -1 };
+  riders.push(r); return r;
+}
+/** Carga-e-gira do cavaleiro de batalha, sem dano nem colisão com a contagem do combate. */
+function updateBattleRider(r, dt) {
+  r.t += dt; r.horse.visible = r.m.root.visible = true;
+  let tx, tz, sp;
+  if (r.t < 3.2) { tx = r.adv.x; tz = r.adv.z; sp = 7; }   // carga curta sobre a linha
+  else { const a = r.t * .45 * r.spin; tx = r.mill.x + Math.cos(a) * 4; tz = r.mill.z + Math.sin(a) * 4; sp = 4.2; }   // gira atrás da linha
+  const dx = tx - r.pos.x, dz = tz - r.pos.z, d = Math.hypot(dx, dz), step = Math.min(sp * dt, d);
+  if (d > .05) { r.pos.x += dx / d * step; r.pos.z += dz / d * step; r.yaw += wrapA(Math.atan2(dx, dz) - r.yaw) * Math.min(1, dt * 4); }
+  const v = step / Math.max(dt, 1e-4); r.act.timeScale = clamp(v / 8, .2, 1.3); r.act.paused = v < .2;
+  r.pos.y = heightAt(r.pos.x, r.pos.z);
+  r.horse.position.copy(r.pos); r.horse.rotation.y = r.yaw; r.mixer.update(dt);
+  C.tickFighter(r.f, dt);
+  const b = setPose(r, dt); r.m.root.position.set(r.pos.x, r.pos.y + SADDLE + b * .2, r.pos.z); r.m.root.rotation.y = r.yaw;
+}
 function updateRiders(dt) {
   for (const r of riders) {
+    if (r.battle) { updateBattleRider(r, dt); continue; }
     r.hitCd -= dt;
     const waiting = state === 'intro' && introT < 10.6;
     r.horse.visible = r.m.root.visible = !waiting;
