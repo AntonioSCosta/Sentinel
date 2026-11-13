@@ -100,3 +100,14 @@ test('burnt village is drawn with an extra strike-through', () => {
   assert.equal(count(c2, 'lineTo'), count(c1, 'lineTo') + 1);
   assert.equal(count(c2, 'stroke'), count(c1, 'stroke') + 1);
 });
+
+test('posto tomado: riscado como uma aldeia queimada', () => {
+  const s = newCampaign(3), v = makeView(s.world, 800, 600), p = s.world.settlements.find(x => x.kind === 'posto');
+  const c1 = fakeCtx(); drawMap(c1, v, s);
+  s.posts = { [p.id]: { taken: false } };
+  const c2 = fakeCtx(); drawMap(c2, v, s);
+  assert.equal(count(c2, 'lineTo'), count(c1, 'lineTo'));   // atacado e não tomado: igual
+  s.posts[p.id].taken = true;
+  const c3 = fakeCtx(); drawMap(c3, v, s);
+  assert.equal(count(c3, 'lineTo'), count(c1, 'lineTo') + 1);
+});

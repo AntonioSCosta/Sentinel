@@ -105,7 +105,7 @@ Medido com `npm run balance` (`tools/balance.mjs`): joga o ano inteiro na camada
 | `PRAETOR_REGROUP` (novo, battles.js) | — | **6** dias a reagrupar depois de uma decisiva que não ganhou |
 | `SPAWN_EVERY` (patrulhas) | 12 | **6** |
 | `HELP_FOOD` / `HELP_GAP` (castro) | 25 / 30 dias | **40 / 25 dias** |
-| `EVENT_CHANCE`, `ENCOUNTER_RADIUS`, `SIGHT`, traços do pretor | 0,1 / 30 / 140 / pursuit .7, scorch .5 | sem alteração |
+| `EVENT_CHANCE`, `ENCOUNTER_RADIUS`, `SIGHT`, traços do pretor | 0,1 / 30 / 140 / pursuit .7, scorch .5 | sem alteração (pursuit passou a 0,6 na revisão final, ver abaixo) |
 
 **Antes** (o mesmo bot, constantes antigas): 2/20 vitórias; mediana de 3 batalhas (0/20 anos na faixa 12–25); mediana de 35 dias; derrotas por fama 10, homens 6, fome 2; até ao dia 30 o pretor queimava até 8 aldeias (mediana 4).
 
@@ -143,6 +143,46 @@ Em 60 sementes: 31/60 vitórias (52 %), 37/60 anos na faixa 12–25 (mediana 16)
 **Leitura.** Nenhuma semente é trivial, porque não se ganham todas, e nenhuma é impossível em conjunto: perto de metade ganha-se. A fome deixou de ser a causa principal; o que desfaz o bando é perder homens contra o pretor. Ficam duas coisas por rever:
 - A fama sobe demasiado num bom ano (100–150). Quase nunca é o limite; quem limita os recrutas são as armas.
 - A defesa de aldeia domina os tipos de batalha, porque o bot espera junto das aldeias da estrada.
+
+### Equilíbrio depois da revisão final
+
+A revisão final pediu que o feitio do pretor contasse em cada campanha. Mudou o seguinte:
+- Perseguir passou a ser uma probabilidade diária, `rng.chance(pursuit)`, em vez de um limiar fixo.
+- `scorch` decide quanto descansa depois de queimar: `round(BURN_REST × (1,5 − scorch))`, entre 4 e 18 dias. Decide também o alvo: com `scorch` ≥ 0,5 queima a aldeia mais perto dele; abaixo disso, a aldeia mais perto do bando.
+- Uma defesa de aldeia ganha contra o pretor tira-lhe os mortos (fica com 10 homens, no mínimo) e dá-lhe `PRAETOR_REGROUP` dias a reagrupar.
+- Cada posto só se ataca uma vez por campanha.
+
+Com estas mudanças e as constantes acima, o bot ganhava 27/60 (45 %), mas só 27/60 anos ficavam na faixa de 12–25 batalhas (mediana 13). Quase tudo isto vem do alvo «aldeia mais perto do bando», que põe o pretor em cima do bando. Afinação mínima: **`pursuit` base 0,7 → 0,6** (com a variação de ±0,15 por semente). Todas as outras constantes ficam iguais.
+
+```
+seed  dias  bat  resultado  causa     queimadas(d30/fim)  homens  fama  tipos
+   1    60    4  derrota    fome              0/ 1            0    33  historica:1 defesa-aldeia:2 decisiva:1
+   2   227   18  derrota    homens            0/ 4            0    73  historica:1 defesa-aldeia:5 campo-aberto:8 assalto-coluna:1 decisiva:3
+   3    69    6  vitoria    decisiva          0/ 0           11    69  historica:1 defesa-aldeia:3 campo-aberto:1 decisiva:1
+   4   143   17  derrota    homens            0/ 5            0    32  historica:1 defesa-aldeia:6 emboscada:2 campo-aberto:3 decisiva:5
+   5   122   12  vitoria    decisiva          1/ 5           16   102  historica:1 defesa-aldeia:9 campo-aberto:1 decisiva:1
+   6   224   15  derrota    fome              0/ 4            0    35  historica:1 defesa-aldeia:5 campo-aberto:5 decisiva:4
+   7   245   27  derrota    ano               0/ 6            6   124  historica:1 campo-aberto:12 defesa-aldeia:10 decisiva:3 assalto-coluna:1
+   8   245    9  vitoria    ano               1/11           29    47  historica:1 defesa-aldeia:5 campo-aberto:3
+   9   245   29  derrota    ano               1/12            1   117  historica:1 defesa-aldeia:17 emboscada:4 campo-aberto:3 assalto-coluna:1 decisiva:3
+  10   245   22  vitoria    ano               1/12           26   130  historica:1 campo-aberto:7 defesa-aldeia:12 emboscada:1 assalto-coluna:1
+  11   245   24  vitoria    ano               1/10           39   136  historica:1 defesa-aldeia:12 campo-aberto:6 decisiva:1 assalto-coluna:2 emboscada:2
+  12   245   26  vitoria    ano               0/ 6           22    80  historica:1 defesa-aldeia:7 campo-aberto:15 decisiva:1 emboscada:2
+  13   230   20  derrota    homens            0/ 5            0    31  emboscada:4 historica:1 campo-aberto:7 defesa-aldeia:4 decisiva:4
+  14   203   12  derrota    fome              0/ 4            0    53  historica:1 campo-aberto:3 defesa-aldeia:6 decisiva:2
+  15   150    9  derrota    homens            0/ 4            0    16  historica:1 campo-aberto:4 defesa-aldeia:1 decisiva:2 emboscada:1
+  16    60    7  derrota    homens            0/ 0            0    44  historica:1 defesa-aldeia:3 campo-aberto:1 decisiva:2
+  17   245   23  derrota    ano               0/ 6            0    84  historica:1 defesa-aldeia:9 campo-aberto:7 decisiva:5 emboscada:1
+  18   209   23  derrota    homens            2/11            0    47  historica:1 defesa-aldeia:7 campo-aberto:5 emboscada:6 assalto-coluna:2 decisiva:2
+  19    97   11  derrota    homens            0/ 1            0    44  historica:1 campo-aberto:4 defesa-aldeia:4 decisiva:2
+  20   137   16  derrota    homens            0/ 3            0    29  historica:1 defesa-aldeia:8 decisiva:5 campo-aberto:2
+
+Resumo (20 sementes): vitórias 6/20 (decisiva 2, ano 4) · batalhas 12–25 em 11/20 (mediana 17) · dias (mediana) 224 · derrotas por causa {"fome":3,"homens":8,"ano":3} · aldeias queimadas até ao dia 30: máx 2, mediana 0
+```
+
+Em 60 sementes: vitórias 26/60 (decisiva 15, ano 11) · batalhas 12–25 em 35/60 (mediana 16) · dias (mediana) 207 · derrotas por causa {"fome":11,"homens":12,"ano":8,"fama":3} · aldeias queimadas até ao dia 30: máx 2, mediana 1.
+
+**Leitura.** Comparado com a tabela anterior (31/60 vitórias, 37/60 na faixa), a campanha ficou um pouco mais dura: 26/60 vitórias (43 %), 35/60 anos na faixa de 12–25 batalhas (mediana 16), e nunca mais de 2 aldeias queimadas até ao dia 30. A fome voltou a pesar (11 derrotas em 60). Os pretores de `scorch` baixo vão atrás das aldeias perto do bando, e isso corta-lhe o saque das defesas. Em 20 sementes há só 6 vitórias; com 60 a proporção sobe para perto de metade. A diferença é ruído do modelo, que continua grosseiro.
 
 ## 10. Lacunas que o construtor encontrou (decididas por mim)
 

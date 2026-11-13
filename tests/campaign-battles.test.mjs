@@ -293,3 +293,33 @@ test('decisiva perdida ou em retirada: o pretor fica PRAETOR_REGROUP dias a reag
   applyResult(t, battleSpec(enc('patrulha'), t, rng()), res({ won: false, alliesLost: 1 }));
   assert.equal(t.praetor.rest, undefined);   // só a decisiva
 });
+
+// Fix wave: o posto vencido fica tomado; vencer o pretor numa defesa de aldeia desgasta-o.
+test('assalto a um posto vencido: posto tomado; perdido: só atacado', () => {
+  for (const won of [true, false]) {
+    const s = st(14), p = s.world.settlements.find(x => x.kind === 'posto');
+    s.posts = { [p.id]: { taken: false } };
+    const b = battleSpec({ kind: 'posto', foe: p, waiting: false }, s, rng());
+    assert.equal(b.foeId, p.id);
+    applyResult(s, b, res({ won, alliesLost: 1 }));
+    assert.deepEqual(s.posts[p.id], { taken: won });
+  }
+});
+test('defesa de aldeia vencida contra o pretor: perde os mortos (fica com 10, no mínimo) e reagrupa', () => {
+  for (const [men0, killed, men1] of [[60, 8, 52], [60, 25, 35], [20, 25, 10], [12, 0, 12]]) {
+    const s = st(14), vid = Object.keys(s.villages)[0];
+    s.praetor = { id: 'vetilio', name: 'Caio Vetílio', men: men0, x: 0, y: 0 };
+    const b = battleSpec({ kind: 'defesa', foe: s.praetor, villageId: vid, waiting: false }, s, rng());
+    applyResult(s, b, res({ enemiesKilled: killed }));
+    assert.equal(s.praetor.men, men1, `${men0}-${killed}`);
+    assert.equal(s.praetor.rest, PRAETOR_REGROUP);
+  }
+  const t = st(14), vid = Object.keys(t.villages)[0];
+  t.praetor = { id: 'vetilio', men: 60, x: 0, y: 0 };
+  applyResult(t, battleSpec({ kind: 'defesa', foe: { id: 'patrulha-6', men: 6 }, villageId: vid, waiting: false }, t, rng()), res({ enemiesKilled: 6 }));
+  assert.equal(t.praetor.men, 60); assert.equal(t.praetor.rest, undefined);   // contra uma patrulha não lhe toca
+  const u = st(14), uid = Object.keys(u.villages)[0];
+  u.praetor = { id: 'vetilio', men: 60, x: 0, y: 0 };
+  applyResult(u, battleSpec({ kind: 'defesa', foe: u.praetor, villageId: uid, waiting: false }, u, rng()), res({ won: false, enemiesKilled: 20 }));
+  assert.equal(u.praetor.men, 60);   // só a vitória o desgasta
+});

@@ -48,6 +48,8 @@ export function deserialize(text) {
   if (o.over !== null && o.over !== 'vitoria' && o.over !== 'derrota') return null;
   for (const k of ['kills', 'battles']) if (k in o && (!num(o[k]) || o[k] < 0)) return null;   // contas do fim do ano (opcionais)
   if (o.praetor != null && (!isObj(o.praetor) || ('rest' in o.praetor && !(num(o.praetor.rest) && o.praetor.rest >= 0 && o.praetor.rest <= 365)))) return null;   // descanso do pretor
+  if (o.praetor != null && 'men' in o.praetor && !(num(o.praetor.men) && o.praetor.men >= 0)) return null;
+  if ('posts' in o && !(isObj(o.posts) && Object.values(o.posts).every(p => isObj(p) && typeof p.taken === 'boolean'))) return null;   // postos atacados
   if ('seen' in o && !(Array.isArray(o.seen) && o.seen.every(x => typeof x === 'string'))) return null;   // Crónica
   if ('decisivaWon' in o && typeof o.decisivaWon !== 'boolean') return null;
   if (!isObj(o.world) || !isObj(o.world.start) || !Array.isArray(o.world.settlements)) return null;

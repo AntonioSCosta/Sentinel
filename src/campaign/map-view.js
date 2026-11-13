@@ -1,4 +1,4 @@
-// Vista do mapa estratégico: enquadramento, conversão de coordenadas, selecção e desenho.
+// Vista do mapa estratégico: enquadramento, conversão de coordenadas, seleção e desenho.
 // Módulo puro: sem DOM nem Three.js; o desenho só usa a API mínima de um contexto Canvas 2D.
 import { dateLabel, season } from './clock.js';
 
@@ -80,7 +80,7 @@ export function drawMap(ctx, view, state) {
   // povoações
   for (const s of world.settlements) {
     const q = toScreen(view, s);
-    const burnt = !!(state.villages && state.villages[s.id] && state.villages[s.id].burnt);
+    const burnt = !!(state.villages && state.villages[s.id] && state.villages[s.id].burnt) || !!state.posts?.[s.id]?.taken;   // posto tomado: riscado
     ctx.save();
     icon(ctx, s.kind, q.x, q.y, burnt);
     ctx.fillStyle = burnt ? '#4a3f38' : '#3b2a14';

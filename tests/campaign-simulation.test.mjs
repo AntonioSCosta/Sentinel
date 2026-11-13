@@ -265,3 +265,26 @@ test('defesa: aldeia queimada, party longe ou escondida não dão defesa', () =>
   s = mk(); s.party = { x: 510, y: 305 };
   assert.equal(stepDay(s, { kind: 'esconder' }, rng()).encounter, null);
 });
+
+// Fix wave: recrutar sem armas não gasta a vez; um posto só se ataca uma vez por campanha.
+test('recrutar sem armas: evento próprio e a aldeia fica disponível', () => {
+  const s = fresh(), v = find(s, 'aldeia');
+  at(s, v); s.arms = 0;
+  const men = s.men, r = stepDay(s, { kind: 'recrutar', id: v.id }, rng());
+  assert.deepEqual(r.events.filter(e => e.type === 'sem-armas'), [{ type: 'sem-armas', id: v.id }]);
+  assert.equal(s.men, men); assert.equal(s.villages[v.id].recruitedDay, -999);
+  s.arms = 5; stepDay(s, { kind: 'recrutar', id: v.id }, rng());
+  assert.ok(s.men > men);
+});
+test('atacar: cada posto uma só vez; marcado em state.posts', () => {
+  const s = fresh(), p = find(s, 'posto');
+  assert.equal(s.posts, undefined);   // criado só quando preciso
+  at(s, p);
+  let r = stepDay(s, { kind: 'atacar', id: p.id }, rng());
+  assert.equal(r.encounter.kind, 'posto');
+  assert.deepEqual(s.posts, { [p.id]: { taken: false } });
+  s.cooldown = 0;
+  r = stepDay(s, { kind: 'atacar', id: p.id }, rng());
+  assert.equal(r.encounter?.kind === 'posto', false);
+  assert.ok(r.events.some(e => e.type === 'posto-atacado' && e.id === p.id));
+});

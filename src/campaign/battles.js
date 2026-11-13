@@ -13,7 +13,8 @@ const LOOT = {
 const DEFEAT = { food: 3, fame: 5 }, RETREAT = { food: 5, fame: 3 };
 const VILLAGE_FAME = 3;
 const ESCAPED_FAME = 2;   // assalto a coluna: os carros fugiram todos com a escolta viva   // defesa de aldeia: a mais na vitória, a menos quando arde
-export const PRAETOR_REGROUP = 6;   // dias que o pretor fica a reagrupar depois de uma decisiva que não ganhou
+export const PRAETOR_REGROUP = 6;
+export const PRAETOR_MIN_MEN = 10;   // o que resta ao pretor, no mínimo, depois de perder uma defesa de aldeia   // dias que o pretor fica a reagrupar depois de uma decisiva que não ganhou
 export const RETREAT_RANGE = 80;   // retirada: uma serra a esta distância (no mapa) do sítio onde a batalha começa
 const RETREAT_TYPES = ['campo-aberto', 'decisiva', 'defesa-aldeia'];   // nas outras foste tu que escolheste lutar
 
@@ -90,6 +91,12 @@ export function applyResult(state, spec, result) {
     if (spec.foeId !== undefined) state.patrols = state.patrols.filter(p => p.id !== spec.foeId);
     events.push({ type: 'vitoria', lost, food: loot.food, arms: loot.arms, fame });
     if (spec.type === 'decisiva') { state.over = 'vitoria'; state.decisivaWon = true; events.push({ type: 'ano-vencido' }); }
+    if (spec.type === 'historica' && state.posts && spec.foeId in state.posts) state.posts[spec.foeId].taken = true;
+    const p = state.praetor;
+    if (spec.type === 'defesa-aldeia' && p && spec.foeId !== undefined && spec.foeId === p.id) {   // o pretor deixa mortos e recua
+      p.men = Math.max(PRAETOR_MIN_MEN, (Number.isFinite(p.men) ? p.men : 0) - killed);
+      p.rest = PRAETOR_REGROUP;
+    }
   } else {
     spend(state, DEFEAT);
     events.push({ type: 'derrota', lost });

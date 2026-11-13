@@ -9,7 +9,7 @@ const kinds = p => p.enemies.reduce((m, e) => (m[e.kind] = (m[e.kind] || 0) + 1,
 test('tipos com cena 3D', () => {
   assert.deepEqual(BRIDGED, ['emboscada', 'campo-aberto', 'defesa-aldeia', 'assalto-coluna', 'decisiva']);
   assert.ok(isBridged(spec()) && isBridged(spec({ type: 'campo-aberto' })) && isBridged(spec({ type: 'defesa-aldeia' })) && isBridged(spec({ type: 'decisiva' })));
-  for (const t of ['retirada', 'historica']) assert.ok(!isBridged(spec({ type: t })));
+  for (const t of ['retirada', 'historica']) assert.ok(!isBridged(spec({ type: t })));   // historica sem capítulo
   assert.ok(!isBridged(null));
 });
 
@@ -125,4 +125,28 @@ test('decisiva: linha de campo aberto, maior e mais longe (~55 m), com o pretor 
   assert.equal(new Set(p.enemies.slice(1).map(e => Math.round(e.along / 2.2))).size, 3);   // três fileiras de até 10
   assert.deepEqual(p.carts, []);
   assert.deepEqual(spawnPlan(spec({ type: 'decisiva', enemies: { legio: 23, velites: 7, centurion: true } })), spawnPlan(spec({ type: 'decisiva', enemies: { legio: 23, velites: 7, centurion: true } })));
+});
+
+// Fix wave (revisão final): episódios históricos com cena 3D e bónus de força aplicado em campo.
+import { forceMultipliers, STORY_CHAPTERS, storyTally } from '../src/campaign/bridge.js';
+test('isBridged: historica só com um capítulo da história (cativos, acampamento)', () => {
+  assert.deepEqual(STORY_CHAPTERS, ['cativos', 'acampamento']);
+  assert.ok(isBridged(spec({ type: 'historica', chapter: 'cativos' })));
+  assert.ok(isBridged(spec({ type: 'historica', chapter: 'acampamento' })));
+  assert.ok(!isBridged(spec({ type: 'historica' })) && !isBridged(spec({ type: 'historica', chapter: 'prologo' })));
+});
+test('forceMultipliers: 1 sem bónus; cresce com o excedente e satura em 1.5', () => {
+  assert.deepEqual(forceMultipliers(spec()), { allyMult: 1, enemyMult: 1 });
+  assert.deepEqual(forceMultipliers({}), { allyMult: 1, enemyMult: 1 });
+  assert.deepEqual(forceMultipliers(spec({ bonus: { allies: NaN, enemies: -4 } })), { allyMult: 1, enemyMult: 1 });
+  const m = forceMultipliers(spec({ bonus: { allies: 15, enemies: 12 } }));
+  assert.ok(Math.abs(m.allyMult - 1.3) < 1e-9 && Math.abs(m.enemyMult - 1.2) < 1e-9);
+  assert.deepEqual(forceMultipliers(spec({ bonus: { allies: 25, enemies: 30 } })), { allyMult: 1.5, enemyMult: 1.5 });
+  assert.deepEqual(forceMultipliers(spec({ bonus: { allies: 500, enemies: 500 } })), { allyMult: 1.5, enemyMult: 1.5 });
+});
+test('storyTally: o fim do capítulo é vitória; baixas limitadas aos homens que o bando levou', () => {
+  assert.deepEqual(storyTally({ how: 'won', alliesDead: 1, enemiesDead: 7, cap: 8 }), { won: true, retreated: false, alliesLost: 1, enemiesKilled: 7 });
+  assert.deepEqual(storyTally({ how: 'won', alliesDead: 5, enemiesDead: 3, cap: 2 }), { won: true, retreated: false, alliesLost: 2, enemiesKilled: 3 });
+  assert.deepEqual(storyTally({ how: 'dead', alliesDead: 1, enemiesDead: 2, cap: 8 }), { won: false, retreated: false, alliesLost: 2, enemiesKilled: 2 });
+  assert.deepEqual(storyTally({ how: 'abandon', alliesDead: 0, enemiesDead: 0, cap: 0 }), { won: false, retreated: false, alliesLost: 0, enemiesKilled: 0 });
 });

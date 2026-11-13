@@ -94,3 +94,14 @@ test('deserialize: praetor.rest, quando existe, é um número entre 0 e 365', ()
   for (const ok of [0, 6, 365]) assert.ok(deserialize(base(ok)), String(ok));
   for (const bad of [-1, 366, 'x', null, 1e999]) assert.equal(deserialize(base(bad)), null, String(bad));
 });
+
+test('deserialize: posts (postos atacados) e praetor.men validados', () => {
+  const base = () => JSON.parse(serialize(newCampaign(3)));
+  assert.ok(deserialize(JSON.stringify({ ...base(), posts: {} })));
+  assert.ok(deserialize(JSON.stringify({ ...base(), posts: { p1: { taken: true }, p2: { taken: false } } })));
+  for (const bad of [{ posts: [] }, { posts: null }, { posts: { p1: true } }, { posts: { p1: { taken: 'sim' } } }, { posts: { p1: {} } }])
+    assert.equal(deserialize(JSON.stringify({ ...base(), ...bad })), null, JSON.stringify(bad));
+  const pr = men => { const o = base(); o.praetor = { id: 'vetilio', x: 1, y: 2, men, speed: 22, traits: {} }; return JSON.stringify(o); };
+  assert.ok(deserialize(pr(10)));
+  for (const bad of [-1, 'x', null]) assert.equal(deserialize(pr(bad)), null, String(bad));
+});

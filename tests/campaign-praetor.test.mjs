@@ -22,7 +22,7 @@ const rng = makeRng(1);
 test('constants and Vetilio data', () => {
   assert.equal(SIGHT, 140); assert.equal(FINAL_CONVERGENCE, 20);
   assert.deepEqual(PRAETORS.vetilio, { id: 'vetilio', name: 'Caio Vetílio', men: 60, speed: 22,
-    traits: { pursuit: .7, scorch: .5 }, chronicleId: 'vetilio' });
+    traits: { pursuit: .6, scorch: .5 }, chronicleId: 'vetilio' });
 });
 test('pursuit 1 within SIGHT approaches the party by speed', () => {
   const s = withTraits(mkState(), 1);
@@ -89,7 +89,7 @@ test('makePraetor: different seeds differ, traits in [0,1], starts at farthest p
   const d = q => Math.hypot(q.x - world.start.x, q.y - world.start.y);
   const far = Math.max(...postos.map(d));
   assert.equal(d(a), far);
-  assert.equal(a.id, 'vetilio'); assert.equal(PRAETORS.vetilio.traits.pursuit, .7);
+  assert.equal(a.id, 'vetilio'); assert.equal(PRAETORS.vetilio.traits.pursuit, .6);
 });
 
 test('o pretor não marcha antes de MARCH_FROM (salvo na convergência final)', () => {
@@ -114,4 +114,39 @@ test('depois de queimar fica BURN_REST dias parado; a convergência final ignora
   const t = withTraits(mkState({ day: YEAR_DAYS - FINAL_CONVERGENCE, party: { x: 900, y: 0 } }), 0);
   t.praetor.rest = 5; praetorStep(t, rng);
   assert.ok(t.praetor.x > 0);
+});
+
+// Fix wave: o feitio do pretor conta. Perseguir é uma probabilidade; scorch decide o descanso e o alvo.
+import { burnRest } from '../src/campaign/praetor.js';
+import { newCampaign } from '../src/campaign/state.js';
+import { stepDay } from '../src/campaign/simulation.js';
+const fixed = v => ({ ...makeRng(1), chance: () => v });
+test('perseguir: rng.chance(traits.pursuit) decide, a cada dia', () => {
+  const yes = withTraits(mkState(), .5); praetorStep(yes, fixed(true));
+  assert.ok(Math.abs(yes.praetor.x - 30) < 1e-9);   // atrás do bando
+  const no = withTraits(mkState(), .5); praetorStep(no, fixed(false));
+  assert.ok(no.praetor.x === 0 && no.praetor.y !== 0);   // para uma aldeia
+});
+test('burnRest: round(BURN_REST * (1.5 - scorch)) entre 4 e 18', () => {
+  assert.equal(burnRest(.5), 12); assert.equal(burnRest(1), 6); assert.equal(burnRest(0), 18); assert.equal(burnRest(.2), 16);
+  assert.equal(burnRest(5), 4); assert.equal(burnRest(-5), 18);
+  const s = withTraits(mkState(), 0); s.praetor.traits.scorch = .9; s.praetor.y = 280;
+  praetorStep(s, rng); assert.equal(s.praetor.rest, burnRest(.9));
+});
+test('alvo: scorch >= .5 a aldeia mais perto dele; < .5 a aldeia mais perto do bando', () => {
+  const mk = scorch => { const s = withTraits(mkState({ party: { x: 0, y: -450 } }), 0); s.praetor.traits.scorch = scorch; return s; };
+  const hot = mk(.8); praetorStep(hot, rng); assert.ok(hot.praetor.y > 0);    // a1, a 300 dele
+  const cold = mk(.2); praetorStep(cold, rng); assert.ok(cold.praetor.y < 0);  // a2, ao pé do bando
+});
+test('dois pretores com feitios diferentes fazem anos diferentes no mesmo mapa', () => {
+  const run = traits => {
+    const s = newCampaign(11); s.praetor = { ...makePraetor('vetilio', makeRng(1), s.world), traits };
+    s.party = { x: s.world.w / 2, y: s.world.h / 2 };
+    const trace = [];
+    for (let d = 0; d < 45; d++) { stepDay(s, { kind: 'esconder' }, makeRng(1000 + d)); trace.push(`${Math.round(s.praetor.x)},${Math.round(s.praetor.y)}`); s.cooldown = 99; }
+    return { trace, burnt: Object.keys(s.villages).filter(k => s.villages[k].burnt).sort() };
+  };
+  const a = run({ pursuit: .9, scorch: .8 }), b = run({ pursuit: .2, scorch: .2 });
+  assert.notDeepEqual(a.trace, b.trace);
+  assert.notDeepEqual(a.burnt, b.burnt);
 });

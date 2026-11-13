@@ -21,7 +21,7 @@ import { JAVELINS, throwPower, allyThrows, veliteState } from './missiles.js';
 import { haltLayout, isFighter, companionsFrom, canLeave, alertRadius, REINFORCE_AFTER, RELIEF, CUT_TIME, FREE_TO_LEAVE } from './captives.js';
 import { installHook } from './hook.js';
 import { createCampaignUI } from './campaign/ui.js';
-import { spawnPlan, tallyResult, isBridged } from './campaign/bridge.js';
+import { spawnPlan, tallyResult, isBridged, isStory, storyTally, forceMultipliers } from './campaign/bridge.js';
 import { YEAR_DAYS } from './campaign/clock.js';
 import { campStart, campGarrison, campPhase, CAMP_MISSIONS, TENTS_TO_BURN, RELIEF_GUARD } from './camp.js';
 
@@ -844,7 +844,7 @@ function updateFlag() {
 }
 let mission = 0, tentsBurnt = 0, missionMsgT = 0, alarm = false;
 let riders = [];
-let campBattle = null;   // campanha: { spec, plan, prevChapter, result, how } enquanto dura uma batalha vinda do mapa
+let campBattle = null;   // campanha: { spec, plan, prevChapter, result, how, story } enquanto dura uma batalha vinda do mapa (story: um capítulo da história)
 let chapter = 'prologo', civs = [], betrayed = false, betrayT = 0, envoy = null, elder = null;   // 'prologo' = Galba's massacre (150 BC), 'emboscada' = the ambush campaign
 Object.defineProperty(P, 'st', { get() { return P.f.stamina; }, set(v) { P.f.stamina = v; }, enumerable: false });
 Object.defineProperty(P, 'block', { get() { return P.f.blocking != null; }, enumerable: false });
@@ -905,7 +905,7 @@ function resetWorld() {
     kills: 0, shots: 0, hits: 0, heads: 0, time: 0, swing: 0, throwT: 0, hurtT: 0 });
   mission = 0; tentsBurnt = 0; alarm = false;
   P.unarmed = chapter === 'prologo';
-  if (campBattle) { resetCampaignBattle(); setObjective(); return; }
+  if (campBattle && !campBattle.story) { resetCampaignBattle(); setObjective(); return; }
   if (chapter === 'prologo') { resetPrologue(); setObjective(); return; }
   if (chapter === 'cativos') { resetCativos(); setObjective(); return; }
   if (chapter === 'acampamento') { resetCamp(); setObjective(); return; }
@@ -947,11 +947,14 @@ function resetCampaignBattle() {
     addPickup('dardos', AMBUSH.x + 2.5, AMBUSH.z + 1.5); addPickup('pedras', AMBUSH.x + 3, AMBUSH.z - 1.5); addPickup('odre', AMBUSH.x + .5, AMBUSH.z + 3);
   }
   for (let i = 0; i < plan.allies; i++) spawnAlly(i);   // os homens que levas, em vez dos companheiros fixos
+  const { allyMult, enemyMult } = forceMultipliers(spec);   // o excedente que não cabe em figuras pesa nas que estão em campo
+  for (const a of allies) { a.hp *= allyMult; a.dmgMul = allyMult; }
+  for (const e of enemies) { e.hp *= enemyMult; e.maxhp = e.hp; e.dmg *= enemyMult; }
   for (const x of [...enemies, ...allies]) { resolve(x.pos, .4); x.pos.y = heightAt(x.pos.x, x.pos.z); }   // ninguém nasce dentro de uma árvore
   campBattle.retreat = spec.retreat?.possible ? retreatEdge() : null;
 }
 /* Retirada (só com uma serra perto no mapa): a orla fica do lado oposto à força romana, a 50–70 m, num sítio a que se
-   chegue a pé: de várias direcções afastadas dos romanos, fica a primeira cujo caminho a direito não sobe a pique. */
+   chegue a pé: de várias direções afastadas dos romanos, fica a primeira cujo caminho a direito não sobe a pique. */
 const RETREAT_D = [70, 60, 50], RETREAT_R = 9, RETREAT_BEARINGS = [0, .4, -.4, .8, -.8, 1.2, -1.2, 1.57, -1.57];
 const RETREAT_GRADE = .8, RETREAT_RISE = 12;   // o jogador pára a subir acima de 1.6 m por metro; aqui fica-se bem abaixo
 const COMPASS_PT = ['norte', 'nordeste', 'este', 'sudeste', 'sul', 'sudoeste', 'oeste', 'noroeste'];
@@ -1053,7 +1056,7 @@ const CAMP_OPENING = {
   decisiva: ['Batalha decisiva', 'O pretor está à frente da linha, com o grosso do exército. Z segue-me · X bandeira · T ao ataque.'],
 };
 function checkCampaignBattle(dt = 0) {
-  if (!campBattle || campBattle.result) return;
+  if (!campBattle || campBattle.result || campBattle.story) return;   // um capítulo da história acaba quando o capítulo acaba
   setObjective();
   updateCarts(dt);
   if (carts.length && carts.every(c => c.gone) && enemies.some(e => !e.dead) && state === 'play') {   // a coluna inteira fugiu com a escolta viva
@@ -1083,29 +1086,41 @@ function checkCampaignBattle(dt = 0) {
 function endCampaignBattle(how) {
   if (!campBattle || campBattle.result) return;
   campBattle.how = how;
+  if (campBattle.story) { campBattle.result = storyTally({ how, alliesDead: allies.filter(a => a.dead).length, enemiesDead: enemies.filter(e => e.dead).length, cap: campBattle.spec.allies }); return; }
   campBattle.result = tallyResult({ allies: allies.length, alliesDead: allies.filter(a => a.dead).length, playerDead: how === 'dead', abandoned: how === 'abandon', escaped: how === 'escaped', retreated: how === 'retreat',
     carts: carts.length ? { captured: carts.filter(c => !c.gone).length, total: carts.length } : null,
     enemies: enemies.length, enemiesDead: enemies.filter(e => e.dead).length });
 }
-/** Arranca a batalha 3D de um encontro do mapa (tipos em bridge.BRIDGED); os outros tipos → false (fica o modal). */
+/** Arranca a batalha 3D de um encontro do mapa (bridge.isBridged); sem cena → false. Um episódio 'historica' corre o
+    capítulo da história com esse nome, tal como o menu o arranca, mas sem o ecrã de fim nem «CONTINUAR». */
 function startCampaignBattle(spec) {
   if (!isBridged(spec) || campBattle) return false;
-  campBattle = { spec, plan: spawnPlan(spec), prevChapter: chapter, result: null, how: null };
-  chapter = 'emboscada';   // o resto do jogo trata a batalha como o capítulo da emboscada (sem sinal de fumo, sem prólogo)
+  const story = isStory(spec);
+  campBattle = { spec, plan: story ? null : spawnPlan(spec), prevChapter: chapter, result: null, how: null, story };
+  if (story) setChapter(spec.chapter);
+  else chapter = 'emboscada';   // o resto do jogo trata a batalha como o capítulo da emboscada (sem sinal de fumo, sem prólogo)
   campUI.suspend();
   startGame(false);
+  return true;
+}
+const STORY_DONE = { cativos: 'Os cativos estão livres.', acampamento: 'O posto ardeu: mantimentos queimados, centurião morto.' };
+/** Fim de um capítulo da história corrido na campanha: conta como vitória e volta ao mapa (sem ecrã de fim). → true se era o caso. */
+function storyWon() {
+  if (!campBattle?.story) return false;
+  endCampaignBattle('won');
+  $('hud').classList.remove('intro'); state = 'won'; SFX.horn(); endT = .05; endArgs = null; nextChapter = null;
   return true;
 }
 /** Entrega o resultado ao fluxo e volta ao ecrã do mapa. */
 function backToMap() {
   const cb = campBattle; if (!cb || !cb.result) return;
-  campBattle = null; chapter = cb.prevChapter; endT = 0; endArgs = null; resumePending = false;
+  campBattle = null; if (cb.story) setChapter(cb.prevChapter); else chapter = cb.prevChapter; endT = 0; endArgs = null; resumePending = false;
   try { document.exitPointerLock && document.exitPointerLock(); } catch (_) {}
   releaseAll(); state = 'map';
   for (const id of ['hud', 'end', 'pause']) $(id).classList.add('hidden');
   $('hud').classList.remove('intro'); $('msg').style.opacity = 0; missionMsgT = 0; CLOG.length = 0; drawClog();   // nada desta batalha fica no ecrã da seguinte
   const r = cb.result;
-  campUI.battleDone(r, cb.how === 'won' ? `${r.enemiesKilled} romanos ficaram no campo` + (r.cartsTotal ? `; tomaste ${r.cartsCaptured} de ${r.cartsTotal} carros.` : '.') : cb.how === 'escaped' ? 'A coluna escapou-se pela estrada.' : cb.how === 'dead' ? 'Viriato caiu ferido; os homens tiraram-no do campo.' : cb.how === 'burnt' ? 'Os romanos tomaram o centro da aldeia.' : cb.how === 'retreat' ? 'O bando recuou do campo.' : 'Abandonaste a batalha.');
+  campUI.battleDone(r, cb.how === 'won' && cb.story ? STORY_DONE[cb.spec.chapter] : cb.how === 'won' ? `${r.enemiesKilled} romanos ficaram no campo` + (r.cartsTotal ? `; tomaste ${r.cartsCaptured} de ${r.cartsTotal} carros.` : '.') : cb.how === 'escaped' ? 'A coluna escapou-se pela estrada.' : cb.how === 'dead' ? 'Viriato caiu ferido; os homens tiraram-no do campo.' : cb.how === 'burnt' ? 'Os romanos tomaram o centro da aldeia.' : cb.how === 'retreat' ? 'O bando recuou do campo.' : 'Abandonaste a batalha.');
 }
 
 function spawn(kind, x, z, group) {
@@ -1414,7 +1429,8 @@ function updateCampOutro(dt) {
   if (outroSaid < 2 && T > 5.2) { outroSaid = 2; showMsg('', 'Sem mantimentos e sem centurião, a guarnição não segura o vale.', 3.4); }
   if (outroSaid < 3 && T > 9.4) { outroSaid = 3; showMsg('', 'Viriato levou os montes. Roma ainda não sabe o nome dele.', 3.2); }
   if (T >= CAMP_OUT) {
-    campOut = null; $('hud').classList.remove('intro'); state = 'won'; SFX.horn(); endT = .05; nextChapter = null;
+    campOut = null; if (storyWon()) return;
+    $('hud').classList.remove('intro'); state = 'won'; SFX.horn(); endT = .05; nextChapter = null;
     endArgs = ['III · 147 A.C.', 'Os montes são lusitanos', 'A patrulha caiu, os mantimentos arderam e o centurião está morto.'];
   }
 }
@@ -1586,7 +1602,8 @@ function updateCatOutro(dt) {
   if (outroSaid < 2 && T > 4.6) { outroSaid = 2; showMsg('', `${halt.freed} de 12 saíram da clareira. ${freedMen} ${freedMen === 1 ? 'leva' : 'levam'} armas romanas.`, 3.4); }
   if (outroSaid < 3 && T > 8.6) { outroSaid = 3; showMsg('', 'Nos montes, outros fugitivos juntaram-se a eles.', 3); }
   if (T >= CAT_OUT) {
-    companions = companionsFrom(men); catOut = null;
+    catOut = null; if (storyWon()) return;   // na campanha os companheiros da história não mudam
+    companions = companionsFrom(men);
     $('hud').classList.remove('intro'); state = 'won'; SFX.horn(); endT = .05; nextChapter = 'emboscada';
     endArgs = ['I · 149 A.C.', 'Os cativos estão livres', `${halt.freed} de 12 libertados. Viriato segue para os montes com ${men} ${men === 1 ? 'homem' : 'homens'}.`];
   }
@@ -1693,7 +1710,7 @@ const SIGNAL = new THREE.Group(); SIGNAL.visible = false; scene.add(SIGNAL);
 }
 function updateSignal(dt) {
   const rt = campBattle?.retreat?.on && campBattle.retreat;   // na retirada da campanha, o fumo marca a orla
-  SIGNAL.visible = !!rt || (!campBattle && (chapter === 'prologo' || chapter === 'cativos') && state !== 'menu' && (state !== 'outro' || chapter === 'cativos'));
+  SIGNAL.visible = !!rt || ((!campBattle || campBattle.story) && (chapter === 'prologo' || chapter === 'cativos') && state !== 'menu' && (state !== 'outro' || chapter === 'cativos'));
   if (!SIGNAL.visible) return;
   const sg = rt ? rt.at : chapter === 'cativos' ? WOODS : ESCAPE; SIGNAL.position.set(sg.x, heightAt(sg.x, sg.z), sg.z);
   SIGNAL.children[0].rotation.y += dt * .25; SIGNAL.children[1].intensity = 2 + Math.sin(performance.now() * .013) * .5;
@@ -1738,12 +1755,14 @@ const MISSIONS = [
   { m: CAMP_MISSIONS[1].m, t: () => CAMP_MISSIONS[1].t() },
 ];
 const patrolLeft = () => enemies.filter(e => e.group === 'patrol' && !e.dead).length;
-function setObjective() { $('objh').classList.toggle('hidden', !campBattle?.retreat);
-  if (campBattle) { $('objm').textContent = 'CAMPANHA · ' + CAMP_OPENING[campBattle.plan.type][0].toUpperCase(); const left = enemies.filter(e => !e.dead).length, rt = campBattle.retreat;
+const STORY_LABEL = { cativos: 'OS CATIVOS', acampamento: 'O ACAMPAMENTO' };
+function setObjective() { chapterObjective(); if (campBattle?.story) $('objm').textContent = 'CAMPANHA · ' + STORY_LABEL[chapter]; }
+function chapterObjective() { $('objh').classList.toggle('hidden', !campBattle?.retreat);
+  if (campBattle && !campBattle.story) { $('objm').textContent = 'CAMPANHA · ' + CAMP_OPENING[campBattle.plan.type][0].toUpperCase(); const left = enemies.filter(e => !e.dead).length, rt = campBattle.retreat;
     if (rt) $('objh').textContent = rt.on ? 'G desfaz a retirada.' : `Retirada possível: orla a ${rt.dir} (G).`;
     if (rt && rt.on) { $('objt').textContent = `Retirada — chega à orla a ${rt.dir}`; return; }
     if (campBattle.plan.type === 'decisiva') { $('objt').textContent = `Decisiva — ${campBattle.spec.commander || 'o pretor'} (${left} romanos)`; return; }
-    $('objt').textContent = carts.length ? `Assalta a coluna — carros ${carts.filter(c => !c.gone).length}/${carts.length}` : campBattle.plan.type === 'defesa-aldeia' ? `Defende a aldeia — ${left} romanos` + (campBattle.holdT > 0 ? ' · os romanos tomam o centro' : '') : `Derrota os romanos (${left} restantes)`; return; }
+    $('objt').textContent = carts.length ? `Assalta a coluna — carros na estrada: ${carts.filter(c => !c.gone).length} de ${carts.length}` : campBattle.plan.type === 'defesa-aldeia' ? `Defende a aldeia — ${left} romanos` + (campBattle.holdT > 0 ? ' · os romanos tomam o centro' : '') : `Derrota os romanos (${left} restantes)`; return; }
   if (chapter === 'cativos' && halt) { const left = halt.groups.filter(g => g.bound).length, t = halt.reinfT; $('objm').textContent = 'I · OS CATIVOS';
     $('objt').textContent = (left ? `Liberta os cativos (${3 - left}/3 grupos)` + (canLeave(halt.freed) ? ' ou leva-os para o fumo na floresta' : '') : 'Leva-os para o fumo na floresta') + (t > 0 ? ` · reforços romanos em ${Math.ceil(t)} s` : ''); return; }
   if (chapter === 'prologo') { $('objm').textContent = 'PRÓLOGO · A TRAIÇÃO DE GALBA'; $('objt').textContent = `Foge pela brecha até ao fumo na floresta (${Math.round(Math.hypot(P.pos.x - ESCAPE.x, P.pos.z - ESCAPE.z))} m)`; return; } $('objm').textContent = MISSIONS[mission].m; $('objt').textContent = MISSIONS[mission].t(); }
@@ -1754,7 +1773,7 @@ function feed(text) {
   while ($('feed').children.length > 5) $('feed').lastChild.remove();
 }
 function checkMission() {
-  if (campBattle) { checkCampaignBattle(); return; }
+  if (campBattle && !campBattle.story) { checkCampaignBattle(); return; }
   if (chapter === 'prologo' || chapter === 'cativos') return;
   if (chapter !== 'acampamento') {
     if (mission === 0 && patrolLeft() === 0 && state === 'play') startLoot();   // the ambush is the whole chapter
@@ -1959,7 +1978,7 @@ function allySwing(a, ev) {
     if (!r.hit) continue;
     a.swingHits.add(e);
     const d = V(e.pos.x - a.pos.x, 0, e.pos.z - a.pos.z).normalize(), ef = V(Math.sin(e.yaw), 0, Math.cos(e.yaw));
-    const res = C.resolveHit(e.f, { dir: ev.dir, power: ev.power * glance(r.p), fromAngle: deg(Math.acos(clamp(ef.dot(d.clone().negate()), -1, 1))), baseDamage: 26 });
+    const res = C.resolveHit(e.f, { dir: ev.dir, power: ev.power * glance(r.p), fromAngle: deg(Math.acos(clamp(ef.dot(d.clone().negate()), -1, 1))), baseDamage: 26 * (a.dmgMul || 1) });
     const at = V(r.at.x, r.at.y, r.at.z);
     if (res.result === 'parried' || res.result === 'blocked') { C.stopBlade(a.f); if (res.attackerStagger) C.stagger(a.f, res.attackerStagger); SFX.clank(spatial(a.pos)); burst('spark', at, 8); return; }
     damageEnemy(e, res.damage, false, at, null, true); knock(e, d, 1);
@@ -2843,7 +2862,7 @@ function startGame(intro = false) {
     introVeil.style.display = 'block'; introVeil.style.opacity = 1;
   }
   else if (chapter === 'prologo') { setRing(RING_R1); for (const e of enemies) if (e.group === 'cordon') { e.pos.set(e.home.x, heightAt(e.home.x, e.home.z), e.home.z); e.m.root.position.copy(e.pos); } betray(); }
-  else showMsg(...(campBattle ? CAMP_OPENING[campBattle.plan.type].map(t => campBattle.spec.commander ? t.replace('O pretor', campBattle.spec.commander) : t) : OPENING[chapter] || OPENING.emboscada), 5);
+  else showMsg(...(campBattle && !campBattle.story ? CAMP_OPENING[campBattle.plan.type].map(t => campBattle.spec.commander ? t.replace('O pretor', campBattle.spec.commander) : t) : OPENING[chapter] || OPENING.emboscada), 5);
   lock();
 }
 const INTRO_P = 17;
@@ -2980,10 +2999,21 @@ $('sens2').addEventListener('input', e => { setSens(+e.target.value); $('sens').
    ========================================================= */
 /* Campanha: ecrã do mapa (src/campaign/ui.js). Estado 'map': o 3D não corre nem pede o rato. */
 const campUI = createCampaignUI({ document, window, storage, startBattle: spec => startCampaignBattle(spec), onClose: () => { state = 'menu'; $('menu').classList.remove('hidden'); refreshCampMenu(); } });
-function refreshCampMenu() { $('camp-cont').classList.toggle('hidden', !campUI.hasSave()); }
+function refreshCampMenu() { const sv = campUI.saveState(); $('camp-cont').classList.toggle('hidden', !sv); $('camp-cont').textContent = sv === 'fim' ? 'Ver resultado' : 'Continuar campanha'; $('camp-confirm').classList.add('hidden'); }
 function openCampaign(f) { try { document.exitPointerLock && document.exitPointerLock(); } catch (_) {} releaseAll(); if (!f()) { refreshCampMenu(); return; } state = 'map'; for (const id of ['menu', 'end', 'pause', 'hud']) $(id).classList.add('hidden'); }
 function startCampaign(seed) { openCampaign(() => !!campUI.fresh(seed)); }
-$('camp-new').addEventListener('click', () => startCampaign());
+$('camp-new').addEventListener('click', () => {   // uma campanha a meio não se apaga sem perguntar
+  if (campUI.saveState() !== 'meio') { startCampaign(); return; }
+  $('camp-confirm').classList.remove('hidden'); $('camp-confirm-no').focus();
+});
+$('camp-confirm-yes').addEventListener('click', () => { $('camp-confirm').classList.add('hidden'); startCampaign(); });
+$('camp-confirm-no').addEventListener('click', () => { $('camp-confirm').classList.add('hidden'); $('camp-new').focus(); });
+$('camp-confirm').addEventListener('keydown', e => {
+  if (e.key === 'Escape' || e.code === 'Escape') { e.preventDefault(); $('camp-confirm-no').click(); return; }
+  if (e.key !== 'Tab') return;   // o foco fica nos dois botões
+  const a = $('camp-confirm-yes'), b = $('camp-confirm-no'), cur = document.activeElement;
+  if (e.shiftKey ? cur === a : cur === b) { e.preventDefault(); (e.shiftKey ? b : a).focus(); }
+});
 $('camp-cont').addEventListener('click', () => openCampaign(() => campUI.resume()));
 refreshCampMenu();
 let menuT = 0;

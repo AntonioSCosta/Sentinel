@@ -2,15 +2,38 @@
 import { makeRng } from './rng.js';
 import { ALLY_CAP, ENEMY_CAP } from './battles.js';
 
-/** Tipos de batalha que já têm cena 3D; os outros continuam no modal provisório. */
+/** Tipos de batalha gerados pela ponte (spawnPlan). */
 export const BRIDGED = ['emboscada', 'campo-aberto', 'defesa-aldeia', 'assalto-coluna', 'decisiva'];
-export const isBridged = spec => !!spec && BRIDGED.includes(spec.type);
+/** Capítulos da história que um episódio 'historica' corre tal como estão (cenas montadas, com os seus companheiros). */
+export const STORY_CHAPTERS = ['cativos', 'acampamento'];
+export const isStory = spec => !!spec && spec.type === 'historica' && STORY_CHAPTERS.includes(spec.chapter);
+/** Tem cena 3D: um tipo gerado, ou um episódio histórico com capítulo. */
+export const isBridged = spec => !!spec && (BRIDGED.includes(spec.type) || isStory(spec));
 
 const COL_GAP = 3.2, FILE = 1.1;          // emboscada: coluna em duas filas na estrada, como a patrulha do capítulo
 const CART_GAP = 4.6;                    // assalto a coluna: metros a mais entre as filas onde vai um carro
 const RANK_W = 10, RANK_GAP = 2.2, LINE_GAP = 1.9;   // campo aberto: fileiras de até 10, frente a frente
 
 const count = v => Number.isFinite(v) ? Math.max(0, Math.floor(v)) : 0;
+
+/**
+ * O excedente que não cabe em figuras (spec.bonus) pesa como vida e dano das que estão em campo:
+ * aliados 1 + min(.5, bónus/50), romanos 1 + min(.5, bónus/60).
+ */
+export function forceMultipliers(spec) {
+  const a = count(spec?.bonus?.allies), e = count(spec?.bonus?.enemies);
+  return { allyMult: 1 + Math.min(.5, a / 50), enemyMult: 1 + Math.min(.5, e / 60) };
+}
+
+/**
+ * Resultado de um episódio histórico (capítulo da história corrido na campanha): chegar ao fim do capítulo é vitória,
+ * seja quantos romanos forem mortos. As baixas são as dos companheiros do capítulo, mais Viriato se caiu ou abandonou,
+ * limitadas a `cap` (os homens que o bando levou para a batalha).
+ */
+export function storyTally({ how, alliesDead = 0, enemiesDead = 0, cap = 0 }) {
+  const out = how === 'dead' || how === 'abandon';
+  return { won: how === 'won', retreated: false, alliesLost: Math.min(count(cap), count(alliesDead) + (out ? 1 : 0)), enemiesKilled: count(enemiesDead) };
+}
 
 /**
  * Quem entra em campo e onde, em coordenadas locais da força inimiga: `along` = para a frente da marcha/da linha

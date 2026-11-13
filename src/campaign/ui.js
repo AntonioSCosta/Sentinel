@@ -3,7 +3,9 @@ import { makeView, drawMap, hitTest, toWorld } from './map-view.js';
 import { createFlow, loadFlow, clearSave, WIN_MEN, WIN_FAME } from './flow.js';
 import { dateLabel, season, daysLeft, YEAR_DAYS } from './clock.js';
 import { entryFor, CHRONICLE, SOURCE_LABELS, isUnlocked } from './chronicle.js';
-import { isBridged } from './bridge.js';
+import { isBridged, isStory } from './bridge.js';
+import { START } from './state.js';
+import { MARCH_SPEED } from './simulation.js';
 
 const BAR_TOP = 52, BAR_BOTTOM = 64; // alturas das barras HTML (px) que o canvas deixa livres
 const LOG_LINES = 6;
@@ -12,6 +14,24 @@ const BATTLE_NAMES = {
   'assalto-coluna': 'Assalto a um comboio', retirada: 'Retirada', decisiva: 'A batalha decisiva', historica: 'Um episódio da guerra',
 };
 const KIND_NAMES = { aldeia: 'Aldeia', castro: 'Castro', posto: 'Posto romano', serra: 'Serra' };
+/** Episódios históricos: título e uma linha sóbria; o que é invenção diz-se (ver a Crónica). */
+const EPISODES = {
+  cativos: ['Os Cativos', 'Cena inspirada nas consequências da traição de Galba (ver a Crónica): uma coluna romana leva cativos para serem vendidos e parou numa clareira. Viriato vai com dois homens.'],
+  acampamento: ['O acampamento', 'Invenção do jogo: o posto guarda os mantimentos da guarnição. Entra sem dar o alarme, queima os três depósitos e derruba o centurião.'],
+};
+const REACH = 20;   // a esta distância (no mapa) já se está no lugar
+/** Estado de um lugar, para o painel e a lista: «queimada», «tomado», «já atacado» ou nada. */
+function placeState(s, state) {
+  if (s.kind === 'aldeia' && state.villages?.[s.id]?.burnt) return 'queimada';
+  if (s.kind === 'posto' && state.posts && s.id in state.posts) return state.posts[s.id].taken ? 'tomado' : 'já atacado';
+  return '';
+}
+/** «Aldeia do Vale — aldeia, 3 dias»: dias de marcha do bando até lá. */
+export function placeLabel(s, state) {
+  const d = Math.hypot(s.x - state.party.x, s.y - state.party.y), days = d <= REACH ? 0 : Math.ceil((d - REACH) / MARCH_SPEED) || 1;
+  const st = placeState(s, state);
+  return `${s.name} — ${s.kind}${st ? ' ' + st : ''}, ${days ? `${days} ${days === 1 ? 'dia' : 'dias'}` : 'aqui'}`;
+}
 
 /** Uma frase curta (pt-PT) por evento devolvido por flow.order()/finishBattle(). */
 export function eventText(ev, state) {
@@ -19,6 +39,8 @@ export function eventText(ev, state) {
   switch (ev.type) {
     case 'recrutou': return ev.men ? `${name(ev.id)}: ${ev.men} homens juntam-se a ti.` : `${name(ev.id)}: ninguém tem armas para dar.`;
     case 'recrutar-cedo': return `${name(ev.id)}: já recrutaste aqui há pouco.`;
+    case 'sem-armas': return 'Não tens armas para equipar recrutas.';
+    case 'posto-atacado': return `${name(ev.id)}: este posto já foi atacado.`;
     case 'ajuda': return `${name(ev.id)} dá-te ${ev.food} de comida${ev.men ? ` e ${ev.men} homens` : ''}.`;
     case 'ajuda-recusada': return `${name(ev.id)}: ainda não podem dar mais ajuda.`;
     case 'fome': return `Fome no bando: morrem ${ev.mortos}.`;
@@ -70,7 +92,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
       const ul = $('mlog'); ul.textContent = '';
       for (const line of log.slice(-LOG_LINES)) { const li = doc.createElement('li'); li.textContent = line; ul.append(li); }
     }
-    renderBattle(); renderEnd(); renderContext();
+    renderBattle(); renderEnd(); renderContext(); renderPlaces();
     const busy = flow.phase !== 'mapa';
     for (const b of $('map').querySelectorAll('[data-act]')) b.disabled = busy;
   }
@@ -102,10 +124,10 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
       b.setAttribute('aria-label', `${label} — ${s.name}`);
       b.addEventListener('click', () => order(o)); box.append(b);
     };
-    const burnt = flow.state.villages?.[s.id]?.burnt;
-    if (s.kind === 'aldeia') { if (burnt) { const q = doc.createElement('p'); q.textContent = 'Queimada.'; box.append(q); } else add('Recrutar', 'recrutar', { kind: 'recrutar', id: s.id }); }
+    const st = placeState(s, flow.state), note = t => { const q = doc.createElement('p'); q.textContent = t; box.append(q); };
+    if (s.kind === 'aldeia') { if (st) note('Queimada.'); else add('Recrutar', 'recrutar', { kind: 'recrutar', id: s.id }); }
     if (s.kind === 'castro') add('Pedir ajuda', 'pedir-ajuda', { kind: 'pedir-ajuda', id: s.id });
-    if (s.kind === 'posto') add('Atacar', 'atacar', { kind: 'atacar', id: s.id });
+    if (s.kind === 'posto') { if (st) note(st === 'tomado' ? 'Tomado pelo bando.' : 'Já atacado: a guarnição está avisada.'); else add('Atacar', 'atacar', { kind: 'atacar', id: s.id }); }
     add('Marchar para aqui', 'marchar', { kind: 'marchar', to: { x: s.x, y: s.y } });
     const x = doc.createElement('button'); x.type = 'button'; x.textContent = 'Fechar';
     x.addEventListener('click', () => { selected = null; render(); }); box.append(x);
@@ -115,14 +137,14 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const m = $('mbattle'), on = flow.phase === 'batalha';
     m.classList.toggle('hidden', !on);
     if (!on) { delete m.dataset.shown; return; }
-    const b = flow.battle;
-    $('mb-type').textContent = BATTLE_NAMES[b.type] || 'Batalha';
-    const fight = isBridged(b);   // com cena 3D: «Lutar»; os outros tipos ficam com o modal provisório até às suas tarefas
-    $('mb-fight').classList.toggle('hidden', !fight);
-    for (const id of ['mb-win', 'mb-retreat']) $(id).classList.toggle('hidden', fight);
-    if (!m.dataset.shown) { m.dataset.shown = '1'; $(fight ? 'mb-fight' : 'mb-win').focus?.(); }
+    const b = flow.battle, ep = isStory(b) && EPISODES[b.chapter];
+    $('mb-type').textContent = ep ? ep[0] : BATTLE_NAMES[b.type] || 'Batalha';
+    if (!m.dataset.shown) { m.dataset.shown = '1'; $('mb-fight').focus?.(); }
+    if (ep) { $('mb-info').textContent = ep[1]; return; }   // a cena é a do capítulo, com os seus homens: sem contas que não batem certo
     const mine = b.allies + (b.bonus?.allies || 0), theirs = b.enemies.legio + b.enemies.velites + (b.bonus?.enemies || 0) + (b.enemies.centurion && !b.commander ? 1 : 0);
-    $('mb-info').textContent = `${mine} dos teus contra ${theirs} romanos.` + (b.commander ? ` Comanda-os ${b.commander}.` : '');
+    $('mb-info').textContent = `${mine} dos teus contra ${theirs} romanos.` + (b.commander ? ` Comanda-os ${b.commander}.` : '')
+      + (b.bonus?.allies > 0 ? ` Os teus ${b.realMen} homens pesam na linha.` : '')
+      + (b.bonus?.enemies > 0 ? ' Há mais romanos do que os que entram em campo.' : '');
   }
 
   function renderEnd() {
@@ -130,10 +152,11 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     e.classList.toggle('hidden', !on);
     if (!on) { delete e.dataset.shown; return; }
     const s = flow.state, won = s.over === 'vitoria', yearOut = s.day >= YEAR_DAYS, pretor = s.praetor?.name || 'o pretor';
-    $('mend-title').textContent = won || yearOut ? 'Fim do ano de 147 a.C.' : 'O bando desfez-se';
-    $('mend-result').textContent = won ? 'Vitória' : 'Derrota';
     const decisive = won && !!s.decisivaWon;   // a decisiva vencida conta mais que o fim do ano, mesmo no último dia
-    $('mend-text').textContent = won ? (decisive ? `O exército de ${pretor} foi desfeito em campo.` : 'Viriato chegou ao fim do ano com o bando inteiro. Roma não o venceu.')
+    $('mend-title').textContent = decisive && !yearOut ? 'A campanha de 147 a.C.' : won || yearOut ? 'Fim do ano de 147 a.C.' : 'O bando desfez-se';
+    $('mend-result').textContent = won ? 'Vitória' : 'Derrota';
+    $('mend-text').textContent = won ? (decisive ? `O exército de ${pretor} foi desfeito em campo.`
+      : s.men >= START.men ? 'Viriato chegou ao fim do ano com o bando inteiro. Roma não o venceu.' : 'Viriato chegou ao fim do ano. Roma não o venceu.')
       : yearOut ? `O inverno chegou sem ${s.men < WIN_MEN ? (s.fame < WIN_FAME ? 'homens nem fama bastantes' : 'homens bastantes') : 'fama bastante'} para manter a guerra.`
       : s.men <= 0 ? 'Não restam homens para combater.' : 'Sem fama, as aldeias deixaram de dar homens e comida.';
     const vals = { days: Math.min(s.day, YEAR_DAYS), men: s.men, burnt: Object.values(s.villages).filter(v => v.burnt).length, kills: s.kills || 0, battles: s.battles || 0 };
@@ -147,7 +170,34 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (!e.dataset.shown) { e.dataset.shown = '1'; $('mend-new').focus?.(); }
   }
 
-  // --- acções ---
+  // --- lista de lugares (o mapa pelo teclado) ---
+  let placesKey = '';
+  const placesOpen = () => !$('mplaces').classList.contains('hidden');
+  function renderPlaces() {
+    const ul = $('mplaces'), on = placesOpen() && flow.phase === 'mapa';
+    if (!on) { if (placesOpen()) togglePlaces(false); return; }
+    const s = flow.state, k = `${s.day}:${s.party.x}:${s.party.y}:${JSON.stringify(s.posts || {})}:${Object.values(s.villages).filter(v => v.burnt).length}`;
+    if (k === placesKey) return;   // só reconstrói quando algo mudou (não rouba o foco a quem está na lista)
+    placesKey = k;
+    const had = ul.contains(doc.activeElement) ? doc.activeElement.dataset.place : null;
+    ul.textContent = '';
+    const d = x => Math.hypot(x.x - s.party.x, x.y - s.party.y);
+    for (const p of [...s.world.settlements].sort((a, b) => d(a) - d(b))) {
+      const li = doc.createElement('li'), b = doc.createElement('button');
+      b.type = 'button'; b.dataset.place = p.id; b.textContent = placeLabel(p, s);
+      b.addEventListener('click', () => { if (!active || flow.phase !== 'mapa') return; selected = p.id; render(); $('mctx').querySelector('button')?.focus?.(); });
+      li.append(b); ul.append(li);
+    }
+    if (had) ul.querySelector(`[data-place="${had}"]`)?.focus?.();
+  }
+  function togglePlaces(on) {
+    $('mplaces').classList.toggle('hidden', !on);
+    $('m-places').setAttribute('aria-expanded', on ? 'true' : 'false');
+    if (on) { placesKey = ''; renderPlaces(); $('mplaces').querySelector('button')?.focus?.(); }
+  }
+  $('m-places').addEventListener('click', () => { if (active && flow?.phase === 'mapa') togglePlaces(!placesOpen()); });
+
+  // --- ações ---
   function mapClick(e) {
     if (!active || flow.phase !== 'mapa') return;
     const r = $('mapcv').getBoundingClientRect();
@@ -160,17 +210,17 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   $('mapcv').addEventListener('click', mapClick);
   for (const b of $('map').querySelectorAll('[data-order]')) b.addEventListener('click', () => order({ kind: b.dataset.order }));
 
-  /** Termina a batalha pendente com um resultado já pronto (modal provisório e testes). */
+  /** Só para testes (__game): termina a batalha pendente com um resultado já pronto. Nunca é mostrado ao jogador. */
   function simulateBattle(result) {
     if (!flow || flow.phase !== 'batalha') return null;
     const r = flow.finishBattle(result); say(r.events); render(); return r;
   }
-  const placeholder = result => () => { if (flow?.phase === 'batalha' && !isBridged(flow.battle)) simulateBattle(result); };
-  $('mb-win').addEventListener('click', placeholder({ won: true, alliesLost: 1, enemiesKilled: 6 }));
-  $('mb-retreat').addEventListener('click', placeholder({ won: false, retreated: true, alliesLost: 0, enemiesKilled: 0 }));
   $('mb-fight').addEventListener('click', () => {
-    if (!active || flow?.phase !== 'batalha' || !isBridged(flow.battle)) return;
-    startBattle(flow.battle);   // o jogo chama suspend() ao arrancar
+    if (!active || flow?.phase !== 'batalha') return;
+    if (isBridged(flow.battle) && startBattle(flow.battle)) return;   // o jogo chama suspend() ao arrancar
+    // uma batalha sem cena (gravação antiga): o bando evita-a, com o custo de uma retirada
+    log.push('Não há como travar esta batalha; o bando evita-a.'); logDirty = true;
+    simulateBattle({ won: false, retreated: true, alliesLost: 0, enemiesKilled: 0 });
   });
   /** O 3D tomou conta do ecrã: esconde o mapa sem voltar ao menu. */
   function suspend() { active = false; $('map').classList.add('hidden'); }
@@ -243,12 +293,13 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   win.addEventListener('keydown', e => {
     if (!active || e.code !== 'Escape') return;
     if (cronOpen()) { closeChronicle(); return; }   // ESC fecha a Crónica primeiro, sem sair do mapa
+    if (placesOpen()) { togglePlaces(false); $('m-places').focus?.(); return; }   // depois a lista de lugares
     close();
   });
 
   function open(f) {
     flow = f; active = true; selected = null; log.length = 0; logDirty = true;
-    $('mcron').classList.add('hidden'); cronOpener = null;
+    $('mcron').classList.add('hidden'); cronOpener = null; togglePlaces(false);
     log.push(flow.state.day ? 'A marcha continua.' : 'Um ano de guerra começa nos montes. Clica no mapa para marchar.');
     $('map').classList.remove('hidden');
     render();
@@ -263,6 +314,8 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     open, close, render, order, openChronicle, closeChronicle, simulateBattle, suspend, battleDone, select: id => { selected = id; render(); }, view: () => view,
     get flow() { return flow; }, get active() { return active; },
     hasSave: () => !!loadFlow(storage),
+    /** null sem gravação, 'fim' para uma campanha acabada, 'meio' para uma a meio. */
+    saveState: () => { const f = loadFlow(storage); return f ? (f.phase === 'fim' ? 'fim' : 'meio') : null; },
     resume: () => { const f = loadFlow(storage); if (f) open(f); return !!f; },
     fresh: seed => { open(createFlow({ storage, seed })); return flow; },
   };

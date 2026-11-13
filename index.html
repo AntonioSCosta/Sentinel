@@ -37,6 +37,9 @@
   #mcron-list .txt{margin:6px 0 0;font-size:16px;line-height:1.4}#mcron-list .cit{margin:4px 0 0;font-size:14px;color:var(--dim)}
   #mcron-list li.locked h3{color:#8d7f6c}#mcron-list li.locked .lk{margin:4px 0 0;font-size:15px;font-style:italic;color:#8d7f6c}
   #mcron .row{margin-top:12px}
+  #mplaces{position:absolute;left:12px;top:64px;width:min(320px,46vw);max-height:calc(100% - 160px);overflow-y:auto;margin:0;padding:4px;list-style:none;background:rgba(16,13,10,.94);border:1px solid #4a3a2a}
+  #mplaces button{display:block;width:100%;text-align:left;margin:2px 0;padding:7px 10px;font-size:15px;letter-spacing:.02em}
+  #camp-confirm{margin-top:12px;padding:12px 16px;border:1px solid #6a5238;background:rgba(16,13,10,.9)}#camp-confirm p{margin:0 0 8px}
   /* ---------- HUD ---------- */
   #hud{position:fixed;inset:0;pointer-events:none;user-select:none}
   #obj{position:absolute;top:18px;left:22px;max-width:380px;text-shadow:0 1px 3px #000}
@@ -176,6 +179,10 @@
     <button type="button" class="go" id="start" disabled>A CARREGAR…</button>
     <div class="row" style="margin-top:14px"><button type="button" id="camp-new">CAMPANHA — Um Ano de Guerra</button>
       <button type="button" id="camp-cont" class="hidden">Continuar campanha</button></div>
+    <div id="camp-confirm" class="hidden" role="alertdialog" aria-modal="true" aria-labelledby="camp-confirm-t">
+      <p id="camp-confirm-t">Há uma campanha a meio. Começar de novo apaga-a.</p>
+      <div class="row"><button type="button" id="camp-confirm-yes">Começar de novo</button><button type="button" id="camp-confirm-no">Voltar</button></div>
+    </div>
   </div>
 </div>
 
@@ -185,19 +192,21 @@
     <div class="res" role="group" aria-label="Recursos"><b>HOMENS</b><span id="m-men"></span> <b>COMIDA</b><span id="m-food"></span> <b>ARMAS</b><span id="m-arms"></span> <b>FAMA</b><span id="m-fame"></span></div>
     <div class="grow"></div><div style="color:var(--dim)">Dia <span id="m-day"></span> · faltam <span id="m-left"></span></div>
   </div>
-  <canvas id="mapcv" aria-label="Mapa da campanha. Clica num ponto vazio para marchar, ou numa povoação para ver as acções."></canvas>
+  <canvas id="mapcv" aria-label="Mapa da campanha. Clica num ponto vazio para marchar, ou numa povoação para ver as ações. O botão «Lugares» lista as povoações para o teclado."></canvas>
   <ul id="mlog" role="status" aria-live="polite" aria-label="Registo da campanha"></ul>
   <div id="mctx" class="hidden" role="region" aria-label="Povoação"></div>
+  <ul id="mplaces" class="hidden" aria-label="Lugares do mapa"></ul>
   <div id="mbot">
     <button type="button" data-act="acampar" data-order="acampar" id="m-acampar">Acampar</button>
     <button type="button" data-act="esperar" data-order="esperar" id="m-esperar">Esperar na estrada</button>
     <button type="button" data-act="esconder" data-order="esconder" id="m-esconder">Esconder</button>
+    <button type="button" id="m-places" aria-expanded="false" aria-controls="mplaces">Lugares</button>
     <button type="button" id="m-cronica" aria-haspopup="dialog">Crónica</button>
-    <span class="hint">Clica no mapa para marchar um dia nessa direcção · ESC: menu</span>
+    <span class="hint">Clica no mapa para marchar um dia nessa direção · ESC: menu</span>
   </div>
   <div id="mbattle" class="hidden" role="dialog" aria-modal="true" aria-labelledby="mb-type"><div class="card">
     <p class="kicker">BATALHA</p><h2 id="mb-type"></h2><p class="brief" id="mb-info"></p>
-    <div class="row"><button type="button" class="go hidden" id="mb-fight">Lutar</button><button type="button" class="go" id="mb-win">Vencer (simular)</button><button type="button" id="mb-retreat">Recuar</button></div>
+    <div class="row"><button type="button" class="go" id="mb-fight">Lutar</button></div>
   </div></div>
   <div id="mend" class="hidden" role="dialog" aria-modal="true" aria-labelledby="mend-title" aria-describedby="mend-text"><div class="card">
     <p class="kicker">FIM DA CAMPANHA</p><h1 id="mend-title"></h1><p id="mend-result"></p>

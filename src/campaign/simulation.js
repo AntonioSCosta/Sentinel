@@ -54,6 +54,7 @@ function applyOrder(state, order) {
       const s = settlementNear(state, order.id, 'aldeia'), v = s && state.villages[s.id];
       if (!v || v.burnt) return invalid();
       if (state.day - v.recruitedDay < RECRUIT_GAP) return { events: [{ type: 'recrutar-cedo', id: s.id }], encounter: null };
+      if (state.arms <= 0) return { events: [{ type: 'sem-armas', id: s.id }], encounter: null };   // não gasta a vez da aldeia
       const n = Math.min(recruitsFrom(state.fame), state.arms);
       state.men += n; state.arms -= n; v.recruitedDay = state.day;
       return { events: [{ type: 'recrutou', id: s.id, men: n }], encounter: null };
@@ -71,7 +72,11 @@ function applyOrder(state, order) {
     }
     case 'atacar': {
       const s = settlementNear(state, order.id, 'posto');
-      return s ? { events: [], encounter: { kind: 'posto', foe: s, waiting: false } } : invalid();
+      if (!s) return invalid();
+      if (state.posts && s.id in state.posts) return { events: [{ type: 'posto-atacado', id: s.id }], encounter: null };   // uma vez por campanha
+      state.posts = state.posts || {};
+      state.posts[s.id] = { taken: false };   // tomado só se a batalha for ganha (battles.applyResult)
+      return { events: [], encounter: { kind: 'posto', foe: s, waiting: false } };
     }
     case 'acampar': case 'esperar': case 'esconder': return none;
     default: return invalid();
