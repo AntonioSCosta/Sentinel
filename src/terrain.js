@@ -26,6 +26,11 @@ export function fbm(x, y) { let s = 0, a = .5, f = 1; for (let i = 0; i < 5; i++
 
 export const WORLD = 200;
 export const roadX = z => Math.sin(z * .018) * 20 + Math.sin(z * .047) * 6;
+
+// Mountain brook (Ribeira dos Montes Hermínios): runs winding through the lower valley floor
+export const streamX = z => roadX(z) - 24 + Math.sin(z * .031) * 7;
+export const inStream = (x, z, width = 3.6) => Math.abs(x - streamX(z)) < width;
+
 export function rawH(x, z) {
   let h = (fbm(x * .010 + 3.1, z * .010 - 7.3) - .45) * 52;
   h = 1 + Math.log(1 + Math.exp(h - 1));                 // soft floor
@@ -33,6 +38,12 @@ export function rawH(x, z) {
   const d = Math.abs(x - roadX(z));
   h = lerp(1, h, smooth(4, 48, d));
   h += (vnoise(x * .06, z * .06) - .5) * 2.4 * smooth(3, 10, d);
+  
+  // Tactical defile & mountain stream bed: carve natural shallow ravine along the stream
+  const ds = Math.abs(x - streamX(z));
+  const streamCarve = (1 - smooth(1.2, 5.0, ds)) * 0.95;
+  h = Math.max(0.2, h - streamCarve);
+  
   return h;
 }
 export const CAMP = { x: roadX(-135), z: -135, h: 1, half: 28 };

@@ -65,7 +65,11 @@ export function eventText(ev, state) {
 export function createCampaignUI({ document: doc, window: win, storage, onClose = () => {}, startBattle = () => false }) {
   const $ = id => doc.getElementById(id);
   let flow = null, view = null, active = false, selected = null, logDirty = true;
+  let anim = null, shown = null, facing = 1, walk = 0, rafId = 0, hover = null, paintPending = false;
+  const trail = [];
   const log = [];
+  const now = () => (win.performance && win.performance.now ? win.performance.now() : Date.now());
+  const reduceMotion = () => !!(win.matchMedia && win.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   const ctx2d = () => $('mapcv').getContext('2d');
 
@@ -78,11 +82,70 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     return dpr;
   }
 
+  function paint() {
+    if (!active || !flow || !view) return;
+    const ctx = ctx2d();
+    if (!ctx) return;
+    const dpr = win.devicePixelRatio || 1;
+    ctx.setTransform?.(dpr, 0, 0, dpr, 0, 0);
+    drawMap(ctx, view, flow.state, { party: shown || flow.state.party, facing, step: walk, selected, hover, trail, reach: REACH });
+  }
+
+  /** Redesenha no máximo uma vez por frame (o rato pode disparar dezenas de eventos por segundo). */
+  function schedulePaint() {
+    if (paintPending) return;
+    if (typeof win.requestAnimationFrame !== 'function') { paint(); return; }
+    paintPending = true;
+    win.requestAnimationFrame(() => { paintPending = false; paint(); });
+  }
+
+  /** Segue a party: quando o estado salta (uma ordem, uma retirada), mostra a marcha em vez do salto. */
+  function syncParty() {
+    const p = flow.state.party;
+    if (!shown) { shown = { x: p.x, y: p.y }; return; }
+    const d = Math.hypot(p.x - shown.x, p.y - shown.y);
+    if (d < 0.5) { shown.x = p.x; shown.y = p.y; return; }
+    if (anim && Math.hypot(anim.to.x - p.x, anim.to.y - p.y) < 0.5) return;   // já a caminho deste destino
+    startMarch(p, d);
+  }
+
+  function startMarch(to, d) {
+    const from = { x: shown.x, y: shown.y };
+    facing = to.x >= from.x ? 1 : -1;
+    trail.push(from);
+    if (trail.length > 6) trail.shift();
+    if (reduceMotion() || typeof win.requestAnimationFrame !== 'function') { shown = { x: to.x, y: to.y }; return; }
+    const dur = Math.max(150, Math.min(900, (d / MARCH_SPEED) * 300));
+    anim = { from, to: { x: to.x, y: to.y }, t0: now(), dur };
+    if (rafId) win.cancelAnimationFrame?.(rafId);
+    rafId = win.requestAnimationFrame(frame);
+  }
+
+  function frame() {
+    rafId = 0;
+    if (!active || !anim) { anim = null; return; }
+    const t = Math.min(1, (now() - anim.t0) / anim.dur);
+    const e = t < 0.5 ? 2 * t * t : 1 - ((-2 * t + 2) ** 2) / 2;   // ease-in-out
+    shown = { x: anim.from.x + (anim.to.x - anim.from.x) * e, y: anim.from.y + (anim.to.y - anim.from.y) * e };
+    walk = t * Math.PI * 5;   // ciclo de passada
+    paint();
+    if (t < 1) { rafId = win.requestAnimationFrame(frame); return; }
+    shown = { x: anim.to.x, y: anim.to.y };
+    anim = null; walk = 0;
+    paint();
+  }
+
+  function stopMarch() {
+    if (rafId) win.cancelAnimationFrame?.(rafId);
+    rafId = 0; anim = null; walk = 0;
+  }
+
   function render() {
     if (!active || !flow) return;
-    const s = flow.state, dpr = resize();
-    const ctx = ctx2d();
-    if (ctx) { ctx.setTransform?.(dpr, 0, 0, dpr, 0, 0); drawMap(ctx, view, s); }
+    const s = flow.state;
+    resize();
+    syncParty();
+    paint();
     $('m-date').textContent = dateLabel(s.day);
     $('m-season').textContent = season(s.day);
     $('m-day').textContent = s.day; $('m-left').textContent = daysLeft(s.day);
@@ -106,6 +169,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const r = flow.order(o);
     say(r.events);
     selected = null;
+    hover = null;
     render();
     return r;
   }
@@ -205,9 +269,59 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const hit = hitTest(view, flow.state, sx, sy);
     if (hit && hit.type === 'settlement') { selected = hit.id; render(); return; }
     const w = toWorld(view, { x: sx, y: sy });
+    const d = Math.hypot(w.x - flow.state.party.x, w.y - flow.state.party.y);
+    if (d < 2) return;   // clicar em cima do próprio bando não gasta um dia
     order({ kind: 'marchar', to: { x: w.x, y: w.y } });
   }
   $('mapcv').addEventListener('click', mapClick);
+
+  /** Texto da pré-visualização: nome do lugar, dias de marcha, ou a força da patrulha. */
+  function hoverLabel(hit, at) {
+    const s = flow.state;
+    const d = Math.hypot(at.x - s.party.x, at.y - s.party.y);
+    const days = d <= REACH ? 0 : Math.max(1, Math.ceil((d - REACH) / MARCH_SPEED));
+    const when = days ? `${days} ${days === 1 ? 'dia' : 'dias'}` : 'aqui';
+    if (hit?.type === 'settlement') {
+      const st = s.world.settlements.find(x => x.id === hit.id);
+      return st ? `${st.name} · ${when}` : when;
+    }
+    if (hit?.type === 'patrol') {
+      const p = (s.patrols || []).find(x => x.id === hit.id);
+      return `${p?.kind === 'comboio' ? 'Comboio' : 'Patrulha'} romana${p?.men ? ` · ${p.men} homens` : ''}`;
+    }
+    if (hit?.type === 'praetor') return `${s.praetor?.name || 'Pretor'} · pretor`;
+    return when;
+  }
+
+  function pointerMove(e) {
+    if (!active || !flow || flow.phase !== 'mapa' || !view) return;
+    const r = $('mapcv').getBoundingClientRect();
+    const sx = e.clientX - r.left, sy = e.clientY - r.top;
+    const s = flow.state, hit = hitTest(view, s, sx, sy);
+    const at = hit && hit.type === 'settlement' ? s.world.settlements.find(x => x.id === hit.id) || toWorld(view, { x: sx, y: sy }) : toWorld(view, { x: sx, y: sy });
+    hover = { x: at.x, y: at.y, id: hit?.type === 'settlement' ? hit.id : null, label: hoverLabel(hit, at) };
+    $('mapcv').style.cursor = hit ? 'pointer' : 'crosshair';
+    schedulePaint();
+  }
+
+  function pointerLeave() {
+    if (!hover) return;
+    hover = null;
+    $('mapcv').style.cursor = 'crosshair';
+    schedulePaint();
+  }
+  $('mapcv').addEventListener('mousemove', pointerMove);
+  $('mapcv').addEventListener('mouseleave', pointerLeave);
+
+  // duplo clique em terreno vazio: três dias de marcha para o mesmo ponto (um por cada clique, mais um)
+  $('mapcv').addEventListener('dblclick', e => {
+    if (!active || flow.phase !== 'mapa') return;
+    const r = $('mapcv').getBoundingClientRect();
+    const sx = e.clientX - r.left, sy = e.clientY - r.top;
+    if (hitTest(view, flow.state, sx, sy)) return;   // numa povoação manda o painel, não a marcha
+    const w = toWorld(view, { x: sx, y: sy });
+    if (flow.phase === 'mapa') order({ kind: 'marchar', to: { x: w.x, y: w.y } });
+  });
   for (const b of $('map').querySelectorAll('[data-order]')) b.addEventListener('click', () => order({ kind: b.dataset.order }));
 
   /** Só para testes (__game): termina a batalha pendente com um resultado já pronto. Nunca é mostrado ao jogador. */
@@ -223,7 +337,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     simulateBattle({ won: false, retreated: true, alliesLost: 0, enemiesKilled: 0 });
   });
   /** O 3D tomou conta do ecrã: esconde o mapa sem voltar ao menu. */
-  function suspend() { active = false; $('map').classList.add('hidden'); }
+  function suspend() { stopMarch(); hover = null; active = false; $('map').classList.add('hidden'); }
   /** A batalha 3D acabou: entrega o resultado ao fluxo (uma vez) e mostra o mapa outra vez. */
   function battleDone(result, line) {
     let r = { events: [] };
@@ -291,6 +405,15 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   $('mend-menu').addEventListener('click', close);
   win.addEventListener('resize', render);
   win.addEventListener('keydown', e => {
+    // setas: um dia de marcha para norte/sul/este/oeste (o mapa também se joga sem rato)
+    if (!active || !flow || flow.phase !== 'mapa' || cronOpen() || placesOpen()) return;
+    const dir = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.code];
+    if (!dir) return;
+    e.preventDefault();
+    const p = flow.state.party;
+    order({ kind: 'marchar', to: { x: p.x + dir[0] * MARCH_SPEED, y: p.y + dir[1] * MARCH_SPEED } });
+  });
+  win.addEventListener('keydown', e => {
     if (!active || e.code !== 'Escape') return;
     if (cronOpen()) { closeChronicle(); return; }   // ESC fecha a Crónica primeiro, sem sair do mapa
     if (placesOpen()) { togglePlaces(false); $('m-places').focus?.(); return; }   // depois a lista de lugares
@@ -299,6 +422,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
 
   function open(f) {
     flow = f; active = true; selected = null; log.length = 0; logDirty = true;
+    stopMarch(); shown = null; hover = null; facing = 1; trail.length = 0;
     $('mcron').classList.add('hidden'); cronOpener = null; togglePlaces(false);
     log.push(flow.state.day ? 'A marcha continua.' : 'Um ano de guerra começa nos montes. Clica no mapa para marchar.');
     $('map').classList.remove('hidden');
@@ -306,6 +430,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   }
   function close() {
     if (!active) return;
+    stopMarch(); hover = null;
     $('mcron').classList.add('hidden'); cronOpener = null;
     active = false; $('map').classList.add('hidden');
     onClose();

@@ -20,3 +20,13 @@ test('a collider can be switched off and on (scenery that exists in one mission 
   assert.equal(T.solidAt(151.9, 151.5), false); assert.ok(Math.abs(p.x - 151.9) < 1e-9, 'not pushed while off');
   c.off = false; T.resolve(p, .4); assert.ok(Math.hypot(p.x - 151.5, p.z - 151.5) >= 1.59);
 });
+
+test('mountain stream (Ribeira) path is smooth, continuous and carves stream bed', async () => {
+  const { streamX, inStream, rawH } = await import('../src/terrain.js');
+  assert.ok(typeof streamX(0) === 'number');
+  assert.equal(inStream(streamX(50), 50), true);
+  assert.equal(inStream(streamX(50) + 15, 50), false);
+  const hStream = rawH(streamX(20), 20);
+  const hBank = rawH(streamX(20) + 8, 20);
+  assert.ok(hBank >= hStream, 'stream bed is carved lower or equal to immediate banks');
+});

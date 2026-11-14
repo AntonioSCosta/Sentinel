@@ -1,4 +1,4 @@
-import { solidAt, TAU, rand, rr, clamp, lerp, smooth, wrapA, setSeed, vnoise, WORLD, roadX, CAMP, CASTRO, heightAt, inCamp, addCol, resolve, losTerrain, clearColliders } from './terrain.js';
+import { solidAt, TAU, rand, rr, clamp, lerp, smooth, wrapA, setSeed, vnoise, WORLD, roadX, streamX, inStream, CAMP, CASTRO, heightAt, inCamp, addCol, resolve, losTerrain, clearColliders } from './terrain.js';
 import { initAudio, SFX, spatial, setListener } from './audio.js';
 import * as C from './combat.js';
 import { zoneFromHeight, ZONE_MULT, LEG_SLOW } from './damage.js';
@@ -145,10 +145,13 @@ const MAT = (name, extra) => { const m = MATS[name].clone(); if (extra) Object.a
     const rock = clamp(smooth(.86, .66, ny) + smooth(30, 48, y) * .7, 0, 1);
     const dr = Math.abs(x - roadX(z));
     const road = inCamp(x, z, 4) ? 0 : smooth(3.8, 2.2, dr) * .95;
+    // Riverbed / rocky gravel along stream
+    const ds = Math.abs(x - streamX(z));
+    const streamGravel = smooth(4.2, 1.2, ds) * 0.85;
     const castro = Math.hypot(x - CASTRO.x, z - CASTRO.z) < 13 ? .5 : 0;
-    const dry = clamp(v * 1.2 - .25 + (y > 20 ? .3 : 0) + castro, 0, 1) * (1 - rock);
+    const dry = clamp(v * 1.2 - .25 + (y > 20 ? .3 : 0) + castro + streamGravel * 0.4, 0, 1) * (1 - rock);
     const grass = Math.max(0, 1 - rock - dry - road);
-    splat.push(grass, dry, rock, road);
+    splat.push(grass, dry, Math.min(1, rock + streamGravel * 0.6), road);
     campW.push(inCamp(x, z, 3) ? .85 : 0);
   }
   g.setAttribute('splat', new THREE.Float32BufferAttribute(splat, 4));
@@ -251,11 +254,18 @@ setSeed(777);
   }
   for (let k = 0; k < 40; k++) { const a = rr(0, TAU), d = rr(1.6, 9), x = AMBUSH.x + Math.cos(a) * d, z = AMBUSH.z + Math.sin(a) * d; if (Math.abs(x - roadX(z)) < 6) continue; shrubs.push({ x, y: heightAt(x, z) - .05, z, s: rr(.9, 1.6), sy: rr(.7, 1.2), ry: rr(0, TAU) }); }
   // maritime pine: tall bare trunk with an umbrella crown; holm/cork oak: short trunk, forked limbs, wide dense crown
-  const pineTrunk = new THREE.CylinderGeometry(.16, .3, 8.2, 6, 1, true);   // light geometry: thousands of these pineTrunk.translate(0, 4.1, 0);
+  const pineTrunk = mergeGeos([
+    (() => { const g = new THREE.CylinderGeometry(.16, .32, 7.8, 6, 1, true); g.translate(0, 3.9, 0); return g; })(),
+    // Upper boughs connecting to the umbrella canopy
+    (() => { const g = new THREE.CylinderGeometry(.08, .16, 2.2, 5, 1, true); g.translate(0, 1.1, 0); g.rotateZ(.55); g.translate(.1, 6.4, 0); return g; })(),
+    (() => { const g = new THREE.CylinderGeometry(.08, .16, 2.0, 5, 1, true); g.translate(0, 1.0, 0); g.rotateZ(-.52); g.rotateY(1.9); g.translate(-.1, 6.5, .1); return g; })(),
+    (() => { const g = new THREE.CylinderGeometry(.07, .14, 1.9, 5, 1, true); g.translate(0, .95, 0); g.rotateX(.48); g.translate(0, 6.6, .15); return g; })(),
+  ]);
   const oakTrunk = mergeGeos([
     (() => { const g = new THREE.CylinderGeometry(.24, .38, 3.4, 6, 1, true); g.translate(0, 1.7, 0); return g; })(),
     (() => { const g = new THREE.CylinderGeometry(.1, .2, 2.4, 5, 1, true); g.translate(0, 1.2, 0); g.rotateZ(.6); g.translate(.2, 3, 0); return g; })(),
     (() => { const g = new THREE.CylinderGeometry(.1, .2, 2.2, 5, 1, true); g.translate(0, 1.1, 0); g.rotateZ(-.55); g.rotateY(2.1); g.translate(-.1, 3, .1); return g; })(),
+    (() => { const g = new THREE.CylinderGeometry(.08, .16, 2.0, 5, 1, true); g.translate(0, 1.0, 0); g.rotateX(-.5); g.translate(0, 3.2, -.2); return g; })(),
   ]);
   instanced(pineTrunk, MAT('bark_pine'), pines, true, { vary: .14 });
   instanced(oakTrunk, MAT('bark_oak'), oaks, true, { vary: .14 });
@@ -335,6 +345,24 @@ const GATE_DIR = { x: Math.cos(Math.PI * 1.25), z: Math.sin(Math.PI * 1.25) };  
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P3, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2)); g.setIndex(IDX); g.computeVertexNormals();
     const wm = stone.clone(); wm.side = THREE.DoubleSide; const w = new THREE.Mesh(g, wm); w.castShadow = w.receiveShadow = true; w.name = 'castro-wall'; scene.add(w);
   }
+
+  // Castro gate timber palisade & watch fire (Atalaia dos Montes Hermínios)
+  {
+    const wood = MAT('wood');
+    const gx = CASTRO.x + Math.cos(Math.PI * 1.25) * 15, gz = CASTRO.z + Math.sin(Math.PI * 1.25) * 15, gy = heightAt(gx, gz);
+    // Two defensive timber gate posts flanking entrance
+    for (const dSide of [-1.6, 1.6]) {
+      const px = gx - Math.sin(Math.PI * 1.25) * dSide, pz = gz + Math.cos(Math.PI * 1.25) * dSide, py = heightAt(px, pz);
+      mesh(new THREE.CylinderGeometry(.25, .32, 3.8, 6), wood, px, py + 1.9, pz);
+      addCol(px, pz, .6, 3.8);
+    }
+    // High vantage beacon / signal fire at the highest point of the Castro
+    const by = CASTRO.h;
+    const firePost = mesh(new THREE.CylinderGeometry(.15, .22, 4.2, 6), wood, CASTRO.x, by + 2.1, CASTRO.z);
+    mesh(new THREE.CylinderGeometry(.85, .5, .45, 8), MAT('iron'), CASTRO.x, by + 4.3, CASTRO.z);
+    const beaconL = new THREE.PointLight(0xffaa44, 1.4, 26, 2); beaconL.position.set(CASTRO.x, by + 4.8, CASTRO.z); scene.add(beaconL);
+    addCol(CASTRO.x, CASTRO.z, .7, 4.5);
+  }
 }
 
 // Roman camp
@@ -388,6 +416,32 @@ const fireLights = [];
   const cf = new THREE.PointLight(0xff9a4a, 1.2, 18, 2); cf.position.set(CAMP.x - 4, H0 + 1.2, CAMP.z - 4); scene.add(cf); fireLights.push(cf);
   for (let k = 0; k < 6; k++) { const a = k / 6 * TAU; const s = mesh(new THREE.DodecahedronGeometry(.25), M(0x5a5550), CAMP.x - 4 + Math.cos(a) * .7, H0 + .1, CAMP.z - 4 + Math.sin(a) * .7); }
   CAMP.fire = new THREE.Vector3(CAMP.x - 4, H0 + .3, CAMP.z - 4);
+
+  // Roman defensive ditch & perimeter chevaux-de-frise stakes (valla) outside the palisade
+  {
+    const stakes = [];
+    for (let t = -h - 2.5; t <= h + 2.5; t += 2.2) {
+      for (const [ox, oz] of [[t, -h - 2.8], [t, h + 2.8], [-h - 2.8, t], [h + 2.8, t]]) {
+        if (oz > h && Math.abs(ox) < 5.5) continue; // Leave road gate open
+        stakes.push({ x: CAMP.x + ox, y: H0 + .45, z: CAMP.z + oz, s: .85, rx: rr(-.25, .25), ry: rr(0, TAU) });
+        addCol(CAMP.x + ox, CAMP.z + oz, .5, 1.2);
+      }
+    }
+    const stakeGeo = new THREE.CylinderGeometry(.06, .09, 1.5, 5);
+    stakeGeo.rotateX(Math.PI / 4);
+    instanced(stakeGeo, wood, stakes, true, { name: 'camp-stakes' });
+  }
+
+  // Roman Milestones (Milliaria) along the valley military road
+  {
+    const stoneMat = MAT('castro_stone');
+    const milestones = [-90, -30, 30, 90];
+    for (const mz of milestones) {
+      const mx = roadX(mz) + 3.8, my = heightAt(mx, mz);
+      const post = mesh(new THREE.CylinderGeometry(.22, .26, 1.4, 10), stoneMat, mx, my + .7, mz);
+      addCol(mx, mz, .4, 1.6);
+    }
+  }
 }
 
 /* =========================================================
@@ -627,7 +681,7 @@ function rigSoldier(kind, look = null) {
   if (shield) {
     shield.parent.remove(shield); rig.root.add(shield); shield.rotation.set(0, 0, 0);
     // centre the board on the fist in the guard pose, a hand's breadth in front of it
-    const SH = { scutum: [.02, -.02, .07], parma: [.0, 0, .05] }[ud.scutum ? 'scutum' : 'parma'];
+    const SH = { scutum: [.02, -.02, .13], parma: [.0, 0, .08] }[ud.scutum ? 'scutum' : 'parma'];
     rig.poseAt('Idle_Shield_Loop', 1); const hp = rig.bones.hand_l.getWorldPosition(new THREE.Vector3()).sub(rig.root.position);
     shield.position.set(hp.x + SH[0], hp.y + SH[1], hp.z + SH[2]);
     rig.attachInPose('hand_l', shield, 'Idle_Shield_Loop', 1);
@@ -910,7 +964,7 @@ function resetWorld() {
   scene.fog.density = FOG_BASE;
   if (typeof avatar !== 'undefined') { avatar.shieldLost = false; if (AV.shield) AV.shield.visible = true; }
   // clear dynamic objects
-  for (const e of enemies) { scene.remove(e.m.root); if (e.corpse) phys.removeCorpse(e.corpse); }
+  for (const e of enemies) { scene.remove(e.m.root); if (e.horse) scene.remove(e.horse); if (e.corpse) phys.removeCorpse(e.corpse); }
   for (const a of allies) scene.remove(a.m.root);
   for (const c of civs) scene.remove(c.m.root); civs = [];
   for (const r of riders) { scene.remove(r.horse); scene.remove(r.m.root); } riders = []; betrayed = false; betrayT = 0;
@@ -962,6 +1016,7 @@ function resetCampaignBattle() {
       if (k.kind === 'centurion' && plan.type === 'decisiva') { e.commander = spec.commander || 'o pretor'; cmd = e; }
     }
     if (plan.type === 'decisiva' && cmd) {
+      mountCommander(cmd);   // o pretor entra a cavalo
       // o pretor leva dois signiferi ao lado: os dois legionários mais próximos passam a porta-estandartes (ocupam o lugar, não somam)
       enemies.filter(e => e.kind === 'legio' && e !== cmd && !e.signifer)
         .sort((a, b) => a.pos.distanceToSquared(cmd.pos) - b.pos.distanceToSquared(cmd.pos))
@@ -1217,14 +1272,27 @@ function armEnvoy(on) {
 /* Cavalry: two riders sweep in with the legions, circle the field cutting down whoever runs, then flank the captives. */
 const SADDLE = 1.0;   // rider root height above the horse (crouched legs astride its back)
 const HORSE_COAT = { legio: 0x8f7464, lusitano: 0x5a4a3a };   // baio romano; montada lusitana mais escura
-/** Clona o cavalo (GLTF) com uma pelagem, põe-lhe o cavaleiro em cima e devolve as peças comuns a qualquer montada. */
-function makeMount(coat, riderKind) {
+/** Clona o cavalo (GLTF) com uma pelagem e devolve o grupo, o mixer e a acção de galope. */
+function makeHorse(coat) {
   const h = chars.horse, hg = h.scene.clone(true); hg.scale.setScalar(.0095);
   hg.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.material = o.material.clone(); o.material.color.setHex(coat); } });
   const grp = new THREE.Group(); grp.add(hg); scene.add(grp);
   const mixer = new THREE.AnimationMixer(hg), act = mixer.clipAction(h.clip); act.play();
+  return { grp, mixer, act };
+}
+/** Monta um cavaleiro novo: cavalo + soldado em cima. */
+function makeMount(coat, riderKind) {
+  const horse = makeHorse(coat);
   const m = soldier(riderKind); scene.add(m.root);
-  return { grp, mixer, act, m };
+  return { ...horse, m };
+}
+/** Põe o comandante a cavalo sem criar outro soldado: o cavalo fica guardado no próprio enemy. */
+function mountCommander(e) {
+  if (!chars || !chars.horse || e.horse) return false;
+  const { grp, mixer, act } = makeHorse(HORSE_COAT.legio);
+  e.horse = grp; e.mixer = mixer; e.act = act; e.saddle = SADDLE; e.crouch = true;
+  grp.position.copy(e.pos); grp.rotation.y = e.yaw;
+  return true;
 }
 function spawnRider(ang, dir) {
   const { grp, mixer, act, m } = makeMount(HORSE_COAT.legio, 'legio');
@@ -1255,6 +1323,18 @@ function updateBattleRider(r, dt) {
   r.horse.position.copy(r.pos); r.horse.rotation.y = r.yaw; r.mixer.update(dt);
   C.tickFighter(r.f, dt);
   const b = setPose(r, dt); r.m.root.position.set(r.pos.x, r.pos.y + SADDLE + b * .2, r.pos.z); r.m.root.rotation.y = r.yaw;
+}
+/** Cavalo sem cavaleiro (o pretor caiu): afasta-se do campo a galope e some ao fim de uns segundos. */
+function updateRiderlessHorse(e, dt) {
+  const h = e.horse;
+  e.horseT = (e.horseT || 0) + dt;
+  if (e.horseT > 3.5) { scene.remove(h); e.horse = null; return; }
+  const dx = h.position.x - P.pos.x, dz = h.position.z - P.pos.z, d = Math.hypot(dx, dz) || 1;
+  const step = 7.5 * dt;
+  h.position.x += dx / d * step; h.position.z += dz / d * step;
+  h.position.y = heightAt(h.position.x, h.position.z);
+  h.rotation.y = Math.atan2(dx, dz);
+  e.act.paused = false; e.act.timeScale = 1.3; e.mixer.update(dt);
 }
 function updateRiders(dt) {
   for (const r of riders) {
@@ -2415,9 +2495,9 @@ function posePrecise(e, dt) {
   if (sc) {
     const base = m.root.userData.shieldBase || (m.root.userData.shieldBase = sc.position.clone());
     const b = f.blocking === 'shield', atk = f.phase === 'windup' || f.phase === 'strike';
-    sc.position.x = lerp(sc.position.x, b ? .02 : atk ? base.x + .08 : base.x, k);
-    sc.position.y = lerp(sc.position.y, b ? .36 : base.y, k);
-    sc.position.z = lerp(sc.position.z, b ? .44 : combat ? base.z + .04 : base.z - .04, k);
+    sc.position.x = lerp(sc.position.x, b ? .04 : atk ? base.x + .08 : base.x, k);
+    sc.position.y = lerp(sc.position.y, b ? .42 : base.y, k);
+    sc.position.z = lerp(sc.position.z, b ? .56 : combat ? base.z + .04 : base.z - .04, k);
     sc.rotation.y = lerp(sc.rotation.y, b ? 0 : combat ? .3 : .6, k);
   }
   // shield arm: two-bone IK so the hand grips the shield from behind; free arm swings while marching
@@ -2482,6 +2562,10 @@ function updateEnemies(dt) {
     const r = e.m.root;
     if (e.dead) {
       e.deadT += dt;
+      if (e.horse) {   // o cavalo foge e o corpo desce do selim para o chão
+        updateRiderlessHorse(e, dt);
+        r.position.set(e.pos.x, e.pos.y + SADDLE * Math.max(0, 1 - e.deadT * 4), e.pos.z);
+      }
       if (e.m.rig) { setPose(e, dt); if (e.corpse && e.deadT > .1) { phys.removeCorpse(e.corpse); e.corpse = null; } for (const m of e.m.mats) m.emissive.setRGB(0, 0, 0); continue; }
       if (phys.ok && e.corpse) {
         if (e.deadT >= 6) { phys.removeCorpse(e.corpse); e.corpse = null; } // settled: freeze the pose, free the body
@@ -2629,7 +2713,13 @@ function updateEnemies(dt) {
       const k = 1 - e.atkT / .55;
       e.m.arms[1].rotation.set(k < .7 ? lerp(0, -2.5, k / .7) : lerp(-2.5, .4, (k - .7) / .3), 0, 0);
     }
-    r.position.set(e.pos.x, e.pos.y + bob, e.pos.z); r.rotation.y = e.yaw;
+    if (e.horse) {   // o cavalo do pretor segue-o e galopa à velocidade real
+      const sp = Math.hypot(e.mv.x, e.mv.z);
+      e.horse.position.copy(e.pos); e.horse.rotation.y = e.yaw;
+      e.act.timeScale = clamp(sp / 8, .2, 1.3); e.act.paused = sp < .2;
+      e.mixer.update(dt);
+    }
+    r.position.set(e.pos.x, e.pos.y + bob + (e.horse ? SADDLE : 0), e.pos.z); r.rotation.y = e.yaw;
   }
 }
 
@@ -2651,7 +2741,8 @@ function updatePlayer(dt) {
   const sprint = ml > 0 && sprintKey && playerSpeed(mvArg) > 7;
   let slope = 0;
   if (ml) { const dx = (fx * lf + rx * ls) / ml, dz = (fz * lf + rz * ls) / ml; slope = heightAt(P.pos.x + dx, P.pos.z + dz) - heightAt(P.pos.x, P.pos.z); }
-  const top = ml ? playerSpeed({ ...mvArg, slope }) : 0;
+  const inWater = inStream(P.pos.x, P.pos.z, 3.2);
+  const top = ml ? playerSpeed({ ...mvArg, slope, inWater }) : 0;
   const tx = ml ? (fx * lf + rx * ls) / ml * top : 0, tz = ml ? (fz * lf + rz * ls) / ml * top : 0;
   // momentum: quick to start, quick to stop, but not instant (footwork you can read)
   const nv = steer(P.vel, { x: tx, z: tz }, P.ground ? (ml ? 26 : 34) : 6, dt); P.vel.x = nv.x; P.vel.z = nv.z;

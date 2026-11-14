@@ -299,7 +299,8 @@ const _q = {};
 /** Shield raised (k = 0…1): the left arm brings it up in front of chest and face, the body tucks in behind it. */
 export function shieldUpPose(k) {
   const m = v => v.map(x => x * k);
-  return { pelvis: m([3, 0, 0]), spine: m([9, 8, 0]), neck: m([7, -6, 0]), upperarm_l: m([-34, -10, 0]), lowerarm_l: m([-14, 0, 0]) };
+  // Tuck body slightly back and raise/push shield forward and up, keeping clearance so head does not clip scutum
+  return { pelvis: m([2, 0, 0]), spine: m([5, 4, 0]), neck: m([-8, -4, 0]), upperarm_l: m([-42, -18, -6]), lowerarm_l: m([-22, 10, 0]) };
 }
 /** A move scaled toward the base animation: body offsets and arm weight times k. */
 export function fadePose(p, k) {
