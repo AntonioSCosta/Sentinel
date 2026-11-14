@@ -248,63 +248,55 @@ function drawPatrol(ctx, p, q) {
   ctx.restore();
 }
 
-/** Vetílio: comandante montado, de manto vermelho e elmo de crista, com dois legionários de escolta. */
+/**
+ * O pretor no mapa: um vexilo romano, não um boneco. Um estandarte lê-se à distância,
+ * não envelhece mal e diz «Roma» sem precisar de figuras pequenas.
+ */
 function drawPraetor(ctx, x, y) {
-  const horse = '#6b4a2a', horseDark = '#3f2a16';
+  const wood = '#4a2f18';
   ctx.save();
-  ctx.lineWidth = 1.3;
+  ctx.lineWidth = 1.2;
 
-  // sombra
-  ctx.fillStyle = 'rgba(40,20,10,.18)';
-  ctx.beginPath(); ctx.arc(x, y + 10, 10, 0, TAU); ctx.fill();
+  // sombra do mastro no chão
+  ctx.fillStyle = 'rgba(40,20,10,.16)';
+  ctx.beginPath(); ctx.arc(x, y + 9, 5.5, 0, TAU); ctx.fill();
 
-  // escolta
-  for (const side of [-1, 1]) {
-    const ex = x + side * 15;
-    ctx.strokeStyle = ROMAN_DARK;
-    ctx.fillStyle = '#a8322a';
-    ctx.beginPath(); ctx.arc(ex, y + 1.5, 2.2, 0, TAU); ctx.fill(); ctx.stroke();
-    path(ctx, [[ex, y + 3.4], [ex, y + 7.5],
-      [ex, y + 7.5], [ex - 2, y + 10.5],
-      [ex, y + 7.5], [ex + 2, y + 10.5]]);
-    ctx.stroke();
-    ctx.beginPath(); ctx.arc(ex - side * 2.4, y + 5, 2.4, 0, TAU); ctx.fill(); ctx.stroke();
-    path(ctx, [[ex + side * 2.2, y + 9], [ex + side * 2.2, y - 5]]);
-    ctx.stroke();
-  }
-
-  // cavalo: corpo, pescoço, cabeça, orelhas, patas e cauda
-  ctx.strokeStyle = horseDark; ctx.fillStyle = horse;
-  path(ctx, [[x - 9, y + 7], [x - 8, y + 1], [x + 4, y], [x + 8, y + 4], [x + 7, y + 8], [x - 7, y + 8]], true);
-  ctx.fill(); ctx.stroke();
-  path(ctx, [[x + 5, y + 2], [x + 9, y - 4], [x + 12, y - 3], [x + 11, y + 0]], true);
-  ctx.fill(); ctx.stroke();
-  path(ctx, [[x + 9.6, y - 4.6], [x + 10.4, y - 6.6], [x + 11.4, y - 4.4]]);
-  ctx.stroke();
-  path(ctx, [[x - 6, y + 8], [x - 7, y + 12], [x + 6, y + 8], [x + 7, y + 12]]);
-  ctx.stroke();
-  path(ctx, [[x - 9, y + 2], [x - 12, y + 5], [x - 11, y + 8]]);
+  // mastro
+  ctx.strokeStyle = wood;
+  ctx.lineWidth = 2;
+  path(ctx, [[x, y + 8], [x, y - 13]]);
   ctx.stroke();
 
-  // manto vermelho
-  ctx.fillStyle = ROMAN; ctx.strokeStyle = ROMAN_DARK;
-  path(ctx, [[x - 1, y - 3], [x - 8, y + 1], [x - 2, y + 3]], true);
+  // ponta de lança dourada
+  ctx.fillStyle = GOLD; ctx.strokeStyle = GOLD_DARK; ctx.lineWidth = 1;
+  path(ctx, [[x, y - 19], [x + 2.2, y - 13.4], [x - 2.2, y - 13.4]], true);
   ctx.fill(); ctx.stroke();
 
-  // tronco e cabeça com elmo de crista
-  ctx.fillStyle = '#d8cbb2';
-  path(ctx, [[x - 2, y - 5], [x + 2, y - 5], [x + 2, y + 1], [x - 2, y + 1]], true);
-  ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#e0b48a';
-  ctx.beginPath(); ctx.arc(x, y - 8, 2.8, 0, TAU); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = ROMAN;
-  path(ctx, [[x - 3.4, y - 8.4], [x - 1, y - 14], [x + 1.4, y - 13.4], [x + 3.4, y - 8.2]], true);
-  ctx.fill(); ctx.stroke();
-
-  // rédeas
-  ctx.strokeStyle = horseDark;
-  path(ctx, [[x + 2, y - 4], [x + 9, y - 3]]);
+  // travessão do vexilo, com pontas de bronze
+  ctx.strokeStyle = wood; ctx.lineWidth = 1.6;
+  path(ctx, [[x - 7, y - 12], [x + 7, y - 12]]);
   ctx.stroke();
+  ctx.fillStyle = GOLD;
+  ctx.beginPath(); ctx.arc(x - 7, y - 12, 1.2, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + 7, y - 12, 1.2, 0, TAU); ctx.fill();
+
+  // pano do estandarte
+  ctx.fillStyle = ROMAN; ctx.strokeStyle = ROMAN_DARK; ctx.lineWidth = 1;
+  path(ctx, [[x - 6.5, y - 11.6], [x + 6.5, y - 11.6], [x + 6.5, y - 0.8], [x - 6.5, y - 0.8]], true);
+  ctx.fill(); ctx.stroke();
+
+  // franja dourada na bainha
+  ctx.strokeStyle = GOLD; ctx.lineWidth = 1.1;
+  path(ctx, [[x - 6.5, y - 1.9], [x + 6.5, y - 1.9]]);
+  ctx.stroke();
+
+  // SPQR: a marca de Roma, legível a esta escala
+  ctx.fillStyle = GOLD;
+  ctx.font = 'bold 5.5px serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('SPQR', x, y - 6.4);
+
   ctx.restore();
 }
 
@@ -455,15 +447,20 @@ export function drawMap(ctx, view, state, fx = {}) {
   // patrulhas romanas
   for (const p of state.patrols || []) drawPatrol(ctx, p, toScreen(view, p));
 
-  // pretor: comandante montado com escolta
+  // pretor: estandarte romano (vexilo) com o nome do comandante
   if (state.praetor) {
     const q = toScreen(view, state.praetor);
     drawPraetor(ctx, q.x, q.y);
+    const name = state.praetor.name || 'Pretor';
+    const w = Math.max(42, name.length * 5.9 + 10);
     ctx.save();
+    ctx.fillStyle = 'rgba(227,211,168,.86)';
+    ctx.fillRect(q.x - w / 2, q.y - 33, w, 14);
     ctx.fillStyle = ROMAN_DARK;
     ctx.font = 'bold 11px serif';
     ctx.textAlign = 'center';
-    ctx.fillText(state.praetor.name || 'Pretor', q.x, q.y - 18);
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(name, q.x, q.y - 22);
     ctx.restore();
   }
 

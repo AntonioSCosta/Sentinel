@@ -49,6 +49,7 @@ test('player speed: slower backwards and sideways, no sprinting mid-swing, slowe
   assert.ok(playerSpeed({ fwd: 1, side: 0, f: { phase: 'strike' } }) < run * .7);
   assert.ok(playerSpeed({ fwd: 1, side: 0, f: { phase: 'idle', blocking: 'shield' } }) < run * .65);
   assert.ok(playerSpeed({ fwd: 1, side: 0, crouch: true, f: idle }) < run * .6);
+  assert.ok(playerSpeed({ fwd: 1, side: 0, inWater: true, f: idle }) < run, 'water/stream drag slows down movement');
 });
 
 import { staminaUse } from '../src/locomotion.js';
