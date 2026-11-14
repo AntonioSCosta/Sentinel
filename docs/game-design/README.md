@@ -42,14 +42,14 @@ Se uma batalha não responde a uma pergunta feita no mapa, é um minijogo colado
 Para o brief não voar acima do que existe, este é o estado real da campanha
 (`src/campaign/`):
 
-- **Um ano:** 1 de março a 31 de outubro de 147 a.C. (`clock.js`, 244 dias).
+- **Um ano:** 1 de março a 31 de outubro de 147 a.C. (`clock.js`, 245 dias).
 - **Quatro recursos:** homens, comida, armas, fama (`state.js`).
 - **Sete ordens, uma por dia:** marchar, recrutar, pedir ajuda, atacar posto, acampar,
   esperar, esconder (`simulation.js`).
 - **Roma com intenção:** patrulhas e comboios na estrada, um pretor com carácter que
   caça o bando (`praetor.js`), aldeias que ardem, postos que se tomam uma vez.
 - **Quatro acontecimentos** de baralho, cerca de um por cada dez dias (`events.js`).
-- **Crónica** com treze entradas, separando fontes antigas de invenção declarada
+- **Crónica** com doze entradas, separando fontes antigas de invenção declarada
   (`chronicle.js`).
 - **Batalhas 3D** ligadas ao mapa por `bridge.js`: o encontro vira objetivo, o resultado
   volta ao mapa em baixas, despojos, lealdade e resposta romana.

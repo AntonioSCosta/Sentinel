@@ -255,7 +255,7 @@ mostra sempre o custo e o delta previsto, com números tabulares.
 - **30 minutos:** dia → operação → batalha → relatório → crónica.
 - **30 horas:** ano → cônsul → estação → fim → epílogo.
 
-Hoje a campanha é **um** ano (244 dias). É a escala certa para o primeiro ato; a guerra
+Hoje a campanha é **um** ano (245 dias). É a escala certa para o primeiro ato; a guerra
 inteira (150–139 a.C.) só deve ser tentada depois de o ano estar divertido.
 
 ### 2.3 O que a batalha tem de responder

@@ -17,7 +17,7 @@ jogador.
 | Ficheiro | Palavras | Strings | O que é |
 |---|---:|---:|---|
 | `src/game.js` | 785 | 97 | mensagens de combate, objetivos, capítulos, avisos |
-| `src/campaign/chronicle.js` | 560 | 25 | Crónica: treze entradas, títulos e citações |
+| `src/campaign/chronicle.js` | 560 | 25 | Crónica: doze entradas, títulos e citações |
 | `src/campaign/ui.js` | 267 | 38 | painel do mapa, ordens, relatórios, fim de ano |
 | `index.html` | 190 | 20 | menu, botões, dicas, painéis fixos |
 | `src/campaign/events.js` | 37 | 4 | quatro acontecimentos de baralho |
@@ -30,7 +30,7 @@ A este total faltam três grupos que o contador não apanha bem:
 
 - **12 etiquetas de uma palavra** com acento: `COMEÇAR`, `Centurião`, `Legionário`,
   `Vélite`, `Vitória`, `Difícil`, `Fácil`, `Média`, `invenção`, `março`, `verão`.
-- **9 nomes de meses e 3 estações** (`clock.js`), usados nas datas e no painel.
+- **8 nomes de meses e 3 estações** (`clock.js`), usados nas datas e no painel.
 - **8 radicais de topónimos** combinados em nomes de aldeias, castros, serras e postos.
 
 **Volume realista para traduzir hoje: ≈ 1 950 palavras, ≈ 210 strings.**
