@@ -11,8 +11,21 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   check('menu has the campaign entry', !!$('camp-new') && $('camp-new').textContent.includes('CAMPANHA'));
   check('no «continuar» without a save', !shown('camp-cont'));
   G.campaignStorage.clear();
+  // Uma campanha nova abre com o prólogo (o massacre de Galba, 150 a.C.), não directamente no mapa.
   G.startCampaign(1234);
-  check('campaign opens the map state', G.state === 'map' && shown('map') && !shown('menu'));
+  check('a new campaign starts in the prologue, not the map', G.chapter === 'prologo' && G.state !== 'map' && (G.state === 'intro' || G.state === 'play'));
+  check('the new campaign is saved immediately (resume → map, prologue not replayed)', G.campaign.saveState() === 'meio');
+  check('the map is hidden while the campaign prologue plays', !shown('map'));
+  // Conduz o prólogo até à fuga; deve terminar no mapa da campanha, dia 0.
+  setGod(true);
+  { let n = 0; while (G.state === 'intro' && n++ < 2500) st(1); }
+  check('the campaign prologue reaches the playable massacre', G.state === 'play' && G.chapter === 'prologo');
+  G.P.pos.set(G.ESCAPE.x, G.heightAt(G.ESCAPE.x, G.ESCAPE.z), G.ESCAPE.z); st(1);
+  check('reaching the escape starts the outro', G.state === 'outro');
+  { let n = 0; while (G.state === 'outro' && n++ < 2500) st(1); }
+  setGod(false);
+  check('the campaign prologue hands off to the map at day 0', G.state === 'map' && shown('map') && !shown('hud') && !shown('end') && G.campaign.flow.state.day === 0 && G.campIntro === false);
+  check('no end screen or next-chapter after the campaign prologue', G.nextChapter === null && !shown('end'));
   const f = G.campaign.flow, s = f.state;
   // 3D is not drawn under the map, and is drawn again after leaving
   { const rd = renderer, c0 = rd.calls || 0; G.step(1 / 60); G.render(); G.render();
@@ -55,11 +68,12 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   check(`year ends with the end screen (${n} orders)`, f.phase === 'fim' && shown('mend') && ['vitoria', 'derrota'].includes(f.state.over) && $('mend').textContent.length > 20);
   $('mend-menu').click();
   check('«Voltar ao menu» leaves the map', G.state === 'menu' && shown('menu') && !shown('map'));
-  G.campaignStorage.clear(); G.startCampaign(5); G.campaign.order({ kind: 'acampar' });
+  G.campaignStorage.clear(); G.startCampaign(5); G.showCampaignMap(); G.campaign.order({ kind: 'acampar' });
   G.campaign.close(); 
   check('with a save the menu offers «Continuar campanha»', shown('camp-cont'));
   $('camp-cont').click();
   check('continuing restores the day', G.state === 'map' && G.campaign.flow.state.day === 1);
+  check('«Continuar» goes straight to the map, no prologue replay', G.state === 'map' && G.campIntro === false && G.state !== 'intro' && G.state !== 'play');
   win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'Escape' }));
   check('ESC on the map returns to the menu', G.state === 'menu' && !shown('map'));
   { const rd = renderer, c0 = rd.calls || 0; G.render(); check('3D renders again after leaving the map', (rd.calls || 0) > c0); }
@@ -67,7 +81,7 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   G.campaignStorage.clear(); $('camp-cont').classList.remove('hidden'); $('camp-cont').click();
   check('failed continue stays on the menu', G.state === 'menu' && shown('menu') && !shown('map') && !shown('camp-cont'));
   // removeItem throwing must not break «Nova campanha»
-  G.startCampaign(9); const rm = G.campaignStorage.removeItem; G.campaignStorage.removeItem = () => { throw new Error('quota'); };
+  G.startCampaign(9); G.showCampaignMap(); const rm = G.campaignStorage.removeItem; G.campaignStorage.removeItem = () => { throw new Error('quota'); };
   $('mend').classList.remove('hidden'); $('mend-new').click(); G.campaignStorage.removeItem = rm;
   check('new campaign survives a throwing removeItem', G.state === 'map' && G.campaign.flow.state.day === 0);
   G.campaign.close();
@@ -86,7 +100,7 @@ function battleBridge({ G, doc, win, check, st, setGod, $, shown }) {
   const spec = (type, o = {}) => ({ type, seed: 4242, site: type === 'emboscada' ? 'estrada' : 'campo', allies: 8, realMen: 8,
     enemies: { legio: 6, velites: 2, centurion: false }, bonus: { allies: 0, enemies: 0 }, ...o });
   const wire = (sp, seed = 77) => {
-    G.campaignStorage.clear(); G.startCampaign(seed);
+    G.campaignStorage.clear(); G.startCampaign(seed); G.showCampaignMap();
     const f = G.campaign.flow; f.state.men = sp.realMen; f.state.fame = 20;
     let calls = 0; const fb = f.finishBattle; f.finishBattle = r => { calls++; return fb(r); };
     G.campaignTest.forceBattle(sp);
@@ -178,7 +192,7 @@ function battleBridge({ G, doc, win, check, st, setGod, $, shown }) {
 function villageDefence({ G, doc, win, check, st, setGod, $, shown }) {
   const C = G.CASTRO;
   const begin = (seed = 99) => {
-    G.campaignStorage.clear(); G.startCampaign(seed);
+    G.campaignStorage.clear(); G.startCampaign(seed); G.showCampaignMap();
     const f = G.campaign.flow, vid = Object.keys(f.state.villages)[0]; f.state.men = 8; f.state.fame = 20;
     let calls = 0; const fb = f.finishBattle; f.finishBattle = r => { calls++; return fb(r); };
     G.campaignTest.forceBattle({ type: 'defesa-aldeia', seed: 4242, site: 'castro', villageId: vid, allies: 8, realMen: 8,
@@ -229,7 +243,7 @@ function villageDefence({ G, doc, win, check, st, setGod, $, shown }) {
 function cappedTris({ G, doc, win, check, st, $, type, extra = {} }) {
   const tris = obj => { let n = 0; obj.traverse(o => { if (!o.isMesh || !o.geometry) return; const g = o.geometry; n += (g.index ? g.index.count : g.attributes.position.count) / 3 * (o.isInstancedMesh ? o.count : 1); }); return n; };
   G.setQuality('high'); G.campaign.close(); G.start(1, 'prologo'); const prologue = tris(G.scene);
-  G.campaignStorage.clear(); G.startCampaign(31);
+  G.campaignStorage.clear(); G.startCampaign(31); G.showCampaignMap();
   G.campaignTest.forceBattle({ type, seed: 4242, allies: 25, realMen: 40, enemies: { legio: 23, velites: 7, centurion: true }, bonus: { allies: 15, enemies: 0 }, ...extra });
   $('mb-fight').click(); st(5);
   const total = tris(G.scene);
@@ -243,7 +257,7 @@ function cappedTris({ G, doc, win, check, st, $, type, extra = {} }) {
 // Task 15: assalto a uma coluna de abastecimento: carros e escolta na estrada; o saque depende dos carros tomados.
 function convoyAssault({ G, doc, win, check, st, setGod, $, shown }) {
   const begin = (seed = 61) => {
-    G.campaignStorage.clear(); G.startCampaign(seed);
+    G.campaignStorage.clear(); G.startCampaign(seed); G.showCampaignMap();
     const f = G.campaign.flow; f.state.men = 8; f.state.fame = 20; f.state.food = 60; f.state.arms = 10;
     let calls = 0; const fb = f.finishBattle; f.finishBattle = r => { calls++; return fb(r); };
     G.campaignTest.forceBattle({ type: 'assalto-coluna', seed: 4242, site: 'estrada', allies: 8, realMen: 8,
@@ -296,7 +310,7 @@ function convoyAssault({ G, doc, win, check, st, setGod, $, shown }) {
 function retreat({ G, doc, win, check, st, setGod, $, shown }) {
   const key = code => win.dispatchEvent(new win.KeyboardEvent('keydown', { code })), up = code => win.dispatchEvent(new win.KeyboardEvent('keyup', { code }));
   const begin = (possible, type = 'campo-aberto') => {
-    G.campaignStorage.clear(); G.startCampaign(77);
+    G.campaignStorage.clear(); G.startCampaign(77); G.showCampaignMap();
     const f = G.campaign.flow, serra = f.state.world.settlements.find(x => x.kind === 'serra');
     f.state.men = 8; f.state.fame = 20; f.state.food = 60; f.state.party = { x: serra.x + 30, y: serra.y };
     let calls = 0; const fb = f.finishBattle; f.finishBattle = r => { calls++; return fb(r); };
@@ -361,7 +375,7 @@ function retreat({ G, doc, win, check, st, setGod, $, shown }) {
 // Task 17: a batalha decisiva contra o pretor, e o ecrã de fim do ano (vitória, derrota, resumo, botões).
 function decisive({ G, doc, win, check, st, setGod, $, shown }) {
   const begin = (seed = 88) => {
-    G.campaignStorage.clear(); G.startCampaign(seed);
+    G.campaignStorage.clear(); G.startCampaign(seed); G.showCampaignMap();
     const f = G.campaign.flow; f.state.men = 8; f.state.fame = 20; f.state.food = 60;
     let calls = 0; const fb = f.finishBattle; f.finishBattle = r => { calls++; return fb(r); };
     G.campaignTest.forceBattle({ type: 'decisiva', seed: 4242, site: 'campo', allies: 8, realMen: 8, enemies: { legio: 23, velites: 7, centurion: true },
@@ -401,7 +415,7 @@ function decisive({ G, doc, win, check, st, setGod, $, shown }) {
   check(`decisiva lost: back on the map, campaign goes on (fame ${w.f.state.fame})`, G.state === 'map' && shown('map') && !shown('mend') && w.f.phase === 'mapa' && w.f.state.over === null && w.f.state.fame === 15 && !!w.f.state.praetor);
   // the year runs out: the same end screen, with the flow's verdict
   for (const [men, fame, verdict] of [[12, 40, 'Vitória'], [12, 10, 'Derrota']]) {
-    G.campaignStorage.clear(); G.startCampaign(5); const f = G.campaign.flow;
+    G.campaignStorage.clear(); G.startCampaign(5); G.showCampaignMap(); const f = G.campaign.flow;
     f.state.day = G.campaignTest.YEAR_DAYS - 1; f.state.men = men; f.state.fame = fame; f.state.cooldown = 5;
     G.campaign.order({ kind: 'acampar' });
     if (f.phase === 'batalha') G.campaign.simulateBattle({ won: false, retreated: true, alliesLost: 0, enemiesKilled: 0 });
@@ -411,7 +425,7 @@ function decisive({ G, doc, win, check, st, setGod, $, shown }) {
       && (verdict === 'Vitória' ? $('mend-text').textContent === 'Viriato chegou ao fim do ano. Roma não o venceu.' : $('mend-chron').textContent === 'Os montes ficaram em silêncio.'));
   }
   { // the «bando inteiro» line only with at least the men he started with
-    G.campaignStorage.clear(); G.startCampaign(5); const f = G.campaign.flow;
+    G.campaignStorage.clear(); G.startCampaign(5); G.showCampaignMap(); const f = G.campaign.flow;
     f.state.day = G.campaignTest.YEAR_DAYS - 1; f.state.men = 30; f.state.fame = 40; f.state.cooldown = 5;
     G.campaign.order({ kind: 'acampar' });
     if (f.phase === 'batalha') G.campaign.simulateBattle({ won: false, retreated: true, alliesLost: 0, enemiesKilled: 0 });
@@ -427,7 +441,7 @@ function decisive({ G, doc, win, check, st, setGod, $, shown }) {
     setGod(true); for (const e of G.enemies) G.damageEnemyForTest(e, 9999); st(200); setGod(false);
     check(`decisiva on the last day: «desfeito» and the Periochae line (${$('mend-text').textContent})`, shown('mend') && /desfeito/.test($('mend-text').textContent) && /Periochae/.test($('mend-chron').textContent)); }
   // ruin before the end of the year
-  { G.campaignStorage.clear(); G.startCampaign(5); const f = G.campaign.flow; f.state.fame = 1;
+  { G.campaignStorage.clear(); G.startCampaign(5); G.showCampaignMap(); const f = G.campaign.flow; f.state.fame = 1;
     G.campaignTest.forceBattle({ type: 'historica', seed: 1, site: 'castro', allies: 8, realMen: 8, enemies: { legio: 6, velites: 2, centurion: false }, bonus: { allies: 0, enemies: 0 } });
     G.campaign.simulateBattle({ won: false, alliesLost: 1, enemiesKilled: 0 });
     check(`ruin: the end screen says so (${$('mend-title').textContent})`, f.phase === 'fim' && shown('mend') && $('mend-title').textContent === 'O bando desfez-se' && $('mend-result').textContent === 'Derrota'); }
@@ -438,7 +452,7 @@ function decisive({ G, doc, win, check, st, setGod, $, shown }) {
 
 // Task 18: o ecrã da Crónica (mapa e fim), com entradas desbloqueadas pelo que já se viveu.
 function chronicle({ G, doc, win, check, $, shown }) {
-  G.campaignStorage.clear(); G.startCampaign(31);
+  G.campaignStorage.clear(); G.startCampaign(31); G.showCampaignMap();
   const f = G.campaign.flow, s = f.state;
   check('map HUD has a «Crónica» button', $('m-cronica')?.tagName === 'BUTTON' && $('m-cronica').textContent.trim() === 'Crónica');
   $('m-cronica').focus(); $('m-cronica').click();
@@ -498,7 +512,7 @@ function fixWave({ G, doc, win, check, st, setGod, $, shown }) {
   const storyCompanions = G.companions, storyBrief = $('brief').textContent;
 
   // --- Os Cativos, agendado entre os dias 10 e 20 ---
-  G.campaignStorage.clear(); G.startCampaign(41);
+  G.campaignStorage.clear(); G.startCampaign(41); G.showCampaignMap();
   let f = G.campaign.flow; f.state.day = 12; f.state.men = 14;
   let calls = counted(f);
   G.campaign.order({ kind: 'acampar' });
@@ -524,7 +538,7 @@ function fixWave({ G, doc, win, check, st, setGod, $, shown }) {
   st(60); check('cativos: … finishBattle once only', calls() === 1);
 
   // --- O Acampamento, ao «Atacar» um posto ---
-  G.campaignStorage.clear(); G.startCampaign(43);
+  G.campaignStorage.clear(); G.startCampaign(43); G.showCampaignMap();
   f = G.campaign.flow; calls = counted(f); f.state.men = 14; f.state.fame = 20;
   const posto = f.state.world.settlements.find(x => x.kind === 'posto');
   f.state.party = { x: posto.x, y: posto.y };
@@ -550,13 +564,13 @@ function fixWave({ G, doc, win, check, st, setGod, $, shown }) {
   check(`acampamento: ordering it again is refused with a sober line (${f.phase}: ${$('mlog').textContent})`, f.phase === 'mapa' && /já foi atacado/.test($('mlog').textContent));
 
   // --- a morte e o abandono num episódio ---
-  G.campaignStorage.clear(); G.startCampaign(41);
+  G.campaignStorage.clear(); G.startCampaign(41); G.showCampaignMap();
   f = G.campaign.flow; calls = counted(f); f.state.day = 12; f.state.men = 14; f.state.fame = 20;
   G.campaign.order({ kind: 'acampar' }); $('mb-fight').click(); st(5);
   G.damagePlayer(999, G.P.pos.clone().add(new G.V3(1, 0, 0)), false);
   st(400);
   check(`cativos: Viriato's death is a defeat and the campaign goes on (${f.state.men} men)`, backOnMap() && calls() === 1 && f.state.over === null && f.state.men === 13 && /Derrota/.test($('mlog').textContent) && !shown('end'));
-  G.campaignStorage.clear(); G.startCampaign(43);
+  G.campaignStorage.clear(); G.startCampaign(43); G.showCampaignMap();
   f = G.campaign.flow; calls = counted(f);
   const p2 = f.state.world.settlements.find(x => x.kind === 'posto'); f.state.party = { x: p2.x, y: p2.y };
   G.campaign.order({ kind: 'atacar', id: p2.id }); $('mb-fight').click(); st(5);
@@ -573,7 +587,7 @@ function fixWave({ G, doc, win, check, st, setGod, $, shown }) {
   $('menu').classList.remove('hidden');   // back on the menu, as after leaving a chapter
 
   // --- recrutar sem armas ---
-  G.campaignStorage.clear(); G.startCampaign(41);
+  G.campaignStorage.clear(); G.startCampaign(41); G.showCampaignMap();
   f = G.campaign.flow; const vil = f.state.world.settlements.find(x => x.kind === 'aldeia');
   f.state.party = { x: vil.x, y: vil.y }; f.state.arms = 0;
   G.campaign.order({ kind: 'recrutar', id: vil.id });
@@ -605,10 +619,10 @@ function fixWave({ G, doc, win, check, st, setGod, $, shown }) {
   $('camp-confirm-no').click();
   check('«Voltar» keeps the save and goes back to the menu', !shown('camp-confirm') && G.state === 'menu' && JSON.parse(G.campaignStorage.getItem('viriato.campaign')).state.seed === day0 && doc.activeElement === $('camp-new'));
   $('camp-new').click(); $('camp-confirm-yes').click();
-  check('«Começar de novo» starts a new campaign', !shown('camp-confirm') && G.state === 'map' && G.campaign.flow.state.day === 0);
-  G.campaign.close();
+  check('«Começar de novo» starts a new campaign', !shown('camp-confirm') && G.chapter === 'prologo' && G.campIntro === true && G.campaign.flow.state.day === 0);
+  G.showCampaignMap(); G.campaign.close();
   G.campaignStorage.clear();
   $('camp-new').click();
-  check('without a save there is no question', G.state === 'map' && !shown('camp-confirm'));
-  G.campaign.close();
+  check('without a save there is no question', G.chapter === 'prologo' && G.campIntro === true && !shown('camp-confirm'));
+  G.showCampaignMap(); G.campaign.close();
 }

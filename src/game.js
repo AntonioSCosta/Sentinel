@@ -922,6 +922,7 @@ function updateFlag() {
 let mission = 0, tentsBurnt = 0, missionMsgT = 0, alarm = false;
 let riders = [];
 let campBattle = null;   // campanha: { spec, plan, prevChapter, result, how, story } enquanto dura uma batalha vinda do mapa (story: um capítulo da história)
+let campIntro = false;   // campanha: o prólogo do massacre está a correr como primeira cena de uma campanha nova (acaba no mapa, não no ecrã de fim)
 let chapter = 'prologo', civs = [], betrayed = false, betrayT = 0, envoy = null, elder = null;   // 'prologo' = Galba's massacre (150 BC), 'emboscada' = the ambush campaign
 Object.defineProperty(P, 'st', { get() { return P.f.stamina; }, set(v) { P.f.stamina = v; }, enumerable: false });
 Object.defineProperty(P, 'block', { get() { return P.f.blocking != null; }, enumerable: false });
@@ -1841,6 +1842,7 @@ function updateOutro(dt) {
   if (outroSaid < 2 && T > 8.6) { outroSaid = 2; showMsg('', 'Galba matou ou vendeu como escravos milhares de lusitanos.', 3.2); }
   if (outroSaid < 3 && T > 11.9) { outroSaid = 3; showMsg('', 'Dos que fugiram, um voltaria com um exército.', 3); }
   if (T >= OUTRO_LEN) {
+    if (campIntro) { showCampaignMap(); return; }   // o prólogo abriu uma campanha: segue para o mapa, não para o ecrã de fim
     $('hud').classList.remove('intro'); state = 'won'; endT = .05; nextChapter = 'cativos';
     endArgs = ['PRÓLOGO · 150 A.C.', 'Viriato escapou', 'Galba voltou a Roma, foi julgado e absolvido. A guerra na Lusitânia continuou.'];
   }
@@ -3008,6 +3010,7 @@ const OPENING = {
 };
 function startGame(intro = false) {
   initAudio();
+  campIntro = false;   // qualquer arranque de capítulo/batalha limpa o prólogo-da-campanha; startCampaign volta a ligá-lo depois
   intro = intro === true; nextChapter = null; $('next').classList.add('hidden');
   resetWorld();
   state = intro ? 'intro' : 'play'; introT = 0; introView = view;
@@ -3126,7 +3129,8 @@ function endScreen(kicker, title, text) {
 }
 let endT = 0, endArgs = null;
 function die() { avatar.deadT = 0; avatar.f = P.f; C.endBlock(P.f); state = 'dead'; SFX.die(); endT = 2.8; endArgs = ['CAÍDO EM COMBATE', 'Viriato tombou', 'Tenta de novo.'];
-  if (campBattle) { endArgs = null; endCampaignBattle('dead'); showMsg('VIRIATO CAIU', 'Os homens levam-no ferido do campo.', 2.6); } }   // na campanha é uma derrota, não o fim
+  if (campIntro) { endArgs = null; showMsg('VIRIATO CAIU', 'Cercado, tomba. Só a fuga para os montes o salva.', 2.6); }   // o prólogo da campanha só se deixa pela fuga: a morte recomeça-o
+  else if (campBattle) { endArgs = null; endCampaignBattle('dead'); showMsg('VIRIATO CAIU', 'Os homens levam-no ferido do campo.', 2.6); } }   // na campanha é uma derrota, não o fim
 function win() { state = 'won'; SFX.horn(); endT = 1.8; endArgs = chapter === 'acampamento' ? ['VITÓRIA', 'Os montes são lusitanos', 'A patrulha caiu, os mantimentos arderam e o centurião está morto.'] : ['VITÓRIA', 'A patrulha caiu', 'Nenhum romano voltou ao acampamento. A notícia da emboscada vai correr os vales.']; }
 
 $('start').addEventListener('click', () => startGame(!navigator.webdriver));
@@ -3157,10 +3161,28 @@ $('sens2').addEventListener('input', e => { setSens(+e.target.value); $('sens').
    Main loop
    ========================================================= */
 /* Campanha: ecrã do mapa (src/campaign/ui.js). Estado 'map': o 3D não corre nem pede o rato. */
-const campUI = createCampaignUI({ document, window, storage, startBattle: spec => startCampaignBattle(spec), onClose: () => { state = 'menu'; $('menu').classList.remove('hidden'); refreshCampMenu(); } });
+const campUI = createCampaignUI({ document, window, storage, startBattle: spec => startCampaignBattle(spec), onClose: () => { campIntro = false; state = 'menu'; $('menu').classList.remove('hidden'); refreshCampMenu(); } });
 function refreshCampMenu() { const sv = campUI.saveState(); $('camp-cont').classList.toggle('hidden', !sv); $('camp-cont').textContent = sv === 'fim' ? 'Ver resultado' : 'Continuar campanha'; $('camp-confirm').classList.add('hidden'); }
 function openCampaign(f) { try { document.exitPointerLock && document.exitPointerLock(); } catch (_) {} releaseAll(); if (!f()) { refreshCampMenu(); return; } state = 'map'; for (const id of ['menu', 'end', 'pause', 'hud']) $(id).classList.add('hidden'); }
-function startCampaign(seed) { openCampaign(() => !!campUI.fresh(seed)); }
+/** Revela o mapa da campanha do fluxo já carregado (fim do prólogo da campanha). Espelha os passos do openCampaign/backToMap. */
+function showCampaignMap() {
+  campIntro = false; if (!campUI.flow) { state = 'menu'; $('menu').classList.remove('hidden'); refreshCampMenu(); return; }
+  try { document.exitPointerLock && document.exitPointerLock(); } catch (_) {}
+  releaseAll(); state = 'map'; endT = 0; endArgs = null; nextChapter = null; resumePending = false;
+  for (const id of ['menu', 'end', 'pause', 'hud']) $(id).classList.add('hidden');
+  $('hud').classList.remove('intro'); $('msg').style.opacity = 0; missionMsgT = 0; CLOG.length = 0; drawClog();   // nada do prólogo fica no ecrã do mapa
+  campUI.open(campUI.flow);
+}
+/** Campanha nova: cria+grava já o fluxo (para que «Continuar» leve ao mapa, não repita o prólogo) e corre o prólogo do massacre como primeira cena. */
+function startCampaign(seed) {
+  try { document.exitPointerLock && document.exitPointerLock(); } catch (_) {}
+  releaseAll();
+  if (!campUI.fresh(seed)) { refreshCampMenu(); return; }   // fluxo criado e gravado de imediato
+  campUI.suspend();                 // esconde o mapa: o prólogo joga-se primeiro
+  setChapter('prologo');
+  startGame(true);                  // startGame limpa campIntro no topo…
+  campIntro = true;                 // …por isso liga-se aqui: este prólogo abre a campanha
+}
 $('camp-new').addEventListener('click', () => {   // uma campanha a meio não se apaga sem perguntar
   if (campUI.saveState() !== 'meio') { startCampaign(); return; }
   $('camp-confirm').classList.remove('hidden'); $('camp-confirm-no').focus();
@@ -3186,7 +3208,7 @@ function step(dt) {
   else if (state === 'intro') { updateAllies(dt); updateEnemies(dt); updateCivs(dt); updateRiders(dt); updateProjectiles(dt); updateIntro(dt); }
   else if (state === 'play') { if (chapter === 'cativos') updateCaptives(dt); updatePlayer(dt); updateEnemies(dt); updateAllies(dt); updateProjectiles(dt); updateFallen(dt); updateCivs(dt); updateRiders(dt); updateCamera(dt); tickClog(dt); updateFlag(); updateHUD(dt); if (chapter === 'prologo') checkPrologue(); }
   else if (state === 'dead' || state === 'won') {
-    if (endT > 0) { endT -= dt; if (endT <= 0 && campBattle) backToMap(); else if (endT <= 0 && endArgs) { endScreen(...endArgs); endArgs = null; } }
+    if (endT > 0) { endT -= dt; if (endT <= 0 && campBattle) backToMap(); else if (endT <= 0 && campIntro) { startGame(false); campIntro = true; } else if (endT <= 0 && endArgs) { endScreen(...endArgs); endArgs = null; } }
     updateEnemies(dt); updateAllies(dt); updateCivs(dt); updateProjectiles(dt);
     if (state === 'dead') {
       avatar.dead = true; avatar.deadT = (avatar.deadT || 0) + dt; avatar.mv.x = avatar.mv.z = 0;
@@ -3231,7 +3253,7 @@ setListener(camera);
 resetWorld();
 $('start').disabled = false; $('start').textContent = 'COMEÇAR';
 return {
-  startCampaign, campaignStorage: storage, campaign: campUI, startCampaignBattle,
+  startCampaign, showCampaignMap, get campIntro() { return campIntro; }, campaignStorage: storage, campaign: campUI, startCampaignBattle,
   campaignTest: { YEAR_DAYS, get retreat() { const r = campBattle?.retreat; return r ? { on: r.on, at: { ...r.at }, via: r.via ? { ...r.via } : null, dir: r.dir } : { on: false, at: null, via: null }; }, forceBattle: spec => { const f = campUI.flow; f.battle = spec; f.phase = 'batalha'; campUI.render(); return f; } },
   start: (d, ch = 'emboscada') => { if (d != null) diff = d; setChapter(ch); startGame(false); }, startIntro: (ch = chapter) => { setChapter(ch); startGame(true); }, get civs() { return civs; }, get riders() { return riders; }, get chapter() { return chapter; }, MEADOW, ESCAPE, CASTRO, roadX, get carts() { return carts; }, get introT() { return introT; }, step, render: () => { if (state === 'map') return; cullChunks(CHUNKS, camera.position); cullCharacters(enemies, camera.position); cullCharacters(allies, camera.position); cullCharacters(civs, camera.position); R.render(); }, setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
   P, supplyTents, heightAt, CAMP, scene, camera, CHUNKS,
