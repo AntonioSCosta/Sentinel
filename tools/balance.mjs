@@ -1,10 +1,15 @@
 // Equilíbrio da campanha: joga anos inteiros com ordens automáticas (só a camada pura, sem DOM nem Three.js).
-// Uso: npm run balance   (sementes 1..20; BALANCE_SEEDS=50 para mais)
+// Uso: npm run balance   (sementes 1..20; BALANCE_SEEDS=50 para mais; VERBOSE=1 mostra as sementes de todos os robôs)
+// Robôs: «atual» (a tabela da spec, secção 9), «repetidor» (embosca sempre no mesmo sítio e ignora os relatos)
+// e «variado» (muda de troço depois de cada combate e responde aos relatos de Roma). Estes dois só emboscam:
+// não saem da estrada para defender aldeias, para a experiência medir a tática e não a sobrevivência. Cada um corre com a doutrina
+// de Roma ligada e desligada (state.doctrine.off): é o controlo que mostra se a diferença vem de Roma aprender.
 import { createFlow } from '../src/campaign/flow.js';
 import { YEAR_DAYS } from '../src/campaign/clock.js';
 import { foodPerDay } from '../src/campaign/state.js';
 import { makeRng } from '../src/campaign/rng.js';
 import { HELP_GAP } from '../src/campaign/simulation.js';
+import { ensureDoctrine, sectorOf, SECTORS } from '../src/campaign/doctrine.js';
 
 const SEEDS = +(process.env.BALANCE_SEEDS || 20);
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -27,8 +32,8 @@ function fight(spec, rng) {
   return { p, result: { won, alliesLost, enemiesKilled: won ? shown : Math.round(shown * 0.3), cartsCaptured: 2, cartsTotal: 3 } };
 }
 
-/** Uma ordem para o dia, a partir do estado (sem ver o futuro). Prioridades fixas, sem alternar alvos. */
-function policy(s, mem) {
+/** Regras de sobrevivência: fugir do pretor, comer, recrutar e (só o «atual») defender aldeias ameaçadas. */
+function survive(s, mem, defend = true) {
   const { world, party } = s, set = world.settlements;
   const live = set.filter(x => x.kind === 'aldeia' && !s.villages[x.id].burnt);
   const p = s.praetor;
@@ -54,48 +59,125 @@ function policy(s, mem) {
     if (v) { if (at(v)) mem.lastRecruit = s.day; return go(v, { kind: 'recrutar', id: v.id }); }
   }
   // 4) uma patrulha a ameaçar uma aldeia perto: vai defendê-la
+  if (!defend) return null;
   const threatened = live.find(v => dist(v, party) < 120 && s.patrols.some(q => dist(q, v) < 70));
   if (threatened) return go(threatened, { kind: 'acampar' });
-  // 5) emboscada: o ponto da estrada mais próximo, e esperar
-  return go(nearest(world.road, party), { kind: 'esperar' });
+  return null;
 }
 
-function play(seed) {
+const goTo = (s, to, then) => (dist(to, s.party) <= 20 ? then : { kind: 'marchar', to: { x: to.x, y: to.y } });
+
+/** «atual»: a política da tabela da spec — o ponto da estrada mais próximo, e esperar. */
+function atual(s, mem) {
+  return survive(s, mem) || goTo(s, nearest(s.world.road, s.party), { kind: 'esperar' });
+}
+
+/** Os dois robôs de tática só lutam onde escolheram: a caminho de outro sítio, com uma coluna perto, escondem-se. */
+function quiet(s, o) {
+  if (o.kind !== 'marchar' || (s.praetor && dist(s.praetor, s.party) <= FLEE)) return o;
+  return s.patrols.some(q => dist(q, s.party) < 45) ? { kind: 'esconder' } : o;
+}
+
+/** «repetidor»: escolhe um ponto da estrada no primeiro dia e embosca sempre lá, venha o que vier. */
+function repetidor(s, mem) {
+  const r = survive(s, mem, false);
+  if (r) return quiet(s, r);
+  if (!mem.home) mem.home = nearest(s.world.road, s.party);
+  return quiet(s, goTo(s, mem.home, { kind: 'esperar' }));
+}
+
+/** «variado»: muda de troço depois de cada combate, evita o troço guarnecido e não embosca o que Roma já espera. */
+function variado(s, mem) {
+  const r = survive(s, mem, false);
+  if (r) return quiet(s, r);
+  const d = ensureDoctrine(s), road = s.world.road;
+  if (!mem.home || s.battles !== mem.seenBattles || d.garrison === sectorOf(s.world, mem.home)) {
+    mem.seenBattles = s.battles;
+    mem.sector = ((mem.sector ?? sectorOf(s.world, s.party)) + 1) % SECTORS;
+    if (d.garrison === mem.sector) mem.sector = (mem.sector + 1) % SECTORS;
+    const pts = road.filter(q => sectorOf(s.world, q) === mem.sector);
+    mem.home = nearest(pts.length ? pts : road, s.party);
+  }
+  if (dist(mem.home, s.party) > 20) return quiet(s, { kind: 'marchar', to: { x: mem.home.x, y: mem.home.y } });
+  // o que vem aí? caçadores à vista: esconder; patrulha com batedores ou coluna com escolta e poucos homens: deixar passar
+  const near = s.patrols.filter(q => dist(q, s.party) < 75);
+  if (near.some(q => q.hunt)) return { kind: 'esconder' };
+  if (near.some(q => (q.kind === 'patrulha' && d.active.batedores) || (q.kind === 'comboio' && d.active.escolta && s.men < 20))) return { kind: 'esconder' };
+  return { kind: 'esperar' };
+}
+
+const BOTS = { atual, repetidor, variado };
+
+function play(seed, bot = 'atual', off = false) {
   const flow = createFlow({ seed }), s = flow.state, rng = makeRng(seed * 101 + 7);
-  const mem = { lastRecruit: -99 };
+  ensureDoctrine(s).off = off;
+  const mem = { lastRecruit: -99 }, policy = BOTS[bot];
+  const tally = { spotted: 0, counters: {}, hunters: 0, ambushes: 0, lostInBattle: 0 };
   let burnt30 = 0, guard = 0;
   const losses = [];   // { day, fome, batalha } homens perdidos, para atribuir a causa da ruína
   const types = {};
   while (flow.phase !== 'fim' && guard++ < 2000) {
     if (flow.phase === 'batalha') {
       types[flow.battle.type] = (types[flow.battle.type] || 0) + 1;
+      if (flow.battle.type === 'emboscada' || flow.battle.type === 'assalto-coluna') tally.ambushes++;
       const m0 = s.men;
       flow.finishBattle(fight(flow.battle, rng).result);
       losses.push({ day: s.day, batalha: m0 - s.men, fome: 0 });
+      tally.lostInBattle += Math.max(0, m0 - s.men);
       continue;
     }
     const o = policy(s, mem);
     const { events } = flow.order(o);
     if (process.env.TRACE == seed) console.log(s.day, o.kind, o.id || '', `men ${s.men} food ${s.food} arms ${s.arms} fame ${s.fame}`, s.praetor ? `pd ${Math.round(dist(s.praetor, s.party))}` : '', events.map(e => e.type).join(','));
-    for (const e of events) if (e.type === 'fome') losses.push({ day: s.day, fome: e.mortos, batalha: 0 });
+    for (const e of events) {
+      if (e.type === 'fome') losses.push({ day: s.day, fome: e.mortos, batalha: 0 });
+      if (e.type === 'emboscada-descoberta') tally.spotted++;
+      if (e.type === 'doutrina' && e.on) tally.counters[e.id] = (tally.counters[e.id] || 0) + 1;
+      if (e.type === 'cacadores') tally.hunters++;
+    }
     if (s.day <= 30) burnt30 = Object.values(s.villages).filter(v => v.burnt).length;
   }
   const burnt = Object.values(s.villages).filter(v => v.burnt).length;
   const recent = losses.filter(l => l.day > s.day - 30), sum = k => recent.reduce((a, l) => a + Math.max(0, l[k]), 0);
   const cause = s.over === 'vitoria' ? (s.decisivaWon ? 'decisiva' : 'ano')
     : s.day >= YEAR_DAYS ? 'ano' : s.fame <= 0 ? 'fama' : sum('fome') > sum('batalha') ? 'fome' : 'homens';
-  return { seed, days: Math.min(s.day, YEAR_DAYS), battles: s.battles || 0, result: s.over, cause, burnt, burnt30, men: s.men, fame: s.fame, types };
+  return { seed, days: Math.min(s.day, YEAR_DAYS), battles: s.battles || 0, result: s.over, cause, burnt, burnt30, men: s.men, fame: s.fame, types, ...tally };
 }
 
-const rows = [];
-for (let seed = 1; seed <= SEEDS; seed++) rows.push(play(seed));
 const pad = (v, n) => String(v).padStart(n);
-console.log('seed  dias  bat  resultado  causa     queimadas(d30/fim)  homens  fama  tipos');
-for (const r of rows) console.log(`${pad(r.seed, 4)}  ${pad(r.days, 4)}  ${pad(r.battles, 3)}  ${r.result.padEnd(9)}  ${r.cause.padEnd(8)}  ${pad(r.burnt30, 9)}/${pad(r.burnt, 2)}       ${pad(r.men, 6)}  ${pad(r.fame, 4)}  ${Object.entries(r.types).map(([k, v]) => `${k}:${v}`).join(' ')}`);
-const won = rows.filter(r => r.result === 'vitoria').length, inBand = rows.filter(r => r.battles >= 12 && r.battles <= 25).length;
-const causes = {}; for (const r of rows.filter(r => r.result === 'derrota')) causes[r.cause] = (causes[r.cause] || 0) + 1;
 const med = a => { const b = [...a].sort((x, y) => x - y); return b[b.length >> 1]; };
-console.log(`\nResumo (${SEEDS} sementes): vitórias ${won}/${SEEDS} (decisiva ${rows.filter(r => r.cause === 'decisiva').length}, ano ${rows.filter(r => r.result === 'vitoria' && r.cause === 'ano').length})`
-  + ` · batalhas 12–25 em ${inBand}/${SEEDS} (mediana ${med(rows.map(r => r.battles))})`
-  + ` · dias (mediana) ${med(rows.map(r => r.days))} · derrotas por causa ${JSON.stringify(causes)}`
-  + ` · aldeias queimadas até ao dia 30: máx ${Math.max(...rows.map(r => r.burnt30))}, mediana ${med(rows.map(r => r.burnt30))}`);
+const mean = a => a.reduce((x, y) => x + y, 0) / (a.length || 1);
+const perSeed = rows => {
+  console.log('seed  dias  bat  resultado  causa     queimadas(d30/fim)  homens  fama  tipos');
+  for (const r of rows) console.log(`${pad(r.seed, 4)}  ${pad(r.days, 4)}  ${pad(r.battles, 3)}  ${r.result.padEnd(9)}  ${r.cause.padEnd(8)}  ${pad(r.burnt30, 9)}/${pad(r.burnt, 2)}       ${pad(r.men, 6)}  ${pad(r.fame, 4)}  ${Object.entries(r.types).map(([k, v]) => `${k}:${v}`).join(' ')}`);
+};
+const summary = rows => {
+  const won = rows.filter(r => r.result === 'vitoria').length, inBand = rows.filter(r => r.battles >= 12 && r.battles <= 25).length;
+  const causes = {}; for (const r of rows.filter(r => r.result === 'derrota')) causes[r.cause] = (causes[r.cause] || 0) + 1;
+  return { won, inBand, causes, medBattles: med(rows.map(r => r.battles)), medDays: med(rows.map(r => r.days)),
+    burnt30: Math.max(...rows.map(r => r.burnt30)), medBurnt30: med(rows.map(r => r.burnt30)),
+    lossPerBattle: mean(rows.map(r => r.lostInBattle / Math.max(1, r.battles))), ambushShare: mean(rows.map(r => r.ambushes / Math.max(1, r.battles))),
+    spotted: mean(rows.map(r => r.spotted)), hunters: mean(rows.map(r => r.hunters)), menEnd: mean(rows.map(r => r.men)),
+    counters: Object.fromEntries(['batedores', 'escolta', 'forca', 'guarnicao', 'cacadores'].map(id => [id, rows.filter(r => r.counters[id]).length])) };
+};
+
+const seeds = Array.from({ length: SEEDS }, (_, i) => i + 1);
+const runs = {};
+for (const bot of Object.keys(BOTS)) for (const off of [false, true]) runs[`${bot}${off ? ' (sem doutrina)' : ''}`] = seeds.map(seed => play(seed, bot, off));
+
+// 1) a tabela da spec (robô «atual», com a doutrina)
+perSeed(runs.atual);
+const a = summary(runs.atual);
+console.log(`\nResumo (${SEEDS} sementes): vitórias ${a.won}/${SEEDS} (decisiva ${runs.atual.filter(r => r.cause === 'decisiva').length}, ano ${runs.atual.filter(r => r.result === 'vitoria' && r.cause === 'ano').length})`
+  + ` · batalhas 12–25 em ${a.inBand}/${SEEDS} (mediana ${a.medBattles})`
+  + ` · dias (mediana) ${a.medDays} · derrotas por causa ${JSON.stringify(a.causes)}`
+  + ` · aldeias queimadas até ao dia 30: máx ${a.burnt30}, mediana ${a.medBurnt30}`);
+if (process.env.VERBOSE) for (const [k, rows] of Object.entries(runs)) { console.log(`\n== ${k}`); perSeed(rows); }
+
+// 2) Roma aprende: os três robôs, com e sem doutrina
+console.log('\nRoma aprende — robôs com e sem doutrina (médias por ano)');
+console.log('robô                        vitórias  dias(med)  batalhas(med)  emboscadas%  descobertas  baixas/batalha  homens no fim  caçadores  anos com: batedores escolta força guarnição caçadores');
+for (const [k, rows] of Object.entries(runs)) {
+  const m = summary(rows), c = m.counters;
+  console.log(`${k.padEnd(27)} ${pad(`${m.won}/${SEEDS}`, 8)}  ${pad(m.medDays, 9)}  ${pad(m.medBattles, 13)}  ${pad((100 * m.ambushShare).toFixed(0) + '%', 11)}  ${pad(m.spotted.toFixed(1), 11)}  ${pad(m.lossPerBattle.toFixed(2), 14)}  ${pad(m.menEnd.toFixed(1), 13)}  ${pad(m.hunters.toFixed(1), 9)}  ${pad(c.batedores, 19)} ${pad(c.escolta, 7)} ${pad(c.forca, 5)} ${pad(c.guarnicao, 9)} ${pad(c.cacadores, 9)}`);
+}

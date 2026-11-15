@@ -3,12 +3,14 @@
 import { romansCampaign } from './clock.js';
 import { praetorStep } from './praetor.js';
 import { foodPerDay, recruitsFrom, checkRuin } from './state.js';
+import { ensureDoctrine, tickDoctrine, moveHunter, spottedAmbush, escortBonus, nextSpawnGap, isActive, FIRST_SPAWN } from './doctrine.js';
 
 export const MARCH_SPEED = 45;
 export const PATROL_SPEED = 35;
 export const ENCOUNTER_RADIUS = 30;
 const REACH = 20, ROAD_NEAR = 25, VILLAGE_NEAR = 25;
-export const SPAWN_EVERY = 6, HELP_GAP = 25, HELP_FOOD = 40;   // afinados na Task 18 (npm run balance)
+export const HELP_GAP = 25, HELP_FOOD = 40;   // afinados na Task 18 (npm run balance)
+export const CONVOY_CHANCE = 0.45;   // cada destacamento que sai de um posto é uma coluna de abastecimento com esta probabilidade
 const RECRUIT_GAP = 10, HELP_FAME = 30, HELP_MEN = 2;
 const PATROL_MEN = { patrulha: 6, comboio: 8 };
 const STARVE = 0.10;
@@ -83,27 +85,44 @@ function applyOrder(state, order) {
   }
 }
 
-/** Avança as patrulhas ao longo da estrada (para leste) e remove as que chegam ao fim. */
-function stepPatrols(state) {
+/**
+ * Avança os destacamentos: patrulhas e colunas pela estrada, no sentido em que saíram (dir), até à outra
+ * ponta; os caçadores fora da estrada, atrás do bando (doctrine.moveHunter).
+ */
+function stepPatrols(state, hidden) {
   const road = state.world.road;
   state.patrols = state.patrols.filter(p => {
+    if (p.hunt) return moveHunter(state, p, hidden);
+    const dir = p.dir === -1 ? -1 : 1;
     let left = PATROL_SPEED;
-    while (left > 0 && p.i < road.length) {
+    while (left > 0 && p.i >= 0 && p.i < road.length) {
       const d = dist(p, road[p.i]);
-      if (d <= left) { p.x = road[p.i].x; p.y = road[p.i].y; left -= d; p.i++; } else { moveToward(p, road[p.i], left); left = 0; }
+      if (d <= left) { p.x = road[p.i].x; p.y = road[p.i].y; left -= d; p.i += dir; } else { moveToward(p, road[p.i], left); left = 0; }
     }
-    return p.i < road.length;
+    return p.i >= 0 && p.i < road.length;
   });
 }
 
-function spawnPatrol(state) {
-  if (state.day <= 0 || state.day % SPAWN_EVERY || !romansCampaign(state.day)) return;
-  const posto = state.world.settlements.filter(s => s.kind === 'posto').reduce((a, b) => (b.x < a.x ? b : a));
-  const road = state.world.road;
-  let i = road.findIndex(r => r.x > posto.x);
-  if (i < 0) return;
-  const n = state.day / SPAWN_EVERY - 1, kind = n % 2 ? 'comboio' : 'patrulha';
-  state.patrols.push({ id: `${kind}-${state.day}`, kind, x: posto.x, y: posto.y, i, men: PATROL_MEN[kind] });
+/**
+ * Um destacamento sai de um dos postos, no dia marcado em doctrine.nextSpawn: posto, tipo e o intervalo
+ * até ao seguinte são sorteados (determinista por semente e dia). Leva escolta a mais conforme a doutrina.
+ */
+function spawnPatrol(state, rng) {
+  const d = ensureDoctrine(state);
+  if (d.nextSpawn === null) d.nextSpawn = FIRST_SPAWN;
+  if (state.day < d.nextSpawn || !romansCampaign(state.day)) return;
+  d.nextSpawn = state.day + nextSpawnGap(state, rng);
+  const road = state.world.road, postos = state.world.settlements.filter(s => s.kind === 'posto');
+  if (!postos.length || road.length < 2) return;
+  const posto = rng.pick(postos);
+  let at = 0, bd = Infinity;
+  for (let k = 0; k < road.length; k++) { const q = dist(road[k], posto); if (q < bd) { bd = q; at = k; } }
+  const dir = at < road.length / 2 ? 1 : -1, i = at + dir;
+  if (i < 0 || i >= road.length) return;
+  const kind = rng.chance(CONVOY_CHANCE) ? 'comboio' : 'patrulha';
+  const p = { id: `${kind}-${state.day}`, kind, x: posto.x, y: posto.y, i, dir, men: PATROL_MEN[kind] + escortBonus(state, kind) };
+  if (kind === 'patrulha' && isActive(state, 'batedores')) p.scouts = true;
+  state.patrols.push(p);
 }
 
 function feed(state, events) {
@@ -126,7 +145,7 @@ function villageThreat(state) {
   return null;
 }
 
-function detect(state, order, hidden) {
+function detect(state, order, hidden, events) {
   const { party } = state;
   if (state.praetor && dist(state.praetor, party) <= ENCOUNTER_RADIUS) return { kind: 'pretor', foe: state.praetor, waiting: false };
   if (hidden) return null;
@@ -134,7 +153,12 @@ function detect(state, order, hidden) {
   if (threat) return threat;
   const foe = state.patrols.find(p => dist(p, party) <= ENCOUNTER_RADIUS);
   if (!foe) return null;
-  return { kind: foe.kind, foe, waiting: order.kind === 'esperar' && nearRoad(state.world, party) };
+  let waiting = order.kind === 'esperar' && nearRoad(state.world, party) && !foe.hunt;
+  if (waiting) {   // Roma aprendeu: batedores ou guarnição descobrem a emboscada e a luta é em campo aberto
+    const why = spottedAmbush(state, foe);
+    if (why) { waiting = false; events.push({ type: 'emboscada-descoberta', why }); }
+  }
+  return { kind: foe.kind, foe, waiting };
 }
 
 /** Um dia. Devolve os eventos e o eventual encontro. */
@@ -142,15 +166,17 @@ export function stepDay(state, order, rng) {
   if (state.over) return { events: [], encounter: null };
   const res = applyOrder(state, order);
   const events = res.events;
-  stepPatrols(state);
-  spawnPatrol(state);
+  const hidden = order.kind === 'esconder';
+  stepPatrols(state, hidden);
+  spawnPatrol(state, rng);
   if (state.praetor) events.push(...praetorStep(state, rng));
+  events.push(...tickDoctrine(state, rng));
   feed(state, events);
   if (checkRuin(state)) events.push({ type: 'derrota' });
   state.day += 1;
   const blocked = state.cooldown > 0;
   if (blocked) state.cooldown -= 1;
   let encounter = res.encounter;
-  if (!encounter && !state.over && !blocked) encounter = detect(state, order, order.kind === 'esconder');
+  if (!encounter && !state.over && !blocked) encounter = detect(state, order, hidden, events);
   return { events, encounter };
 }

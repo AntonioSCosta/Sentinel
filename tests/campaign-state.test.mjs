@@ -105,3 +105,29 @@ test('deserialize: posts (postos atacados) e praetor.men validados', () => {
   assert.ok(deserialize(pr(10)));
   for (const bad of [-1, 'x', null]) assert.equal(deserialize(pr(bad)), null, String(bad));
 });
+
+// --- Roma aprende (doctrine.js): gravações antigas carregam; uma doutrina estragada é recusada ---
+test('deserialize: doctrine é opcional e, quando existe, tem de ser válida', async () => {
+  const { ensureDoctrine } = await import('../src/campaign/doctrine.js');
+  const base = () => JSON.parse(serialize(newCampaign(3)));
+  assert.ok(deserialize(JSON.stringify(base())));   // gravação de antes desta mecânica
+  const withD = () => { const s = newCampaign(3); const d = ensureDoctrine(s); d.mem.emboscada = 2.5; d.sectors[1] = 1; d.active.batedores = true; d.lastSeen = { x: 10, y: 20, day: 4 }; d.nextSpawn = 9; return JSON.parse(serialize(s)); };
+  const ok = withD();
+  assert.deepEqual(deserialize(JSON.stringify(ok)), ok);
+  const bad = {
+    'doctrine number': d => 5, 'mem em falta': d => ({ ...d, mem: undefined }), 'mem negativa': d => ({ ...d, mem: { ...d.mem, coluna: -1 } }),
+    'mem NaN': d => ({ ...d, mem: { ...d.mem, campo: null } }), 'sectors curto': d => ({ ...d, sectors: [0, 0] }), 'sectors texto': d => ({ ...d, sectors: ['a', 0, 0, 0] }),
+    'activity negativa': d => ({ ...d, activity: -1 }), 'active lista': d => ({ ...d, active: [] }), 'active não booleano': d => ({ ...d, active: { batedores: 'sim' } }),
+    'garrison fora': d => ({ ...d, garrison: 9 }), 'lastSeen sem x': d => ({ ...d, lastSeen: { y: 1, day: 1 } }), 'nextSpawn texto': d => ({ ...d, nextSpawn: 'x' }),
+    'hunterAt NaN': d => ({ ...d, hunterAt: null }), 'off texto': d => ({ ...d, off: 'não' }),
+  };
+  for (const [name, f] of Object.entries(bad)) assert.equal(deserialize(JSON.stringify({ ...ok, doctrine: f(ok.doctrine) })), null, name);
+});
+
+test('deserialize: caçadores gravados têm alvo e dias válidos', () => {
+  const base = () => JSON.parse(serialize(newCampaign(3)));
+  const h = { id: 'cacadores-9', kind: 'cacadores', hunt: true, x: 1, y: 2, men: 12, target: { x: 5, y: 6 }, left: 4 };
+  assert.ok(deserialize(JSON.stringify({ ...base(), patrols: [h] })));
+  for (const bad of [{ target: null }, { target: { x: 'a', y: 1 } }, { left: 'x' }, { x: NaN }])
+    assert.equal(deserialize(JSON.stringify({ ...base(), patrols: [{ ...h, ...bad }] })), null, JSON.stringify(bad));
+});
