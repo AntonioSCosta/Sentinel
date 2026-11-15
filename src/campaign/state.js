@@ -1,6 +1,7 @@
 // Estado da campanha: recursos, ruína e gravação. Módulo puro (sem DOM nem Three.js).
 import { generateWorld } from './worldgen.js';
 import { validDoctrine, validHunter } from './doctrine.js';
+import { validIntel } from './intel.js';
 
 /** Tabela de equilíbrio, afinada na Task 18 com `npm run balance` (ver a spec, secção 9). */
 export const START = { men: 14, food: 60, arms: 15, fame: 20 };
@@ -55,6 +56,7 @@ export function deserialize(text) {
   if ('decisivaWon' in o && typeof o.decisivaWon !== 'boolean') return null;
   if ('doctrine' in o && !validDoctrine(o.doctrine)) return null;   // Roma aprende (opcional: gravações antigas não a têm)
   if (!o.patrols.every(validHunter)) return null;
+  if ('intel' in o && !validIntel(o.intel)) return null;   // o que o jogador sabe (opcional: gravações antigas não o têm)
   if (!isObj(o.world) || !isObj(o.world.start) || !Array.isArray(o.world.settlements)) return null;
   if (!o.world.settlements.every(s => isObj(s) && typeof s.id === 'string' && num(s.x) && num(s.y))) return null;
   return o;

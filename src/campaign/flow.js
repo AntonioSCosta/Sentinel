@@ -7,6 +7,7 @@ import { makePraetor } from './praetor.js';
 import { stepDay } from './simulation.js';
 import { battleSpec, BATTLE_TYPES, applyResult, ALLY_CAP } from './battles.js';
 import { dueScheduled, rollEvent } from './events.js';
+import { ensureIntel, forgetForce } from './intel.js';
 
 export const STORAGE_KEY = 'viriato.campaign';
 const PHASES = ['mapa', 'batalha', 'fim'];
@@ -23,6 +24,7 @@ function scheduledSpec(entry, state, rng) {
 }
 
 function build(state, storage, phase, battle) {
+  ensureIntel(state);   // campanha nova ou gravação antiga: o jogador começa a saber o que tem à vista
   const flow = {
     state, phase, battle,
     save() {
@@ -56,6 +58,7 @@ function build(state, storage, phase, battle) {
     finishBattle(result) {
       if (flow.phase !== 'batalha') return { events: [], refused: true };
       const events = applyResult(state, flow.battle, result ?? {});
+      if (result?.won) forgetForce(state, flow.battle?.foeId);   // venceu-a: sabe que já não anda por aí
       flow.battle = null;
       yearEnd();
       flow.phase = state.over ? 'fim' : 'mapa';
