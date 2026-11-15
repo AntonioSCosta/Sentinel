@@ -194,24 +194,24 @@ Roma lembra-se de como o bando combate e responde (`src/campaign/doctrine.js`). 
 | escolta | assaltos a colunas ≥ 1,8 / ≤ 0,8 | comboios com +6 homens |
 | força | campo aberto ≥ 3 / ≤ 1,5 | patrulhas com +3 homens |
 | guarnição | o mesmo troço ≥ 3,5 / ≤ 1,8 | nenhuma emboscada nesse troço passa despercebida |
-| caçadores | pressão ≥ 7 / ≤ 4 | uma coluna de 10 sai do posto e vai, fora da estrada, ao último sítio onde o bando foi visto; segue-o se o vir (90) e não estiver escondido; volta ao fim de 12 dias; no máximo uma de 15 em 15 dias |
+| caçadores | pressão ≥ 7 / ≤ 4 | uma coluna sai do posto mais perto do último sítio onde o bando foi visto, com 10 homens mais 1 por ponto de pressão (no máximo 20), e vai até lá fora da estrada; segue o bando se o vir (90) e ele não estiver escondido; desaparece ao fim de 12 dias; no máximo uma de 15 em 15 dias. Não contam como ameaça a aldeias: não dão defesa de aldeia nem a queimam |
 
 **Fama e atenção.** Pressão = fama/25 + atividade recente. A fama continua a dar recrutas; agora também encurta o intervalo entre colunas (de 6–9 dias, calmo, até 3–5, com muita pressão) e reforça as escoltas (até +6). **Movimentos menos previsíveis.** Acabou a coluna de 6 em 6 dias do mesmo posto no mesmo sentido: posto e sentido sorteados, patrulha ou comboio sorteado (comboio 45 %), intervalo sorteado; a primeira nunca antes do dia 6.
 
-**Robôs** (`tools/balance.mjs`): «repetidor» embosca sempre no mesmo ponto; «variado» muda de troço depois de cada combate, evita o troço guarnecido e deixa passar o que Roma já espera. Os dois não defendem aldeias e escondem-se se uma coluna os apanhar a caminho, para a medida ser a tática. Cada robô corre com a doutrina ligada e desligada (`state.doctrine.off`).
+**Robôs** (`tools/balance.mjs`): «repetidor» embosca sempre no mesmo ponto; «variado» muda de troço depois de cada combate, evita o troço guarnecido e deixa passar o que Roma já espera. Os dois não defendem aldeias e escondem-se se uma coluna os apanhar a caminho, para a medida ser a tática. Cada robô corre com e sem contramedidas (`state.doctrine.off`). Desligar só tira as contramedidas; a pressão romana continua a encurtar os intervalos entre colunas e a reforçar as escoltas. Não é, portanto, a versão anterior do jogo.
 
 60 sementes:
 
 | Robô | Vitórias | Dias (med.) | Emboscadas % | Descobertas/ano |
 |---|---|---|---|---|
-| atual | 21/60 | 184 | 8 % | 0,4 |
-| atual, sem doutrina | 31/60 | 195 | 9 % | 0 |
-| repetidor | 20/60 | 139 | 20 % | 0,7 |
-| repetidor, sem doutrina | 24/60 | 157 | 25 % | 0 |
+| atual | 19/60 | 174 | 7 % | 0,3 |
+| atual, sem contramedidas | 31/60 | 195 | 9 % | 0 |
+| repetidor | 19/60 | 139 | 20 % | 0,7 |
+| repetidor, sem contramedidas | 24/60 | 157 | 25 % | 0 |
 | variado | 17/60 | 130 | 11 % | 0 |
-| variado, sem doutrina | 20/60 | 130 | 12 % | 0 |
+| variado, sem contramedidas | 20/60 | 130 | 12 % | 0 |
 
-**Leitura.** Roma aprender custa mais ao repetidor (−4 vitórias, −18 dias, −5 pontos de emboscadas, 0,7 emboscadas descobertas por ano) do que ao variado (−3 vitórias, 0 dias, −1 ponto, nenhuma descoberta). A diferença existe, mas é pequena: estes robôs combatem pouco (mediana 8–10 batalhas) e a perseguição do pretor pesa mais do que a tática. O variado fica abaixo do repetidor em valor absoluto porque deixa passar colunas e marcha mais; isso é custo da sua própria política, não de Roma. Com a doutrina, a campanha do robô «atual» fica mais dura: 21/60 vitórias (era 26/60 antes desta versão, 31/60 com a doutrina desligada), 27/60 anos na faixa de 12–25 batalhas. Afinações feitas: memória 40 → 60 dias, batedores e escolta 2,5/2 → 1,8, força +4 → +3 homens, caçadores 6 → 7 de pressão. Com 20 sementes os números variam muito (atual 3/20 a 5/20).
+**Leitura.** As contramedidas custam mais ao repetidor (−5 vitórias, −18 dias, −5 pontos de emboscadas, 0,7 emboscadas descobertas por ano) do que ao variado (−3 vitórias, 0 dias, −1 ponto, nenhuma descoberta). A diferença existe, mas é pequena: estes robôs combatem pouco (mediana 8–10 batalhas) e a perseguição do pretor pesa mais do que a tática. O variado fica abaixo do repetidor em valor absoluto porque deixa passar colunas e marcha mais; isso é custo da sua própria política, não de Roma. Para o robô «atual», a campanha com contramedidas fica mais dura: 19/60 vitórias, contra 26/60 na tabela anterior desta secção (versão antes de «Roma aprende») e 28/60 anos na faixa de 12–25 batalhas. O 31/60 «sem contramedidas» não é a versão anterior: mantém a pressão romana e o novo calendário das colunas. Afinações feitas: memória 40 → 60 dias, batedores e escolta 2,5/2 → 1,8, força +4 → +3 homens, caçadores 6 → 7 de pressão. Com 20 sementes os números variam muito (atual 2/20 a 5/20).
 
 ## 10. Lacunas que o construtor encontrou (decididas por mim)
 

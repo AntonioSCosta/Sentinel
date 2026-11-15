@@ -3,7 +3,7 @@
 import { romansCampaign } from './clock.js';
 import { praetorStep } from './praetor.js';
 import { foodPerDay, recruitsFrom, checkRuin } from './state.js';
-import { ensureDoctrine, tickDoctrine, moveHunter, spottedAmbush, escortBonus, nextSpawnGap, isActive, FIRST_SPAWN } from './doctrine.js';
+import { ensureDoctrine, tickDoctrine, moveHunter, spottedAmbush, escortBonus, nextSpawnGap, FIRST_SPAWN } from './doctrine.js';
 
 export const MARCH_SPEED = 45;
 export const PATROL_SPEED = 35;
@@ -121,7 +121,6 @@ function spawnPatrol(state, rng) {
   if (i < 0 || i >= road.length) return;
   const kind = rng.chance(CONVOY_CHANCE) ? 'comboio' : 'patrulha';
   const p = { id: `${kind}-${state.day}`, kind, x: posto.x, y: posto.y, i, dir, men: PATROL_MEN[kind] + escortBonus(state, kind) };
-  if (kind === 'patrulha' && isActive(state, 'batedores')) p.scouts = true;
   state.patrols.push(p);
 }
 
@@ -134,9 +133,11 @@ function feed(state, events) {
   events.push({ type: 'fome', mortos: dead });
 }
 
-/** Uma aldeia intacta a <= VILLAGE_NEAR da party com uma patrulha ou o pretor a <= ENCOUNTER_RADIUS dela. */
+/** Uma aldeia intacta a <= VILLAGE_NEAR da party com uma patrulha ou o pretor a <= ENCOUNTER_RADIUS dela.
+ *  Os caçadores não contam: vêm atrás do bando, não da aldeia. */
 function villageThreat(state) {
-  const foes = state.praetor ? [...state.patrols, state.praetor] : state.patrols;
+  const roads = state.patrols.filter(p => !p.hunt);
+  const foes = state.praetor ? [...roads, state.praetor] : roads;
   for (const s of state.world.settlements) {
     if (s.kind !== 'aldeia' || state.villages[s.id]?.burnt || dist(s, state.party) > VILLAGE_NEAR) continue;
     const foe = foes.find(f => dist(f, s) <= ENCOUNTER_RADIUS);
@@ -170,7 +171,7 @@ export function stepDay(state, order, rng) {
   stepPatrols(state, hidden);
   spawnPatrol(state, rng);
   if (state.praetor) events.push(...praetorStep(state, rng));
-  events.push(...tickDoctrine(state, rng));
+  events.push(...tickDoctrine(state));
   feed(state, events);
   if (checkRuin(state)) events.push({ type: 'derrota' });
   state.day += 1;

@@ -104,7 +104,7 @@ function level(state, d, id) {
 }
 
 /** Um dia: liga ou desliga contramedidas (com relato), lança caçadores e deixa a memória decair. */
-export function tickDoctrine(state, rng) {
+export function tickDoctrine(state) {
   const d = ensureDoctrine(state), events = [];
   for (const id of Object.keys(COUNTERS)) {
     const c = COUNTERS[id], v = level(state, d, id), was = !!d.active[id];

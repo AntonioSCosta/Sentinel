@@ -11,7 +11,7 @@ const world = generateWorld(3);
 const base = () => ({ day: 20, fame: 20, men: 14, world, party: { x: world.start.x, y: world.start.y }, patrols: [], villages: {} });
 const spec = (type, where = { x: world.road[2].x, y: world.road[2].y }) => ({ type, where });
 const rng = (s = 1) => makeRng(s);
-const days = (s, n, r = rng()) => { const ev = []; for (let i = 0; i < n; i++) { ev.push(...tickDoctrine(s, r)); s.day++; } return ev; };
+const days = (s, n) => { const ev = []; for (let i = 0; i < n; i++) { ev.push(...tickDoctrine(s)); s.day++; } return ev; };
 
 test('ensureDoctrine cria o estado em campanhas antigas sem o apagar quando já existe', () => {
   const s = base();

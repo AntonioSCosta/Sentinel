@@ -4,6 +4,7 @@ import { MARCH_SPEED, PATROL_SPEED, ENCOUNTER_RADIUS, nearRoad, stepDay } from '
 import { newCampaign, foodPerDay, recruitsFrom } from '../src/campaign/state.js';
 import { makeRng } from '../src/campaign/rng.js';
 import { ensureDoctrine, sectorOf, FIRST_SPAWN, COUNTERS } from '../src/campaign/doctrine.js';
+import { battleSpec, applyResult } from '../src/campaign/battles.js';
 
 const rng = () => makeRng(7);
 const fresh = () => newCampaign(3);
@@ -191,6 +192,39 @@ test('Roma aprende: escondido, o bando não é apanhado pelos caçadores', () =>
   const d = ensureDoctrine(s); d.nextSpawn = 1e9; d.lastSeen = { x: s.party.x, y: s.party.y, day: 0 };
   for (let i = 0; i < 30; i++) assert.equal(stepDay(s, { kind: 'esconder' }, makeRng(70 + s.day * 7919)).encounter, null, `dia ${s.day}`);
   assert.ok(s.doctrine.hunterAt >= 0, 'saíram caçadores');
+});
+
+// Caçadores junto a uma aldeia: vêm atrás do bando, não da aldeia.
+const huntersAtVillage = () => {
+  const s = fresh(); s.food = 1e6; s.praetor = null;
+  ensureDoctrine(s).nextSpawn = 1e9;
+  const v = find(s, 'aldeia'); at(s, v);
+  s.patrols = [{ id: 'cacadores-0', kind: 'cacadores', hunt: true, x: v.x + 15, y: v.y, men: 12, target: { x: v.x, y: v.y }, left: 12 }];
+  return { s, v };
+};
+
+test('Roma aprende: caçadores perto de uma aldeia não são ameaça à aldeia — o encontro é com os caçadores', () => {
+  const { s } = huntersAtVillage();
+  const enc = stepDay(s, ACAMPAR, rng()).encounter;
+  assert.ok(enc, 'os caçadores apanham o bando');
+  assert.equal(enc.kind, 'cacadores');
+  assert.equal(enc.villageId, undefined);
+});
+
+test('Roma aprende: perder contra caçadores junto a uma aldeia não a queima', () => {
+  const { s, v } = huntersAtVillage();
+  const enc = stepDay(s, ACAMPAR, rng()).encounter;
+  const spec = battleSpec(enc, s, rng());
+  assert.notEqual(spec.type, 'defesa-aldeia');
+  applyResult(s, spec, { won: false, alliesLost: 3, enemiesLost: 0, viriatoDown: false });
+  assert.equal(s.villages[v.id].burnt, false);
+});
+
+test('Roma aprende: os caçadores continuam a seguir o bando que passa por uma aldeia', () => {
+  const { s, v } = huntersAtVillage();
+  const h = s.patrols[0]; h.x = v.x + 40; s.party.x = v.x; s.party.y = v.y;
+  stepDay(s, { kind: 'marchar', to: { x: v.x - 200, y: v.y } }, rng());
+  assert.ok(h.target.x < v.x, 'o alvo passou a ser o bando');
 });
 
 test('esconder: patrulhas ignoram a party', () => {

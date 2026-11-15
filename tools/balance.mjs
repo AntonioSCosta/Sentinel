@@ -2,8 +2,9 @@
 // Uso: npm run balance   (sementes 1..20; BALANCE_SEEDS=50 para mais; VERBOSE=1 mostra as sementes de todos os robôs)
 // Robôs: «atual» (a tabela da spec, secção 9), «repetidor» (embosca sempre no mesmo sítio e ignora os relatos)
 // e «variado» (muda de troço depois de cada combate e responde aos relatos de Roma). Estes dois só emboscam:
-// não saem da estrada para defender aldeias, para a experiência medir a tática e não a sobrevivência. Cada um corre com a doutrina
-// de Roma ligada e desligada (state.doctrine.off): é o controlo que mostra se a diferença vem de Roma aprender.
+// não saem da estrada para defender aldeias, para a experiência medir a tática e não a sobrevivência. Cada um corre com as contramedidas
+// de Roma ligadas e desligadas (state.doctrine.off). Desligar só tira as contramedidas (batedores, escolta, força,
+// guarnição, caçadores): a pressão romana (fama e atividade) continua a encurtar os intervalos e a reforçar as colunas.
 import { createFlow } from '../src/campaign/flow.js';
 import { YEAR_DAYS } from '../src/campaign/clock.js';
 import { foodPerDay } from '../src/campaign/state.js';
@@ -60,7 +61,7 @@ function survive(s, mem, defend = true) {
   }
   // 4) uma patrulha a ameaçar uma aldeia perto: vai defendê-la
   if (!defend) return null;
-  const threatened = live.find(v => dist(v, party) < 120 && s.patrols.some(q => dist(q, v) < 70));
+  const threatened = live.find(v => dist(v, party) < 120 && s.patrols.some(q => !q.hunt && dist(q, v) < 70));
   if (threatened) return go(threatened, { kind: 'acampar' });
   return null;
 }
@@ -163,9 +164,9 @@ const summary = rows => {
 
 const seeds = Array.from({ length: SEEDS }, (_, i) => i + 1);
 const runs = {};
-for (const bot of Object.keys(BOTS)) for (const off of [false, true]) runs[`${bot}${off ? ' (sem doutrina)' : ''}`] = seeds.map(seed => play(seed, bot, off));
+for (const bot of Object.keys(BOTS)) for (const off of [false, true]) runs[`${bot}${off ? ' (sem contramedidas)' : ''}`] = seeds.map(seed => play(seed, bot, off));
 
-// 1) a tabela da spec (robô «atual», com a doutrina)
+// 1) a tabela da spec (robô «atual», com as contramedidas)
 perSeed(runs.atual);
 const a = summary(runs.atual);
 console.log(`\nResumo (${SEEDS} sementes): vitórias ${a.won}/${SEEDS} (decisiva ${runs.atual.filter(r => r.cause === 'decisiva').length}, ano ${runs.atual.filter(r => r.result === 'vitoria' && r.cause === 'ano').length})`
@@ -174,10 +175,11 @@ console.log(`\nResumo (${SEEDS} sementes): vitórias ${a.won}/${SEEDS} (decisiva
   + ` · aldeias queimadas até ao dia 30: máx ${a.burnt30}, mediana ${a.medBurnt30}`);
 if (process.env.VERBOSE) for (const [k, rows] of Object.entries(runs)) { console.log(`\n== ${k}`); perSeed(rows); }
 
-// 2) Roma aprende: os três robôs, com e sem doutrina
-console.log('\nRoma aprende — robôs com e sem doutrina (médias por ano)');
-console.log('robô                        vitórias  dias(med)  batalhas(med)  emboscadas%  descobertas  baixas/batalha  homens no fim  caçadores  anos com: batedores escolta força guarnição caçadores');
+// 2) Roma aprende: os três robôs, com e sem contramedidas
+console.log('\nRoma aprende — robôs com e sem contramedidas (médias por ano)');
+console.log('«sem contramedidas»: state.doctrine.off; a pressão romana (intervalos e reforços) mantém-se. Não é a versão anterior do jogo.');
+console.log('robô                            vitórias  dias(med)  batalhas(med)  emboscadas%  descobertas  baixas/batalha  homens no fim  caçadores  anos com: batedores escolta força guarnição caçadores');
 for (const [k, rows] of Object.entries(runs)) {
   const m = summary(rows), c = m.counters;
-  console.log(`${k.padEnd(27)} ${pad(`${m.won}/${SEEDS}`, 8)}  ${pad(m.medDays, 9)}  ${pad(m.medBattles, 13)}  ${pad((100 * m.ambushShare).toFixed(0) + '%', 11)}  ${pad(m.spotted.toFixed(1), 11)}  ${pad(m.lossPerBattle.toFixed(2), 14)}  ${pad(m.menEnd.toFixed(1), 13)}  ${pad(m.hunters.toFixed(1), 9)}  ${pad(c.batedores, 19)} ${pad(c.escolta, 7)} ${pad(c.forca, 5)} ${pad(c.guarnicao, 9)} ${pad(c.cacadores, 9)}`);
+  console.log(`${k.padEnd(31)} ${pad(`${m.won}/${SEEDS}`, 8)}  ${pad(m.medDays, 9)}  ${pad(m.medBattles, 13)}  ${pad((100 * m.ambushShare).toFixed(0) + '%', 11)}  ${pad(m.spotted.toFixed(1), 11)}  ${pad(m.lossPerBattle.toFixed(2), 14)}  ${pad(m.menEnd.toFixed(1), 13)}  ${pad(m.hunters.toFixed(1), 9)}  ${pad(c.batedores, 19)} ${pad(c.escolta, 7)} ${pad(c.forca, 5)} ${pad(c.guarnicao, 9)} ${pad(c.cacadores, 9)}`);
 }
