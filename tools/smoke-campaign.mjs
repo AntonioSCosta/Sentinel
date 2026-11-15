@@ -595,6 +595,21 @@ function fixWave({ G, doc, win, check, st, setGod, $, shown }) {
   check(`a refused order keeps the day and the food, and says so (${$('m-day').textContent})`, $('m-day').textContent === dayBefore && f.state.food === foodBefore && /O dia não passa\./.test([...$('mlog').children].at(-1)?.textContent || ''));
   check(`recruiting with no arms says so and keeps the village's turn (${[...$('mlog').children].at(-1)?.textContent})`, /Não tens armas para equipar recrutas\./.test($('mlog').textContent) && f.state.villages[vil.id].recruitedDay === -999);
 
+  // --- informação e reconhecimento ---
+  G.campaignStorage.clear(); G.startCampaign(41); G.showCampaignMap(); f = G.campaign.flow;
+  check('the map has «Reconhecer» and «Relatos» buttons', $('m-recon')?.tagName === 'BUTTON' && $('m-intel')?.tagName === 'BUTTON' && $('m-intel').getAttribute('aria-expanded') === 'false');
+  $('m-intel').click();
+  check(`«Relatos» opens with where the praetor gathers his army (${$('mintel').textContent.slice(0, 60)})`, shown('mintel') && /junta o exército/.test($('mintel').textContent) && $('mintel').querySelectorAll('button[data-report]').length >= 1);
+  $('m-recon').click();
+  check('«Reconhecer» arms the scouting mode and says what the click will do', $('m-recon').getAttribute('aria-pressed') === 'true' && /batedores/.test($('m-hint').textContent));
+  $('m-recon').click();
+  check('pressing it again gives up without spending the day', $('m-recon').getAttribute('aria-pressed') === 'false' && f.state.day === 0 && /Clica para marchar/.test($('m-hint').textContent));
+  G.campaign.order({ kind: 'reconhecer', to: { x: f.state.party.x + 60, y: f.state.party.y } });
+  check(`scouting spends one day and the scouts report back (${[...$('mlog').children].at(-1)?.textContent})`, f.state.day === 1 && /Os batedores voltam/.test($('mlog').textContent) && /Batedores:/.test($('mintel').textContent));
+  G.campaign.order({ kind: 'reconhecer', to: { x: f.state.party.x + 900, y: f.state.party.y + 900 } });
+  check('scouting too far is refused for free', f.state.day === 1 && /longe de mais para os batedores.*O dia não passa\./.test([...$('mlog').children].at(-1)?.textContent || ''));
+  $('m-intel').click();
+
   // --- lista de lugares pelo teclado ---
   check('the map has a «Lugares» button', $('m-places')?.tagName === 'BUTTON' && $('m-places').textContent.trim() === 'Lugares' && $('m-places').getAttribute('aria-expanded') === 'false');
   $('m-places').click();
