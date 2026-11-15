@@ -7,6 +7,15 @@ import { isBridged, isStory } from './bridge.js';
 import { START } from './state.js';
 import { MARCH_SPEED } from './simulation.js';
 
+/** Relatos de Roma (doctrine.js): o que muda quando uma contramedida entra e quando sai. */
+const DOCTRINE_TEXT = {
+  batedores: ['Relato: as patrulhas romanas trazem agora batedores a cavalo à frente. Emboscar patrulhas deixou de resultar.', 'Relato: as patrulhas deixaram de levar batedores.'],
+  escolta: ['Relato: as colunas de abastecimento saem agora com escolta reforçada.', 'Relato: as colunas voltaram à escolta habitual.'],
+  forca: ['Relato: as patrulhas romanas andam agora em força.', 'Relato: as patrulhas voltaram ao número habitual.'],
+  guarnicao: ['Relato: Roma guarneceu o troço da estrada onde mais atacaste.', 'Relato: a guarnição deixou a estrada.'],
+  cacadores: ['Relato: Roma decidiu caçar o bando.', 'Relato: Roma deixou de te caçar, por agora.'],
+};
+
 const BAR_TOP = 52, BAR_BOTTOM = 64; // alturas das barras HTML (px) que o canvas deixa livres
 const LOG_LINES = 6;
 const BATTLE_NAMES = {
@@ -52,6 +61,9 @@ export function eventText(ev, state) {
     case 'ruina': return 'O bando desfez-se.';
     case 'aldeia-queimada': return `${name(ev.id)} foi queimada pelos romanos.`;
     case 'acontecimento': return ev.text;
+    case 'doutrina': return DOCTRINE_TEXT[ev.id]?.[ev.on ? 0 : 1] || '';
+    case 'emboscada-descoberta': return ev.why === 'guarnicao' ? 'A guarnição da estrada descobriu a emboscada: a luta é em campo aberto.' : 'Os batedores romanos descobriram a emboscada: a luta é em campo aberto.';
+    case 'cacadores': return `Uma coluna de caçadores (${ev.men} homens) saiu do posto atrás do sítio onde foste visto.`;
     case 'ordem-invalida': return 'Não podes fazer isso daqui: aproxima-te primeiro.';
     default: return null;
   }
@@ -287,7 +299,8 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     }
     if (hit?.type === 'patrol') {
       const p = (s.patrols || []).find(x => x.id === hit.id);
-      return `${p?.kind === 'comboio' ? 'Comboio' : 'Patrulha'} romana${p?.men ? ` · ${p.men} homens` : ''}`;
+      const what = p?.kind === 'comboio' ? 'Comboio romano' : p?.kind === 'cacadores' ? 'Caçadores romanos' : 'Patrulha romana';
+      return `${what}${p?.men ? ` · ${p.men} homens` : ''}`;
     }
     if (hit?.type === 'praetor') return `${s.praetor?.name || 'Pretor'} · pretor`;
     return when;

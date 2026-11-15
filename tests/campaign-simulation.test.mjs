@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { MARCH_SPEED, PATROL_SPEED, ENCOUNTER_RADIUS, nearRoad, stepDay } from '../src/campaign/simulation.js';
 import { newCampaign, foodPerDay, recruitsFrom } from '../src/campaign/state.js';
 import { makeRng } from '../src/campaign/rng.js';
+import { ensureDoctrine, sectorOf, FIRST_SPAWN, COUNTERS } from '../src/campaign/doctrine.js';
+import { battleSpec, applyResult } from '../src/campaign/battles.js';
 
 const rng = () => makeRng(7);
 const fresh = () => newCampaign(3);
@@ -68,28 +70,53 @@ test('estado terminado: stepDay não faz nada', () => {
   assert.equal(JSON.stringify(s), before);
 });
 
-test('postos largam patrulha e comboio alternados de 6 em 6 dias', () => {
-  const s = fresh(); far(s); s.food = 1e6; s.fame = 1e6;
+// destacamentos: posto, tipo e intervalo sorteados com o gerador do dia (como no flow: semente + dia)
+function spawns(seed, days = 200) {
+  const s = fresh(); far(s); s.food = 1e6;
   const seen = [];
-  for (let d = 0; d < 19; d++) {
-    stepDay(s, ACAMPAR, rng());
-    for (const p of s.patrols) if (!seen.find(q => q.id === p.id)) seen.push({ id: p.id, kind: p.kind, day: s.day });
+  for (let d = 0; d < days; d++) {
+    stepDay(s, ACAMPAR, makeRng(seed + s.day * 7919));
+    for (const p of s.patrols) if (!p.hunt && !seen.find(q => q.id === p.id)) seen.push({ id: p.id, kind: p.kind, day: s.day, dir: p.dir });
   }
-  assert.deepEqual(seen.map(p => p.kind), ['patrulha', 'comboio', 'patrulha']);
-  assert.deepEqual(seen.map(p => p.day), [7, 13, 19]); // nasce ao passar o dia 6, 12, 18
+  return seen;
+}
+
+test('destacamentos saem a partir de FIRST_SPAWN, a intervalos sorteados de 3 a 9 dias', () => {
+  const seen = spawns(11);
+  assert.ok(seen.length >= 15, `${seen.length} destacamentos em 200 dias`);
+  assert.ok(seen[0].day >= FIRST_SPAWN + 1);   // nasce ao passar o dia marcado
+  const gaps = seen.slice(1).map((p, k) => p.day - seen[k].day);
+  for (const g of gaps) assert.ok(g >= 3 && g <= 9, `intervalo ${g}`);
+  assert.ok(new Set(gaps).size >= 3, 'os intervalos variam');
 });
 
-test('patrulhas avançam PATROL_SPEED pela estrada e somem no fim', () => {
-  const s = fresh(); far(s); s.food = 1e6; s.fame = 1e6; s.day = 12;
+test('destacamentos saem dos dois postos, nos dois sentidos, e são patrulhas e colunas', () => {
+  const seen = spawns(11);
+  assert.deepEqual([...new Set(seen.map(p => p.dir))].sort(), [-1, 1]);
+  assert.deepEqual([...new Set(seen.map(p => p.kind))].sort(), ['comboio', 'patrulha']);
+});
+
+test('destacamentos: a mesma semente repete a sequência, outra semente muda-a', () => {
+  assert.deepEqual(spawns(11, 120), spawns(11, 120));
+  assert.notDeepEqual(spawns(11, 120), spawns(12, 120));
+});
+
+test('patrulhas andam PATROL_SPEED pela estrada no sentido em que saíram e somem na ponta', () => {
+  const s = fresh(); far(s); s.food = 1e6; ensureDoctrine(s).nextSpawn = 1e9;   // sem novos destacamentos
+  const road = s.world.road, n = road.length;
+  s.patrols.push({ id: 'leste', kind: 'patrulha', x: road[1].x, y: road[1].y, i: 2, dir: 1, men: 6 },
+                 { id: 'oeste', kind: 'patrulha', x: road[n - 2].x, y: road[n - 2].y, i: n - 3, dir: -1, men: 6 },
+                 { id: 'antiga', kind: 'comboio', x: road[1].x, y: road[1].y, i: 2, men: 8 });   // gravação antiga, sem dir
+  const before = Object.fromEntries(s.patrols.map(p => [p.id, { x: p.x, y: p.y }]));
   stepDay(s, ACAMPAR, rng());
-  assert.equal(s.patrols.length, 1);
-  const p = s.patrols[0], x0 = p.x, y0 = p.y;
-  assert.ok(nearRoad(s.world, p, 1));
-  stepDay(s, ACAMPAR, rng());
-  const q = s.patrols[0];
-  assert.ok(Math.hypot(q.x - x0, q.y - y0) <= PATROL_SPEED + 1e-6 && q.x > x0);
-  for (let i = 0; i < 60; i++) stepDay(s, ACAMPAR, rng()); // 60 dias < 12*5 — só uma outra pode nascer
-  assert.ok(!s.patrols.some(t => t.id === p.id));
+  for (const p of s.patrols) {
+    assert.ok(Math.hypot(p.x - before[p.id].x, p.y - before[p.id].y) <= PATROL_SPEED + 1e-6, p.id);
+    assert.ok(nearRoad(s.world, p, 1), p.id);
+  }
+  const by = id => s.patrols.find(p => p.id === id);
+  assert.ok(by('leste').x > before.leste.x && by('oeste').x < before.oeste.x && by('antiga').x > before.antiga.x);
+  for (let i = 0; i < 80; i++) stepDay(s, ACAMPAR, rng());
+  assert.equal(s.patrols.length, 0);
 });
 
 test('patrulha a <= ENCOUNTER_RADIUS dá encontro; esperar na estrada dá waiting', () => {
@@ -108,6 +135,96 @@ test('patrulha a <= ENCOUNTER_RADIUS dá encontro; esperar na estrada dá waitin
   const r2 = stepDay(t, ACAMPAR, rng());
   assert.equal(r2.encounter.kind, 'comboio');
   assert.equal(r2.encounter.waiting, false);
+});
+
+// --- Roma aprende (doctrine.js) ---
+const roadAmbush = (kind, men = kind === 'comboio' ? 8 : 6) => {
+  const s = fresh(); s.world.road = [{ x: 0, y: 300 }, { x: 1000, y: 300 }];
+  s.patrols.push({ id: 'p1', kind, x: 500, y: 300, i: 1, men }); s.party = { x: 510, y: 300 };
+  return s;
+};
+
+test('Roma aprende: com batedores, a emboscada a uma patrulha é descoberta e luta-se em campo aberto', () => {
+  const s = roadAmbush('patrulha'); ensureDoctrine(s).mem.emboscada = COUNTERS.batedores.on + 1;
+  const r = stepDay(s, { kind: 'esperar' }, rng());
+  assert.equal(r.encounter.kind, 'patrulha');
+  assert.equal(r.encounter.waiting, false);
+  assert.ok(r.events.some(e => e.type === 'emboscada-descoberta' && e.why === 'batedores'));
+  assert.ok(r.events.some(e => e.type === 'doutrina' && e.id === 'batedores' && e.on));
+  const t = roadAmbush('comboio'); ensureDoctrine(t).mem.emboscada = COUNTERS.batedores.on + 1;   // os batedores só andam com patrulhas
+  assert.equal(stepDay(t, { kind: 'esperar' }, rng()).encounter.waiting, true);
+});
+
+test('Roma aprende: a guarnição descobre qualquer emboscada no troço guarnecido e só nesse', () => {
+  const s = roadAmbush('comboio'), sec = sectorOf(s.world, s.party);
+  ensureDoctrine(s).sectors[sec] = COUNTERS.guarnicao.on + 1;
+  const r = stepDay(s, { kind: 'esperar' }, rng());
+  assert.equal(r.encounter.waiting, false);
+  assert.ok(r.events.some(e => e.type === 'emboscada-descoberta' && e.why === 'guarnicao'));
+  const t = roadAmbush('comboio');
+  ensureDoctrine(t).sectors[(sec + 2) % 4] = COUNTERS.guarnicao.on + 1;   // guarnição noutro troço
+  assert.equal(stepDay(t, { kind: 'esperar' }, rng()).encounter.waiting, true);
+});
+
+test('Roma aprende: com escolta reforçada, as colunas que saem levam os homens a mais', () => {
+  const s = fresh(); far(s); s.food = 1e6; s.fame = 1;
+  const d = ensureDoctrine(s); d.mem.coluna = COUNTERS.escolta.on + 50; d.active.escolta = true;
+  const men = {};
+  for (let i = 0; i < 90; i++) { stepDay(s, ACAMPAR, makeRng(40 + s.day * 7919)); for (const p of s.patrols) men[p.id] = { kind: p.kind, men: p.men }; }
+  const cols = Object.values(men).filter(p => p.kind === 'comboio'), pats = Object.values(men).filter(p => p.kind === 'patrulha');
+  assert.ok(cols.length && pats.length);
+  for (const c of cols) assert.equal(c.men, 8 + COUNTERS.escolta.men);
+  for (const p of pats) assert.equal(p.men, 6);
+});
+
+test('Roma aprende: os caçadores vão atrás do sítio onde o bando foi visto e, à vista, obrigam a lutar', () => {
+  const s = fresh(); s.food = 1e6; s.fame = 400;
+  const d = ensureDoctrine(s); d.nextSpawn = 1e9; d.lastSeen = { x: s.party.x, y: s.party.y, day: 0 };
+  let enc = null;
+  for (let i = 0; i < 40 && !enc; i++) enc = stepDay(s, ACAMPAR, makeRng(70 + s.day * 7919)).encounter;
+  assert.ok(enc, 'os caçadores chegaram');
+  assert.equal(enc.kind, 'cacadores');
+  assert.equal(enc.waiting, false);
+});
+
+test('Roma aprende: escondido, o bando não é apanhado pelos caçadores', () => {
+  const s = fresh(); s.food = 1e6; s.fame = 400;
+  const d = ensureDoctrine(s); d.nextSpawn = 1e9; d.lastSeen = { x: s.party.x, y: s.party.y, day: 0 };
+  for (let i = 0; i < 30; i++) assert.equal(stepDay(s, { kind: 'esconder' }, makeRng(70 + s.day * 7919)).encounter, null, `dia ${s.day}`);
+  assert.ok(s.doctrine.hunterAt >= 0, 'saíram caçadores');
+});
+
+// Caçadores junto a uma aldeia: vêm atrás do bando, não da aldeia.
+const huntersAtVillage = () => {
+  const s = fresh(); s.food = 1e6; s.praetor = null;
+  ensureDoctrine(s).nextSpawn = 1e9;
+  const v = find(s, 'aldeia'); at(s, v);
+  s.patrols = [{ id: 'cacadores-0', kind: 'cacadores', hunt: true, x: v.x + 15, y: v.y, men: 12, target: { x: v.x, y: v.y }, left: 12 }];
+  return { s, v };
+};
+
+test('Roma aprende: caçadores perto de uma aldeia não são ameaça à aldeia — o encontro é com os caçadores', () => {
+  const { s } = huntersAtVillage();
+  const enc = stepDay(s, ACAMPAR, rng()).encounter;
+  assert.ok(enc, 'os caçadores apanham o bando');
+  assert.equal(enc.kind, 'cacadores');
+  assert.equal(enc.villageId, undefined);
+});
+
+test('Roma aprende: perder contra caçadores junto a uma aldeia não a queima', () => {
+  const { s, v } = huntersAtVillage();
+  const enc = stepDay(s, ACAMPAR, rng()).encounter;
+  const spec = battleSpec(enc, s, rng());
+  assert.notEqual(spec.type, 'defesa-aldeia');
+  applyResult(s, spec, { won: false, alliesLost: 3, enemiesLost: 0, viriatoDown: false });
+  assert.equal(s.villages[v.id].burnt, false);
+});
+
+test('Roma aprende: os caçadores continuam a seguir o bando que passa por uma aldeia', () => {
+  const { s, v } = huntersAtVillage();
+  const h = s.patrols[0]; h.x = v.x + 40; s.party.x = v.x; s.party.y = v.y;
+  stepDay(s, { kind: 'marchar', to: { x: v.x - 200, y: v.y } }, rng());
+  assert.ok(h.target.x < v.x, 'o alvo passou a ser o bando');
 });
 
 test('esconder: patrulhas ignoram a party', () => {

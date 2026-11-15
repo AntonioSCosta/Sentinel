@@ -323,3 +323,28 @@ test('defesa de aldeia vencida contra o pretor: perde os mortos (fica com 10, no
   applyResult(u, battleSpec({ kind: 'defesa', foe: u.praetor, villageId: uid, waiting: false }, u, rng()), res({ won: false, enemiesKilled: 20 }));
   assert.equal(u.praetor.men, 60);   // só a vitória o desgasta
 });
+
+// --- Roma aprende (doctrine.js) ---
+test('battleSpec guarda onde foi o combate (a posição do bando)', () => {
+  const s = st(14), b = battleSpec(enc('patrulha', true), s, rng());
+  assert.deepEqual(b.where, { x: s.party.x, y: s.party.y });
+});
+
+test('caçadores dão luta em campo aberto, com os homens que trazem', () => {
+  const b = battleSpec({ kind: 'cacadores', foe: { id: 'cacadores-30', kind: 'cacadores', men: 14 }, waiting: false }, st(14), rng());
+  assert.equal(b.type, 'campo-aberto');
+  assert.equal(b.enemies.legio + b.enemies.velites, 14);
+  assert.equal(b.foeId, 'cacadores-30');
+});
+
+test('applyResult: Roma regista o padrão de cada combate, ganhe ou perca o bando', () => {
+  const s = st(14);
+  applyResult(s, battleSpec(enc('patrulha', true), s, rng()), res());
+  applyResult(s, battleSpec(enc('comboio', true), s, rng()), res({ won: false }));
+  assert.equal(s.doctrine.mem.emboscada, 1);
+  assert.equal(s.doctrine.mem.coluna, 1);
+  assert.ok(s.doctrine.activity >= 2);
+  const before = { ...s.doctrine.mem };
+  applyResult(s, battleSpec(enc('pretor', false, { men: 60 }), s, rng()), res({ won: false }));
+  assert.deepEqual(s.doctrine.mem, before);   // a decisiva não é um hábito do bando
+});

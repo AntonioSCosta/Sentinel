@@ -1,5 +1,6 @@
 // Encontro -> especificação de batalha -> consequências na campanha. Módulo puro (sem DOM nem Three.js).
 import { spend, checkRuin } from './state.js';
+import { observe } from './doctrine.js';
 
 export const ALLY_CAP = 25;
 export const ENEMY_CAP = 30;
@@ -49,6 +50,7 @@ export function battleSpec(enc, state, rng) {
     bonus: { allies: Math.max(0, state.men - ALLY_CAP), enemies: Math.max(0, total - ENEMY_CAP) },
     retreat: retreatOf(type, state),
   };
+  if (state.party && Number.isFinite(state.party.x) && Number.isFinite(state.party.y)) spec.where = { x: state.party.x, y: state.party.y };   // para Roma saber onde foi
   if (chapter) spec.chapter = chapter;
   if (enc.villageId !== undefined) spec.villageId = enc.villageId;
   if (enc.foe?.id !== undefined) spec.foeId = enc.foe.id;
@@ -71,6 +73,7 @@ export function applyResult(state, spec, result) {
   const killed = Number.isFinite(result.enemiesKilled) ? Math.max(0, Math.floor(result.enemiesKilled)) : 0;
   state.kills = (state.kills || 0) + killed;        // para o ecrã de fim do ano
   state.battles = (state.battles || 0) + 1;
+  observe(state, spec);   // Roma aprende com o combate, ganhe ou perca (doctrine.js)
   const raw = Number.isFinite(result.alliesLost) ? Math.max(0, result.alliesLost) : 0;
   const scaled = Math.round(raw * spec.realMen / Math.max(1, spec.allies));
   const lost = Math.min(state.men, scaled);

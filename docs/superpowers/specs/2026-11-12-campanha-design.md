@@ -184,6 +184,35 @@ Em 60 sementes: vitórias 26/60 (decisiva 15, ano 11) · batalhas 12–25 em 35/
 
 **Leitura.** Comparado com a tabela anterior (31/60 vitórias, 37/60 na faixa), a campanha ficou um pouco mais dura: 26/60 vitórias (43 %), 35/60 anos na faixa de 12–25 batalhas (mediana 16), e nunca mais de 2 aldeias queimadas até ao dia 30. A fome voltou a pesar (11 derrotas em 60). Os pretores de `scorch` baixo vão atrás das aldeias perto do bando, e isso corta-lhe o saque das defesas. Em 20 sementes há só 6 vitórias; com 60 a proporção sobe para perto de metade. A diferença é ruído do modelo, que continua grosseiro.
 
+### Roma aprende (v1)
+
+Roma lembra-se de como o bando combate e responde (`src/campaign/doctrine.js`). Cada combate soma 1 à memória do seu padrão (emboscada, coluna, campo, defesa) e, nas emboscadas e assaltos a colunas, ao troço da estrada onde foi (4 troços). A memória cai para metade em 60 dias; a atividade recente, em 20. Cada contramedida liga acima de um limiar e só desliga abaixo de outro, mais baixo (histerese), e cada mudança dá um «Relato:» no diário do mapa.
+
+| Contramedida | Liga / desliga | Efeito |
+|---|---|---|
+| batedores | emboscadas ≥ 1,8 / ≤ 0,8 | as patrulhas descobrem a emboscada: passa a combate em campo aberto |
+| escolta | assaltos a colunas ≥ 1,8 / ≤ 0,8 | comboios com +6 homens |
+| força | campo aberto ≥ 3 / ≤ 1,5 | patrulhas com +3 homens |
+| guarnição | o mesmo troço ≥ 3,5 / ≤ 1,8 | nenhuma emboscada nesse troço passa despercebida |
+| caçadores | pressão ≥ 7 / ≤ 4 | uma coluna sai do posto mais perto do último sítio onde o bando foi visto, com 10 homens mais 1 por ponto de pressão (no máximo 20), e vai até lá fora da estrada; segue o bando se o vir (90) e ele não estiver escondido; desaparece ao fim de 12 dias; no máximo uma de 15 em 15 dias. Não contam como ameaça a aldeias: não dão defesa de aldeia nem a queimam |
+
+**Fama e atenção.** Pressão = fama/25 + atividade recente. A fama continua a dar recrutas; agora também encurta o intervalo entre colunas (de 6–9 dias, calmo, até 3–5, com muita pressão) e reforça as escoltas (até +6). **Movimentos menos previsíveis.** Acabou a coluna de 6 em 6 dias do mesmo posto no mesmo sentido: posto e sentido sorteados, patrulha ou comboio sorteado (comboio 45 %), intervalo sorteado; a primeira nunca antes do dia 6.
+
+**Robôs** (`tools/balance.mjs`): «repetidor» embosca sempre no mesmo ponto; «variado» muda de troço depois de cada combate, evita o troço guarnecido e deixa passar o que Roma já espera. Os dois não defendem aldeias e escondem-se se uma coluna os apanhar a caminho, para a medida ser a tática. Cada robô corre com e sem contramedidas (`state.doctrine.off`). Desligar só tira as contramedidas; a pressão romana continua a encurtar os intervalos entre colunas e a reforçar as escoltas. Não é, portanto, a versão anterior do jogo.
+
+60 sementes:
+
+| Robô | Vitórias | Dias (med.) | Emboscadas % | Descobertas/ano |
+|---|---|---|---|---|
+| atual | 19/60 | 174 | 7 % | 0,3 |
+| atual, sem contramedidas | 31/60 | 195 | 9 % | 0 |
+| repetidor | 19/60 | 139 | 20 % | 0,7 |
+| repetidor, sem contramedidas | 24/60 | 157 | 25 % | 0 |
+| variado | 17/60 | 130 | 11 % | 0 |
+| variado, sem contramedidas | 20/60 | 130 | 12 % | 0 |
+
+**Leitura.** As contramedidas custam mais ao repetidor (−5 vitórias, −18 dias, −5 pontos de emboscadas, 0,7 emboscadas descobertas por ano) do que ao variado (−3 vitórias, 0 dias, −1 ponto, nenhuma descoberta). A diferença existe, mas é pequena: estes robôs combatem pouco (mediana 8–10 batalhas) e a perseguição do pretor pesa mais do que a tática. O variado fica abaixo do repetidor em valor absoluto porque deixa passar colunas e marcha mais; isso é custo da sua própria política, não de Roma. Para o robô «atual», a campanha com contramedidas fica mais dura: 19/60 vitórias, contra 26/60 na tabela anterior desta secção (versão antes de «Roma aprende») e 28/60 anos na faixa de 12–25 batalhas. O 31/60 «sem contramedidas» não é a versão anterior: mantém a pressão romana e o novo calendário das colunas. Afinações feitas: memória 40 → 60 dias, batedores e escolta 2,5/2 → 1,8, força +4 → +3 homens, caçadores 6 → 7 de pressão. Com 20 sementes os números variam muito (atual 2/20 a 5/20).
+
 ## 10. Lacunas que o construtor encontrou (decididas por mim)
 
 7. **Quando é que o pretor dá batalha?** Quando a coluna dele chega ao teu ponto no mapa, ou quando tu o procuras. Não há batalha decisiva «agendada»: a que decide o ano é aquela em que o pretor te apanha em campo aberto, ou em que tu o apanhas numa emboscada.
