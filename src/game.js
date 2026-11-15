@@ -15,7 +15,7 @@ import { createRender } from './render.js';
 import { withTimeout } from './physics.js';
 import { sweepHit, capsuleOf, glance, bladeSegment, toWorld, bladeDir } from './swing.js';
 import { resolveQuality } from './quality.js';
-import { makeRig, driveRig, weaveTexture, slimBody } from './rig.js';
+import { makeRig, driveRig, driveState, horseGait, weaveTexture, slimBody } from './rig.js';
 import { followSlot, pickFoe, pickTarget, allyAct, holdSlot, aimGround, allyLook } from './ally.js';
 import { JAVELINS, throwPower, allyThrows, veliteState } from './missiles.js';
 import { haltLayout, isFighter, companionsFrom, canLeave, alertRadius, REINFORCE_AFTER, RELIEF, CUT_TIME, FREE_TO_LEAVE } from './captives.js';
@@ -1291,7 +1291,8 @@ function makeMount(coat, riderKind) {
 function mountCommander(e) {
   if (!chars || !chars.horse || e.horse) return false;
   const { grp, mixer, act } = makeHorse(HORSE_COAT.legio);
-  e.horse = grp; e.mixer = mixer; e.act = act; e.saddle = SADDLE; e.crouch = true;
+  // `act` já é a acção de IA do inimigo ('approach', 'attack:…'): a do cavalo fica em `horseAct`.
+  e.horse = grp; e.mixer = mixer; e.horseAct = act; e.saddle = SADDLE; e.crouch = true;
   grp.position.copy(e.pos); grp.rotation.y = e.yaw;
   return true;
 }
@@ -1319,7 +1320,7 @@ function updateBattleRider(r, dt) {
   else { const a = r.t * .45 * r.spin; tx = r.mill.x + Math.cos(a) * 4; tz = r.mill.z + Math.sin(a) * 4; sp = 4.2; }   // gira atrás da linha
   const dx = tx - r.pos.x, dz = tz - r.pos.z, d = Math.hypot(dx, dz), step = Math.min(sp * dt, d);
   if (d > .05) { r.pos.x += dx / d * step; r.pos.z += dz / d * step; r.yaw += wrapA(Math.atan2(dx, dz) - r.yaw) * Math.min(1, dt * 4); }
-  const v = step / Math.max(dt, 1e-4); r.act.timeScale = clamp(v / 8, .2, 1.3); r.act.paused = v < .2;
+  const g = horseGait(step / Math.max(dt, 1e-4)); r.act.timeScale = g.timeScale; r.act.paused = g.paused;
   r.pos.y = heightAt(r.pos.x, r.pos.z);
   r.horse.position.copy(r.pos); r.horse.rotation.y = r.yaw; r.mixer.update(dt);
   C.tickFighter(r.f, dt);
@@ -1329,13 +1330,13 @@ function updateBattleRider(r, dt) {
 function updateRiderlessHorse(e, dt) {
   const h = e.horse;
   e.horseT = (e.horseT || 0) + dt;
-  if (e.horseT > 3.5) { scene.remove(h); e.horse = null; return; }
+  if (e.horseT > 3.5) { scene.remove(h); e.horse = null; e.horseAct = null; return; }
   const dx = h.position.x - P.pos.x, dz = h.position.z - P.pos.z, d = Math.hypot(dx, dz) || 1;
   const step = 7.5 * dt;
   h.position.x += dx / d * step; h.position.z += dz / d * step;
   h.position.y = heightAt(h.position.x, h.position.z);
   h.rotation.y = Math.atan2(dx, dz);
-  e.act.paused = false; e.act.timeScale = 1.3; e.mixer.update(dt);
+  const g = horseGait(7.5); e.horseAct.paused = g.paused; e.horseAct.timeScale = g.timeScale; e.mixer.update(dt);
 }
 function updateRiders(dt) {
   for (const r of riders) {
@@ -1351,7 +1352,7 @@ function updateRiders(dt) {
     else { r.ang += dt * .42 * r.dir; tx = MEADOW.x + Math.cos(r.ang) * 19; tz = MEADOW.z + Math.sin(r.ang) * 19; sp = 9.5; }   // round the outside of the ring at a gallop
     const dx = tx - r.pos.x, dz = tz - r.pos.z, d = Math.hypot(dx, dz), step = Math.min(sp * dt, d);
     if (d > .05) { r.pos.x += dx / d * step; r.pos.z += dz / d * step; r.yaw += wrapA(Math.atan2(dx, dz) - r.yaw) * Math.min(1, dt * 4); }
-    const v = step / Math.max(dt, 1e-4); r.act.timeScale = clamp(v / 8, .2, 1.3); r.act.paused = v < .2;
+    const g = horseGait(step / Math.max(dt, 1e-4)); r.act.timeScale = g.timeScale; r.act.paused = g.paused;
     r.pos.y = heightAt(r.pos.x, r.pos.z);
     r.horse.position.copy(r.pos); r.horse.rotation.y = r.yaw; r.mixer.update(dt);
     if (betrayed && state === 'play') {
@@ -2443,9 +2444,10 @@ function setPose(e, dt) {
 
 function posePrecise(e, dt) {
   if (e.m.rig) {
-    const fx = Math.sin(e.yaw), fz = Math.cos(e.yaw);
+    // Montado, quem galopa é o cavalo: o cavaleiro fica sentado (Crouch_Idle), sem as pernas a caminhar.
+    const drive = driveState(e.mv, e.yaw, !!e.horse);
     const tk = e.throwT > 0 ? { k: 1 - e.throwT, rel: e.throwKind === 'sling' ? .83 : .53 } : e.kind === 'velite' && e.atkT > 0 ? { k: 1 - e.atkT / .55, rel: .64 } : null;
-    driveRig(THREE, e.m.rig, { speed: e.mv.x * fx + e.mv.z * fz, side: e.mv.x * fz - e.mv.z * fx, crouch: e.crouch, combat: e.state === 'chase', f: e.f, T: C, reach: e.reach || 0,
+    driveRig(THREE, e.m.rig, { speed: drive.speed, side: drive.side, crouch: e.crouch, combat: e.state === 'chase', f: e.f, T: C, reach: e.reach || 0,
       throwK: tk ? clamp(tk.k * .33 / tk.rel, 0, 1) : -1, hit: e.hits, heavy: e.heavy, dead: e.dead, blockDir: e.blockDir || (e === avatar ? P.incomingDir : null) }, dt);
     return 0;
   }
@@ -2718,7 +2720,7 @@ function updateEnemies(dt) {
     if (e.horse) {   // o cavalo do pretor segue-o e galopa à velocidade real
       const sp = Math.hypot(e.mv.x, e.mv.z);
       e.horse.position.copy(e.pos); e.horse.rotation.y = e.yaw;
-      e.act.timeScale = clamp(sp / 8, .2, 1.3); e.act.paused = sp < .2;
+      const g = horseGait(sp); e.horseAct.timeScale = g.timeScale; e.horseAct.paused = g.paused;
       e.mixer.update(dt);
     }
     r.position.set(e.pos.x, e.pos.y + bob + (e.horse ? SADDLE : 0), e.pos.z); r.rotation.y = e.yaw;

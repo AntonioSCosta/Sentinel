@@ -34,6 +34,21 @@ export function attackTime(dir, phase, t, T) {
   return a0 + (a1 - a0) * k;
 }
 
+/**
+ * Velocidade que o rig deve mostrar, decomposta na frente e no lado do modelo.
+ * Montado (`mounted`), o cavaleiro não caminha — quem galopa é o cavalo — e fica em Crouch_Idle.
+ */
+export function driveState(mv, yaw, mounted) {
+  const fx = Math.sin(yaw), fz = Math.cos(yaw);
+  const vx = mounted ? 0 : mv.x, vz = mounted ? 0 : mv.z;
+  return { speed: vx * fx + vz * fz, side: vx * fz - vz * fx };
+}
+
+/** Pure: horse gait playback for a ground speed (m/s) — a walk below 0.2 m/s, up to 1.3× at full gallop. */
+export function horseGait(speed) {
+  return { timeScale: Math.min(1.3, Math.max(.2, speed / 8)), paused: speed < .2 };
+}
+
 /** Pure: which loop and play rate fit a ground speed (signed: negative = walking backwards). */
 export function locomotion(speed, crouch) {
   const s = Math.abs(speed), sg = speed < 0 ? -1 : 1;

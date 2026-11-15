@@ -1,6 +1,6 @@
 import test from 'node:test'; import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { layerOf, attackTime, locomotion, splitClips, ATK } from '../src/rig.js';
+import { layerOf, attackTime, locomotion, splitClips, ATK, driveState, horseGait } from '../src/rig.js';
 import * as C from '../src/combat.js';
 
 test('bones go to the right layer', () => {
@@ -27,6 +27,25 @@ test('locomotion picks loops by speed and plays backwards when retreating', () =
   assert.equal(locomotion(6).clip, 'Sprint_Loop');
   assert.ok(locomotion(-1.2).rate < 0);
   assert.equal(locomotion(1, true).clip, 'Crouch_Fwd_Loop');
+});
+test('horse gait: stopped stands, walking is slow, galloping caps at 1.3×', () => {
+  assert.deepEqual(horseGait(0), { timeScale: .2, paused: true });
+  assert.deepEqual(horseGait(.1), { timeScale: .2, paused: true });
+  assert.deepEqual(horseGait(.2), { timeScale: .2, paused: false });
+  assert.ok(Math.abs(horseGait(4).timeScale - .5) < 1e-12);
+  assert.deepEqual(horseGait(8), { timeScale: 1, paused: false });
+  assert.deepEqual(horseGait(40), { timeScale: 1.3, paused: false });
+  for (const v of [0, .5, 3, 7.5, 99]) assert.ok(Number.isFinite(horseGait(v).timeScale));
+});
+test('a mounted rider does not walk: the horse gallops, the rider stays in Crouch_Idle', () => {
+  // a galope para +z (yaw 0): a pé, o rig mostra velocidade; montado, fica parado no selim
+  const mv = { x: 0, z: 7.5 };
+  assert.deepEqual(driveState(mv, 0, false), { speed: 7.5, side: 0 });
+  const mounted = driveState(mv, 0, true);
+  assert.deepEqual(mounted, { speed: 0, side: 0 });
+  assert.equal(locomotion(mounted.speed, true).clip, 'Crouch_Idle_Loop');
+  // de lado e virado ao contrário: continua sentado
+  assert.deepEqual(driveState({ x: 4, z: -3 }, Math.PI / 2, true), { speed: 0, side: 0 });
 });
 test('clips split into disjoint per-layer sub-clips', () => {
   const q = n => new THREE.QuaternionKeyframeTrack(n + '.quaternion', [0, 1], [0, 0, 0, 1, 0, 0, 0, 1]);
