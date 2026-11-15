@@ -355,6 +355,134 @@ function drawParty(ctx, x, y, facing = 1, step = 0) {
   ctx.restore();
 }
 
+// --- etiquetas ---
+// As etiquetas são colocadas depois de se conhecerem os ícones e as placas: cada nome procura o
+// primeiro sítio livre à volta da sua povoação. Assim nenhum nome tapa outro, um ícone ou uma placa.
+const LABEL_H = 11;
+const LABEL_FONT = '11px serif';
+const LABEL_GAP = 2;
+
+// Larguras relativas de uma serifa (em). Só se usam quando o contexto não sabe medir texto
+// (contexto falso dos testes, ou um canvas sem measureText); arredondadas por excesso.
+const CHAR_EM = {
+  ' ': .25, a: .44, b: .5, c: .44, d: .5, e: .44, f: .33, g: .5, h: .5, i: .28, j: .28, k: .5, l: .28,
+  m: .78, n: .5, o: .5, p: .5, q: .5, r: .33, s: .39, t: .28, u: .5, v: .5, w: .72, x: .5, y: .5, z: .44,
+  A: .72, B: .67, C: .67, D: .72, E: .61, F: .56, G: .72, H: .72, I: .33, J: .39, K: .72, L: .61,
+  M: .89, N: .72, O: .72, P: .56, Q: .72, R: .67, S: .56, T: .61, U: .72, V: .72, W: .94, X: .72, Y: .72, Z: .61,
+  'ã': .5, 'á': .44, 'é': .44, 'í': .28, 'ó': .5, 'ú': .5, 'ç': .44, 'â': .44, 'ê': .44, 'ô': .5, 'à': .44,
+};
+const fallbackWidth = (text, size = LABEL_H) => [...text].reduce((sum, ch) => sum + (CHAR_EM[ch] ?? .5) * size, 0);
+
+/** Largura de uma etiqueta: a medida real do contexto quando existe; senão, a tabela conservadora. */
+export function labelWidth(ctx, text) {
+  if (ctx && typeof ctx.measureText === 'function') {
+    const m = ctx.measureText(text);
+    if (m && Number.isFinite(m.width) && m.width > 0) return m.width;
+  }
+  return fallbackWidth(text);
+}
+
+const overlaps = (a, b, gap = LABEL_GAP) =>
+  a.x < b.x + b.w + gap && a.x + a.w + gap > b.x && a.y < b.y + b.h + gap && a.y + a.h + gap > b.y;
+
+/** Candidatos de posição: abaixo e acima do ícone, depois anéis de 24 a 130 px em volta. */
+function labelCandidates(w) {
+  const out = [[0, 24], [0, -14], [0, 36], [0, -26]];
+  for (const r of [24, 34, 46, 60, 76, 92, 110, 130])
+    for (let k = 0; k < 16; k++) {
+      const a = k / 16 * TAU;
+      out.push([Math.sin(a) * (r + w / 2), -Math.cos(a) * r]);
+    }
+  return out;
+}
+
+/** Caixas que uma etiqueta não pode cobrir: ícones, unidades, placas e a data. */
+function labelObstacles(view, state) {
+  const obs = [];
+  for (const s of view.world.settlements) {
+    const q = toScreen(view, s);
+    obs.push({ x: q.x - 14, y: q.y - 12, w: 28, h: 22 });
+  }
+  for (const p of state.patrols || []) {
+    const q = toScreen(view, p);
+    obs.push({ x: q.x - 11, y: q.y - 8, w: 22, h: 16 });
+  }
+  if (state.praetor) {
+    const q = toScreen(view, state.praetor), name = state.praetor.name || 'Pretor';
+    const w = Math.max(42, name.length * 5.9 + 10);
+    obs.push({ x: q.x - 7, y: q.y - 19, w: 14, h: 28 });          // vexilo
+    obs.push({ x: q.x - w / 2, y: q.y - 33, w, h: 14 });          // placa do nome
+  }
+  // A posição lógica (não a animada) mantém as etiquetas quietas durante a marcha.
+  const pq = toScreen(view, state.party);
+  obs.push({ x: pq.x - 9, y: pq.y - 16, w: 18, h: 26 });           // Viriato
+  obs.push({ x: pq.x - 26, y: pq.y - 32, w: 52, h: 14 });          // placa «Viriato»
+  obs.push({ x: 6, y: 4, w: 80, h: 32 });                          // data e estação
+  return obs;
+}
+
+/**
+ * Dispõe as etiquetas das povoações à volta dos respectivos ícones, sem sobreposições nem saídas
+ * do canvas. Devolve `{ items, placed }`; `placed` traz a posição final de cada nome.
+ * `measure` (opcional) mede o texto; sem ela usa-se a tabela conservadora.
+ */
+export function layoutMapLabels(view, state, measure = null) {
+  const bounds = { w: view.width, h: view.height };
+  const items = view.world.settlements.map(s => {
+    const q = toScreen(view, s);
+    const measured = measure ? measure(s.name) : fallbackWidth(s.name);
+    return { id: s.id, name: s.name, ax: q.x, ay: q.y,
+      w: Math.ceil(Number.isFinite(measured) && measured > 0 ? measured : fallbackWidth(s.name)), h: LABEL_H,
+      burnt: !!(state.villages && state.villages[s.id] && state.villages[s.id].burnt) || !!state.posts?.[s.id]?.taken };
+  });
+  const rects = labelObstacles(view, state);
+  // As mais restringidas primeiro: muitos vizinhos e perto das bordas têm menos alternativas.
+  const score = it => {
+    let n = 0;
+    for (const o of items) if (o !== it && Math.hypot(o.ax - it.ax, o.ay - it.ay) < 120) n++;
+    const edge = Math.min(it.ax, bounds.w - it.ax, it.ay, bounds.h - it.ay);
+    return n * 10 + Math.max(0, 60 - edge);
+  };
+  const order = [...items].sort((a, b) => score(b) - score(a) || String(a.id).localeCompare(String(b.id)));
+  const placed = [];
+  for (const it of order) {
+    const { w, h } = it;
+    let found = null;
+    for (const [dx, dy] of labelCandidates(w)) {
+      const x = it.ax + dx, baseline = it.ay + dy;
+      const r = { x: x - w / 2, y: baseline - h, w, h };
+      if (r.x < 2 || r.x + w > bounds.w - 2 || r.y < 2 || r.y + h > bounds.h - 2) continue;
+      if (rects.some(q => overlaps(r, q))) continue;
+      const dist = Math.hypot(dx, dy);
+      found = { ...it, x, baseline, dist, moved: dist > 24 };
+      rects.push(r); break;
+    }
+    if (!found) {
+      // Os anéis não chegaram (ecrãs muito estreitos ou muito altos): procura em grelha o sítio
+      // livre mais próximo do ícone. Só se não houver nenhum é que se aceita uma sobreposição.
+      let best = null;
+      for (let baseline = h + 2; baseline <= bounds.h - 2; baseline += LABEL_H + LABEL_GAP + 1)
+        for (let x = 2 + w / 2; x <= bounds.w - 2 - w / 2; x += 20) {
+          const r = { x: x - w / 2, y: baseline - h, w, h };
+          if (rects.some(q => overlaps(r, q))) continue;
+          const dist = Math.hypot(x - it.ax, baseline - h / 2 - it.ay);
+          if (!best || dist < best.dist) best = { x, baseline, dist };
+        }
+      if (best) found = { ...it, ...best, moved: true, grid: true };
+    }
+    if (!found) {   // último recurso: fica dentro do canvas, ainda que perto de outra coisa
+      const x = Math.min(bounds.w - 2 - w / 2, Math.max(2 + w / 2, it.ax));
+      const baseline = Math.min(bounds.h - 2, Math.max(h + 2, it.ay + 24));
+      found = { ...it, x, baseline, dist: Math.hypot(x - it.ax, baseline - it.ay), moved: true, fallback: true };
+      rects.push({ x: x - w / 2, y: baseline - h, w, h });
+    } else if (found.grid) {
+      rects.push({ x: found.x - w / 2, y: found.baseline - h, w, h });
+    }
+    placed.push(found);
+  }
+  return { items, placed };
+}
+
 /**
  * Desenha o mapa completo.
  * `fx` (opcional) anima o desenho sem mexer no estado: { party, facing, step, hover, trail, selected, reach }.
@@ -423,6 +551,12 @@ export function drawMap(ctx, view, state, fx = {}) {
     ctx.restore();
   }
 
+  // etiquetas: dispõem-se antes do desenho para fugirem aos ícones, às unidades e às placas
+  ctx.save();
+  ctx.font = LABEL_FONT;
+  const { placed: labels } = layoutMapLabels(view, state, text => labelWidth(ctx, text));
+  ctx.restore();
+
   // povoações
   for (const s of world.settlements) {
     const q = toScreen(view, s);
@@ -437,20 +571,46 @@ export function drawMap(ctx, view, state, fx = {}) {
     }
     ctx.save();
     icon(ctx, s.kind, q.x, q.y, burnt);
-    ctx.fillStyle = burnt ? '#5a4a3a' : INK;
-    ctx.font = '11px serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(s.name, q.x, q.y + 22);
     ctx.restore();
   }
 
   // patrulhas romanas
   for (const p of state.patrols || []) drawPatrol(ctx, p, toScreen(view, p));
 
-  // pretor: estandarte romano (vexilo) com o nome do comandante
+  // pretor: estandarte romano (vexilo)
   if (state.praetor) {
     const q = toScreen(view, state.praetor);
     drawPraetor(ctx, q.x, q.y);
+  }
+
+  // Viriato
+  drawParty(ctx, pq.x, pq.y, fx.facing || 1, fx.step || 0);
+
+  // etiquetas das povoações (com linha-guia quando o nome teve de se afastar do ícone)
+  ctx.save();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(47,34,19,.45)';
+  for (const l of labels) {
+    if (!l.moved) continue;
+    const cx = l.x, cy = l.baseline - l.h / 2;
+    const dx = cx - l.ax, dy = cy - l.ay, d = Math.hypot(dx, dy) || 1;
+    const sx = l.ax + dx / d * 9, sy = l.ay + dy / d * 9;
+    const bx = Math.min(Math.max(l.ax, l.x - l.w / 2), l.x + l.w / 2);
+    const by = Math.min(Math.max(l.ay, l.baseline - l.h), l.baseline);
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(bx, by); ctx.stroke();
+  }
+  for (const l of labels) {
+    ctx.fillStyle = l.burnt ? '#5a4a3a' : INK;
+    ctx.font = LABEL_FONT;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(l.name, l.x, l.baseline);
+  }
+  ctx.restore();
+
+  // placas por cima de tudo: o nome do comandante e o de Viriato lêem-se sempre
+  if (state.praetor) {
+    const q = toScreen(view, state.praetor);
     const name = state.praetor.name || 'Pretor';
     const w = Math.max(42, name.length * 5.9 + 10);
     ctx.save();
@@ -464,8 +624,6 @@ export function drawMap(ctx, view, state, fx = {}) {
     ctx.restore();
   }
 
-  // Viriato e o seu nome
-  drawParty(ctx, pq.x, pq.y, fx.facing || 1, fx.step || 0);
   ctx.save();
   ctx.fillStyle = 'rgba(227,211,168,.86)';
   ctx.fillRect(pq.x - 26, pq.y - 32, 52, 14);
