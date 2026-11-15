@@ -43,7 +43,8 @@ function build(state, storage, phase, battle) {
         flow.save();
         return { events: [], battle: flow.battle };
       }
-      const { events, encounter } = stepDay(state, o ?? {}, rng);
+      const { events, encounter, refused } = stepDay(state, o ?? {}, rng);
+      if (refused) return { events, battle: null, refused: true };   // nada mudou: nem dia, nem acontecimentos, nem save
       const ev = rollEvent(state, rng);
       if (ev) events.push({ type: 'acontecimento', ...ev });
       if (encounter && !state.over) { flow.battle = battleSpec(encounter, state, rng); flow.phase = 'batalha'; }

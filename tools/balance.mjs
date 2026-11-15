@@ -128,7 +128,9 @@ function play(seed, bot = 'atual', off = false) {
       continue;
     }
     const o = policy(s, mem);
-    const { events } = flow.order(o);
+    let { events, refused } = flow.order(o);
+    // uma ordem recusada já não gasta o dia: o robô fica nesse dia acampado, como antes acontecia
+    if (refused) events = [...events, ...flow.order({ kind: 'acampar' }).events];
     if (process.env.TRACE == seed) console.log(s.day, o.kind, o.id || '', `men ${s.men} food ${s.food} arms ${s.arms} fame ${s.fame}`, s.praetor ? `pd ${Math.round(dist(s.praetor, s.party))}` : '', events.map(e => e.type).join(','));
     for (const e of events) {
       if (e.type === 'fome') losses.push({ day: s.day, fome: e.mortos, batalha: 0 });

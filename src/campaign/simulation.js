@@ -35,37 +35,48 @@ function moveToward(p, to, step) {
   if (d <= step) { p.x = to.x; p.y = to.y; } else { p.x += (to.x - p.x) / d * step; p.y += (to.y - p.y) / d * step; }
 }
 
-const settlementNear = (state, id, kind) => {
-  const s = state.world.settlements.find(x => x.id === id && x.kind === kind);
-  return s && dist(s, state.party) <= REACH ? s : null;
-};
+const findSettlement = (state, id, kind) => state.world.settlements.find(x => x.id === id && x.kind === kind);
 
-/** Aplica a ordem. Devolve { events, encounter } parcial. */
+/**
+ * Aplica a ordem. Devolve { events, encounter } parcial, ou { refused: true, events } quando a ordem não se
+ * pode cumprir: aí nada mudou no estado, e stepDay não deixa passar o dia.
+ */
 function applyOrder(state, order) {
-  const invalid = () => ({ events: [{ type: 'ordem-invalida', order: order.kind }], encounter: null });
+  const refuse = ev => ({ refused: true, events: [ev], encounter: null });
+  const invalid = (why, id) => refuse({ type: 'ordem-invalida', order: order.kind, why, ...(id === undefined ? {} : { id }) });
+  // a povoação pedida, se existir e estiver ao alcance; senão, a recusa com o motivo
+  const reach = kind => {
+    const s = findSettlement(state, order.id, kind);
+    if (!s) return { no: invalid('desconhecido') };
+    if (dist(s, state.party) > REACH) return { no: invalid('longe', s.id) };
+    return { s };
+  };
   const none = { events: [], encounter: null };
   const { world, party } = state;
   switch (order.kind) {
     case 'marchar': {
       const to = order.to;
-      if (!to || !Number.isFinite(to.x) || !Number.isFinite(to.y)) return invalid();
+      if (!to || !Number.isFinite(to.x) || !Number.isFinite(to.y)) return invalid('destino');
       moveToward(party, { x: Math.min(world.w, Math.max(0, to.x)), y: Math.min(world.h, Math.max(0, to.y)) }, MARCH_SPEED);
       return none;
     }
     case 'recrutar': {
-      const s = settlementNear(state, order.id, 'aldeia'), v = s && state.villages[s.id];
-      if (!v || v.burnt) return invalid();
-      if (state.day - v.recruitedDay < RECRUIT_GAP) return { events: [{ type: 'recrutar-cedo', id: s.id }], encounter: null };
-      if (state.arms <= 0) return { events: [{ type: 'sem-armas', id: s.id }], encounter: null };   // não gasta a vez da aldeia
+      const { s, no } = reach('aldeia');
+      if (no) return no;
+      const v = state.villages[s.id];
+      if (!v) return invalid('desconhecido');
+      if (v.burnt) return invalid('queimada', s.id);
+      if (state.day - v.recruitedDay < RECRUIT_GAP) return refuse({ type: 'recrutar-cedo', id: s.id, days: RECRUIT_GAP - (state.day - v.recruitedDay) });
+      if (state.arms <= 0) return refuse({ type: 'sem-armas', id: s.id });   // não gasta a vez da aldeia
       const n = Math.min(recruitsFrom(state.fame), state.arms);
       state.men += n; state.arms -= n; v.recruitedDay = state.day;
       return { events: [{ type: 'recrutou', id: s.id, men: n }], encounter: null };
     }
     case 'pedir-ajuda': {
-      const s = settlementNear(state, order.id, 'castro');
-      if (!s) return invalid();
+      const { s, no } = reach('castro');
+      if (no) return no;
+      if (state.help && s.id in state.help && state.day - state.help[s.id] < HELP_GAP) return refuse({ type: 'ajuda-recusada', id: s.id, days: HELP_GAP - (state.day - state.help[s.id]) });
       state.help = state.help || {};
-      if (s.id in state.help && state.day - state.help[s.id] < HELP_GAP) return { events: [{ type: 'ajuda-recusada', id: s.id }], encounter: null };
       state.help[s.id] = state.day;
       state.food += HELP_FOOD;
       const men = state.fame >= HELP_FAME ? HELP_MEN : 0;
@@ -73,15 +84,15 @@ function applyOrder(state, order) {
       return { events: [{ type: 'ajuda', id: s.id, food: HELP_FOOD, men }], encounter: null };
     }
     case 'atacar': {
-      const s = settlementNear(state, order.id, 'posto');
-      if (!s) return invalid();
-      if (state.posts && s.id in state.posts) return { events: [{ type: 'posto-atacado', id: s.id }], encounter: null };   // uma vez por campanha
+      const { s, no } = reach('posto');
+      if (no) return no;
+      if (state.posts && s.id in state.posts) return refuse({ type: 'posto-atacado', id: s.id });   // uma vez por campanha
       state.posts = state.posts || {};
       state.posts[s.id] = { taken: false };   // tomado só se a batalha for ganha (battles.applyResult)
       return { events: [], encounter: { kind: 'posto', foe: s, waiting: false } };
     }
     case 'acampar': case 'esperar': case 'esconder': return none;
-    default: return invalid();
+    default: return invalid('desconhecido');
   }
 }
 
@@ -162,10 +173,14 @@ function detect(state, order, hidden, events) {
   return { kind: foe.kind, foe, waiting };
 }
 
-/** Um dia. Devolve os eventos e o eventual encontro. */
+/**
+ * Um dia. Devolve os eventos e o eventual encontro. Uma ordem recusada não gasta o dia: devolve
+ * { refused: true, events } sem mexer no estado (nem dia, nem comida, nem patrulhas, nem pretor).
+ */
 export function stepDay(state, order, rng) {
   if (state.over) return { events: [], encounter: null };
   const res = applyOrder(state, order);
+  if (res.refused) return res;
   const events = res.events;
   const hidden = order.kind === 'esconder';
   stepPatrols(state, hidden);

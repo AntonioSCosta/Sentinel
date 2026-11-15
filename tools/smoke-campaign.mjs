@@ -590,7 +590,9 @@ function fixWave({ G, doc, win, check, st, setGod, $, shown }) {
   G.campaignStorage.clear(); G.startCampaign(41); G.showCampaignMap();
   f = G.campaign.flow; const vil = f.state.world.settlements.find(x => x.kind === 'aldeia');
   f.state.party = { x: vil.x, y: vil.y }; f.state.arms = 0;
+  const dayBefore = $('m-day').textContent, foodBefore = f.state.food;
   G.campaign.order({ kind: 'recrutar', id: vil.id });
+  check(`a refused order keeps the day and the food, and says so (${$('m-day').textContent})`, $('m-day').textContent === dayBefore && f.state.food === foodBefore && /O dia não passa\./.test([...$('mlog').children].at(-1)?.textContent || ''));
   check(`recruiting with no arms says so and keeps the village's turn (${[...$('mlog').children].at(-1)?.textContent})`, /Não tens armas para equipar recrutas\./.test($('mlog').textContent) && f.state.villages[vil.id].recruitedDay === -999);
 
   // --- lista de lugares pelo teclado ---

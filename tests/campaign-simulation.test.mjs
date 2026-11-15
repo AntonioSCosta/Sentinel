@@ -298,10 +298,11 @@ test('pedir-ajuda num castro: +40 comida, +2 homens com fama >= 30, 1 vez por 25
   stepDay(s, { kind: 'pedir-ajuda', id: c.id }, rng());
   assert.equal(s.men, men + 2);
   assert.equal(s.food, food + 40 - need);
-  const f2 = s.food, m2 = s.men;
+  const f2 = s.food, m2 = s.men, d2 = s.day;
   stepDay(s, { kind: 'pedir-ajuda', id: c.id }, rng());
   assert.equal(s.men, m2);
-  assert.ok(s.food < f2);
+  assert.equal(s.food, f2);   // recusada: não gasta comida nem o dia
+  assert.equal(s.day, d2);
   s.day = 24;
   stepDay(s, { kind: 'pedir-ajuda', id: c.id }, rng());
   assert.equal(s.men, m2);   // ainda dentro dos 25 dias
