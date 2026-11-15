@@ -167,7 +167,31 @@ const MAT = (name, extra) => { const m = MATS[name].clone(); if (extra) Object.a
 const dummy = new THREE.Object3D();
 const CELL = 50;   // m: scenery is batched per map square, so squares behind the camera or lost in the mist are not drawn at all
 const CHUNKS = [];   // 50 m scenery blocks, culled by distance each frame (src/chunks.js)
-function instanced(geo, mat, list, shadow = true, { chunk = true, name = '', depth = null, vary = 0, warm = 0 } = {}) {
+// Tree branches (the pine's three boughs, the oak's third limb) are about half of the forest's
+// trunk triangles but are thin and high under the crown: they exist only near the viewer.
+// A square joins when its nearest edge is BOUGH_IN m away and leaves past BOUGH_OUT, so every
+// tree within BOUGH_IN - BOUGH_MOVE m has its branches and a square at the edge cannot flicker.
+const BOUGHS = [], BOUGH_IN = 48, BOUGH_OUT = 58, BOUGH_MOVE = 2;
+const boughAt = { px: Infinity, pz: Infinity, cx: Infinity, cz: Infinity };
+/**
+ * Adds or removes the branch squares near the player (px, pz) or the camera (cx, cz); the nearer
+ * of the two decides, so cut-scene cameras far from Viriato still see branches. Runs again only
+ * after either moves BOUGH_MOVE m, and allocates nothing.
+ */
+function updateBoughs(px, pz, cx, cz) {
+  const b = boughAt;
+  if (Math.hypot(px - b.px, pz - b.pz) < BOUGH_MOVE && Math.hypot(cx - b.cx, cz - b.cz) < BOUGH_MOVE) return;
+  b.px = px; b.pz = pz; b.cx = cx; b.cz = cz;
+  for (const m of BOUGHS) {
+    const c = m.__c, d = Math.min(Math.hypot(c.x - px, c.z - pz), Math.hypot(c.x - cx, c.z - cz)) - c.r;
+    if (!m.parent) { if (d < BOUGH_IN) scene.add(m); } else if (d > BOUGH_OUT) scene.remove(m);
+  }
+}
+/**
+ * Places `list` as instanced meshes, one per CELL square. With `lod` (an array) the squares are
+ * collected there instead of CHUNKS and not added to the scene: updateBoughs adds and removes them.
+ */
+function instanced(geo, mat, list, shadow = true, { chunk = true, name = '', depth = null, vary = 0, warm = 0, lod = null } = {}) {
   const tintC = new THREE.Color(), hash = (x, z, k) => { const v = Math.sin(x * 12.9898 + z * 78.233 + k * 37.719) * 43758.5453; return v - Math.floor(v); };
   const cells = new Map();
   for (const t of list) { const k = chunk ? Math.floor(t.x / CELL) + ',' + Math.floor(t.z / CELL) : ''; if (!cells.has(k)) cells.set(k, []); cells.get(k).push(t); }
@@ -178,8 +202,8 @@ function instanced(geo, mat, list, shadow = true, { chunk = true, name = '', dep
       if (vary) { const l = 1 - vary + 2 * vary * hash(t.x, t.z, 1), w = warm * (hash(t.x, t.z, 2) - .5); im.setColorAt(i, tintC.setRGB(l * (1 + w), l, l * (1 - w * 1.6))); } });   // no two trees quite the same green
     im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; im.castShadow = shadow; im.receiveShadow = true; im.name = name; if (depth) im.customDepthMaterial = depth;
     im.computeBoundingSphere();
-    if (chunk && shadow && im.boundingSphere) { const b = im.boundingSphere; im.__c = { x: b.center.x, z: b.center.z, r: b.radius }; CHUNKS.push(im); }
-    scene.add(im); last = im;
+    if (chunk && shadow && im.boundingSphere) { const b = im.boundingSphere; im.__c = { x: b.center.x, z: b.center.z, r: b.radius }; (lod || CHUNKS).push(im); }
+    if (!lod) scene.add(im); last = im;
   }
   return last;
 }
@@ -254,9 +278,9 @@ setSeed(777);
   }
   for (let k = 0; k < 40; k++) { const a = rr(0, TAU), d = rr(1.6, 9), x = AMBUSH.x + Math.cos(a) * d, z = AMBUSH.z + Math.sin(a) * d; if (Math.abs(x - roadX(z)) < 6) continue; shrubs.push({ x, y: heightAt(x, z) - .05, z, s: rr(.9, 1.6), sy: rr(.7, 1.2), ry: rr(0, TAU) }); }
   // maritime pine: tall bare trunk with an umbrella crown; holm/cork oak: short trunk, forked limbs, wide dense crown
-  const pineTrunk = mergeGeos([
-    (() => { const g = new THREE.CylinderGeometry(.16, .32, 7.8, 6, 1, true); g.translate(0, 3.9, 0); return g; })(),
-    // Upper boughs connecting to the umbrella canopy
+  const pineTrunk = (() => { const g = new THREE.CylinderGeometry(.16, .32, 7.8, 6, 1, true); g.translate(0, 3.9, 0); return g; })();
+  // upper boughs connecting to the umbrella canopy: near trees only (BOUGHS)
+  const pineBoughs = mergeGeos([
     (() => { const g = new THREE.CylinderGeometry(.08, .16, 2.2, 5, 1, true); g.translate(0, 1.1, 0); g.rotateZ(.55); g.translate(.1, 6.4, 0); return g; })(),
     (() => { const g = new THREE.CylinderGeometry(.08, .16, 2.0, 5, 1, true); g.translate(0, 1.0, 0); g.rotateZ(-.52); g.rotateY(1.9); g.translate(-.1, 6.5, .1); return g; })(),
     (() => { const g = new THREE.CylinderGeometry(.07, .14, 1.9, 5, 1, true); g.translate(0, .95, 0); g.rotateX(.48); g.translate(0, 6.6, .15); return g; })(),
@@ -265,10 +289,13 @@ setSeed(777);
     (() => { const g = new THREE.CylinderGeometry(.24, .38, 3.4, 6, 1, true); g.translate(0, 1.7, 0); return g; })(),
     (() => { const g = new THREE.CylinderGeometry(.1, .2, 2.4, 5, 1, true); g.translate(0, 1.2, 0); g.rotateZ(.6); g.translate(.2, 3, 0); return g; })(),
     (() => { const g = new THREE.CylinderGeometry(.1, .2, 2.2, 5, 1, true); g.translate(0, 1.1, 0); g.rotateZ(-.55); g.rotateY(2.1); g.translate(-.1, 3, .1); return g; })(),
-    (() => { const g = new THREE.CylinderGeometry(.08, .16, 2.0, 5, 1, true); g.translate(0, 1.0, 0); g.rotateX(-.5); g.translate(0, 3.2, -.2); return g; })(),
   ]);
+  const oakLimb = (() => { const g = new THREE.CylinderGeometry(.08, .16, 2.0, 5, 1, true); g.translate(0, 1.0, 0); g.rotateX(-.5); g.translate(0, 3.2, -.2); return g; })();
   instanced(pineTrunk, MAT('bark_pine'), pines, true, { vary: .14 });
   instanced(oakTrunk, MAT('bark_oak'), oaks, true, { vary: .14 });
+  // same squares and the same per-tree tint as the trunks they grow from
+  instanced(pineBoughs, MAT('bark_pine'), pines, true, { vary: .14, lod: BOUGHS });
+  instanced(oakLimb, MAT('bark_oak'), oaks, true, { vary: .14, lod: BOUGHS });
   const leafy = (name, geo, mat, depth, list) => instanced(geo, mat, list, true, { name, depth, vary: .2, warm: .22 });
   leafy('pine-canopy', canopyGeo({ cards: 23, rx: 2.2, ry: 2.5, cy: 7.2, w: 2.1, h: 1.9, seed: 5, flat: 0 }), FOL.pine, FOL.pineDepth, pines);
   leafy('oak-canopy', canopyGeo({ cards: 22, rx: 3.1, ry: 2.0, cy: 5.3, w: 2.8, h: 2.8, seed: 9 }), FOL.oak, FOL.oakDepth, oaks);
@@ -3203,6 +3230,7 @@ let menuT = 0;
 function step(dt) {
   if (state === 'map') { frameNo++; return; }
   frameNo++;
+  updateBoughs(P.pos.x, P.pos.z, camera.position.x, camera.position.z);
   WIND.tick(dt);
   skipHint();
   if (hitStopT > 0) { hitStopT -= dt; dt *= .15; } // brief impact freeze
@@ -3257,7 +3285,7 @@ $('start').disabled = false; $('start').textContent = 'COMEÇAR';
 return {
   startCampaign, showCampaignMap, get campIntro() { return campIntro; }, campaignStorage: storage, campaign: campUI, startCampaignBattle,
   campaignTest: { YEAR_DAYS, get retreat() { const r = campBattle?.retreat; return r ? { on: r.on, at: { ...r.at }, via: r.via ? { ...r.via } : null, dir: r.dir } : { on: false, at: null, via: null }; }, forceBattle: spec => { const f = campUI.flow; f.battle = spec; f.phase = 'batalha'; campUI.render(); return f; } },
-  start: (d, ch = 'emboscada') => { if (d != null) diff = d; setChapter(ch); startGame(false); }, startIntro: (ch = chapter) => { setChapter(ch); startGame(true); }, get civs() { return civs; }, get riders() { return riders; }, get chapter() { return chapter; }, MEADOW, ESCAPE, CASTRO, roadX, get carts() { return carts; }, get introT() { return introT; }, step, render: () => { if (state === 'map') return; cullChunks(CHUNKS, camera.position); cullCharacters(enemies, camera.position); cullCharacters(allies, camera.position); cullCharacters(civs, camera.position); R.render(); }, setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
+  start: (d, ch = 'emboscada') => { if (d != null) diff = d; setChapter(ch); startGame(false); }, startIntro: (ch = chapter) => { setChapter(ch); startGame(true); }, get civs() { return civs; }, get riders() { return riders; }, get chapter() { return chapter; }, MEADOW, ESCAPE, CASTRO, roadX, get carts() { return carts; }, get introT() { return introT; }, step, render: () => { if (state === 'map') return; updateBoughs(P.pos.x, P.pos.z, camera.position.x, camera.position.z); cullChunks(CHUNKS, camera.position); cullCharacters(enemies, camera.position); cullCharacters(allies, camera.position); cullCharacters(civs, camera.position); R.render(); }, setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
   P, supplyTents, heightAt, CAMP, scene, camera, CHUNKS,
   get enemies() { return enemies; }, get allies() { return allies; }, setCompanions: n => { companions = n; }, forceDir: d => { forcedDir = d; }, get order() { return order; }, get placing() { return placing; }, flag: FLAG, flagAt, hurtAllyForTest: (a, d) => hurtAlly(a, d, a.pos.clone()), get mission() { return mission; }, get tentsBurnt() { return tentsBurnt; }, alertForTest: e => alert(e), get halt() { return halt; }, get companions() { return companions; }, get alarm() { return alarm; }, get nextChapter() { return nextChapter; }, HALT, WOODS, CSTART, get state() { return state; },
   get projectiles() { return projectiles; }, get pickups() { return pickups; },
