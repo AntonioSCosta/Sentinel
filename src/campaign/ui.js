@@ -42,16 +42,26 @@ export function placeLabel(s, state) {
   return `${s.name} — ${s.kind}${st ? ' ' + st : ''}, ${days ? `${days} ${days === 1 ? 'dia' : 'dias'}` : 'aqui'}`;
 }
 
+const KEEP_DAY = 'O dia não passa.';
+const days = n => `${n} ${n === 1 ? 'dia' : 'dias'}`;
+/** Porque é que uma ordem foi recusada (simulation.applyOrder). */
+const INVALID = {
+  longe: place => `${place ?? 'Esse lugar'} fica longe: marcha até lá primeiro.`,
+  queimada: place => `${place ?? 'A aldeia'} foi queimada: já não há quem recrute.`,
+  destino: () => 'A marcha não tem destino válido.',
+  desconhecido: () => 'Essa ordem não se pode dar aqui.',
+};
+
 /** Uma frase curta (pt-PT) por evento devolvido por flow.order()/finishBattle(). */
 export function eventText(ev, state) {
   const name = id => state.world.settlements.find(s => s.id === id)?.name ?? 'o povoado';
   switch (ev.type) {
     case 'recrutou': return ev.men ? `${name(ev.id)}: ${ev.men} homens juntam-se a ti.` : `${name(ev.id)}: ninguém tem armas para dar.`;
-    case 'recrutar-cedo': return `${name(ev.id)}: já recrutaste aqui há pouco.`;
-    case 'sem-armas': return 'Não tens armas para equipar recrutas.';
-    case 'posto-atacado': return `${name(ev.id)}: este posto já foi atacado.`;
+    case 'recrutar-cedo': return `${name(ev.id)}: já recrutaste aqui há pouco${ev.days ? `; volta daqui a ${days(ev.days)}` : ''}. ${KEEP_DAY}`;
+    case 'sem-armas': return `Não tens armas para equipar recrutas. ${KEEP_DAY}`;
+    case 'posto-atacado': return `${name(ev.id)}: este posto já foi atacado, e só se ataca uma vez. ${KEEP_DAY}`;
     case 'ajuda': return `${name(ev.id)} dá-te ${ev.food} de comida${ev.men ? ` e ${ev.men} homens` : ''}.`;
-    case 'ajuda-recusada': return `${name(ev.id)}: ainda não podem dar mais ajuda.`;
+    case 'ajuda-recusada': return `${name(ev.id)}: ainda não podem dar mais ajuda${ev.days ? `; volta daqui a ${days(ev.days)}` : ''}. ${KEEP_DAY}`;
     case 'fome': return `Fome no bando: morrem ${ev.mortos}.`;
     case 'derrota': return ev.lost !== undefined ? `Derrota: perdes ${ev.lost} homens.` : 'O bando está arruinado.';
     case 'vitoria': return `Vitória: perdes ${ev.lost}, ganhas ${ev.food} de comida, ${ev.arms} armas e ${ev.fame} de fama.`;
@@ -64,7 +74,7 @@ export function eventText(ev, state) {
     case 'doutrina': return DOCTRINE_TEXT[ev.id]?.[ev.on ? 0 : 1] || '';
     case 'emboscada-descoberta': return ev.why === 'guarnicao' ? 'A guarnição da estrada descobriu a emboscada: a luta é em campo aberto.' : 'Os batedores romanos descobriram a emboscada: a luta é em campo aberto.';
     case 'cacadores': return `Uma coluna de caçadores (${ev.men} homens) saiu do posto atrás do sítio onde foste visto.`;
-    case 'ordem-invalida': return 'Não podes fazer isso daqui: aproxima-te primeiro.';
+    case 'ordem-invalida': return `${INVALID[ev.why]?.(ev.id === undefined ? null : name(ev.id)) ?? 'Não podes fazer isso daqui: aproxima-te primeiro.'} ${KEEP_DAY}`;
     default: return null;
   }
 }
