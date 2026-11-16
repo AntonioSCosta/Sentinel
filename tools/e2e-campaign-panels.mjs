@@ -66,6 +66,16 @@ for (const vp of [{ width: 1280, height: 800 }, { width: 1024, height: 600 }, { 
       const o = await page.locator(id).boundingBox().catch(() => null);
       if (o) check(`${tag}: nenhum painel cobre ${id}`, !hit(pl, o) && !hit(it, o), `${id} ${fmt(o)}`);
     }
+    if (vp.height <= 480) {   // ecrã baixo: lado a lado, com altura útil e sem o diário a aparecer entre os painéis
+      check(`${tag}: ecrã baixo: cada painel com ≥ 200px de altura`, pl.height >= 200 && it.height >= 200, `lugares ${Math.round(pl.height)} | relatos ${Math.round(it.height)}`);
+      const lg = await page.locator('#mlog').boundingBox().catch(() => null);
+      if (lg) {
+        const area = (a, b) => Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+        const bb = { x: Math.min(pl.x, it.x), y: Math.min(pl.y, it.y), width: Math.max(pl.x + pl.width, it.x + it.width) - Math.min(pl.x, it.x), height: Math.max(pl.y + pl.height, it.y + it.height) - Math.min(pl.y, it.y) };
+        const leak = area(lg, bb) - area(lg, pl) - area(lg, it);
+        check(`${tag}: ecrã baixo: o diário não aparece entre os painéis`, leak <= 1, `área visível ${Math.round(leak)} px²; diário ${fmt(lg)}`);
+      }
+    }
     // cada lista continua utilizável: o último item de cada uma alcança-se a rolar
     for (const [n, sel] of [['lugares', '#mplaces'], ['relatos', '#mintel']]) {
       const ok = await page.evaluate(s => { const ul = document.querySelector(s); ul.scrollTop = ul.scrollHeight; const l = ul.lastElementChild.getBoundingClientRect(), u = ul.getBoundingClientRect(); return l.bottom <= u.bottom + 1 && l.top >= u.top - 1; }, sel);

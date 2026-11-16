@@ -251,7 +251,7 @@ Antes, a primeira oportunidade caía quase sempre entre os dias 7 e 15 (mediana 
 
 Equilíbrio (`npm run balance`, 200 sementes, `main` → este PR): robô atual 64 → 60 vitórias; atual sem contramedidas 86 → 68; repetidor 50 → 54, com emboscadas de 18 % para 23 % das batalhas. A primeira mudança (o início) explica a descida do robô atual; a segunda (emboscada antes da defesa) explica a subida das emboscadas do repetidor. Com 60 sementes o robô atual não muda com a segunda.
 
-**Painéis «Lugares» e «Relatos».** Podem estar abertos ao mesmo tempo: ficam numa coluna única à esquerda (`#mpanels`, flex vertical), os relatos com a altura natural (máx. 260 px ou 40 % da altura) e os lugares com o resto, sem se sobreporem entre si, a `#mctx` nem às barras. Verificado em Chrome real por `npm run e2e:paineis` (1280×800, 1024×600, 844×390); o diário (`#mlog`) fica por baixo dos painéis enquanto estão abertos.
+**Painéis «Lugares» e «Relatos».** Podem estar abertos ao mesmo tempo: ficam numa coluna única à esquerda (`#mpanels`, flex vertical), os relatos com a altura natural (máx. 260 px ou 40 % da altura) e os lugares com o resto, sem se sobreporem entre si, a `#mctx` nem às barras. Verificado em Chrome real por `npm run e2e:paineis` (1280×800, 1024×600, 844×390). Em ecrãs baixos (altura ≤ 480 px) os painéis ficam lado a lado, cada um com toda a altura (250 px a 844×390), e o diário (`#mlog`) fica por baixo, sem aparecer entre eles.
 
 Validação no browser (evidência 07–09): a mesma patrulha junto da Aldeia da Azinheira dá «Defesa da aldeia» (com «Recusar e recuar»; recusar queima a aldeia e custa 6 de fama: 3 da aldeia e 3 da retirada) se o bando acampa, e «Emboscada» (sem recuo) se espera na estrada.
 
