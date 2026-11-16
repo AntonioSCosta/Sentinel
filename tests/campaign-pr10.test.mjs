@@ -2,8 +2,8 @@
 // painel de batalha, recusar o combate, relatos com efetivos e sentido de marcha, e o início da campanha.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { newCampaign } from '../src/campaign/state.js';
-import { stepDay } from '../src/campaign/simulation.js';
+import { newCampaign, foodPerDay } from '../src/campaign/state.js';
+import { stepDay, HELP_FOOD } from '../src/campaign/simulation.js';
 import { makeRng } from '../src/campaign/rng.js';
 import { battleSpec } from '../src/campaign/battles.js';
 import { createFlow } from '../src/campaign/flow.js';
@@ -347,9 +347,11 @@ test('painel «Objetivo»: a comida vem dos castros e do saque, nunca «das alde
   // as mecânicas reais por trás do texto
   const at = (st, p) => { st.party.x = p.x; st.party.y = p.y; };
   const castro = s.world.settlements.find(x => x.kind === 'castro'), aldeia = s.world.settlements.find(x => x.kind === 'aldeia');
-  at(s, castro); const f0 = s.food;
-  stepDay(s, { kind: 'pedir-ajuda', id: castro.id }, makeRng(1));
-  assert.ok(s.food > f0 - 10, 'pedir ajuda num castro dá comida (descontado o consumo do dia)');
+  at(s, castro); const f0 = s.food, need = foodPerDay(s.men);
+  const help = stepDay(s, { kind: 'pedir-ajuda', id: castro.id }, makeRng(1)).events.filter(e => e.type === 'ajuda');
+  assert.equal(help.length, 1, 'pedir ajuda num castro gera um evento «ajuda»');
+  assert.equal(help[0].food, HELP_FOOD, 'o evento regista exatamente HELP_FOOD de comida');
+  assert.equal(s.food, f0 + HELP_FOOD - need, 'o saldo sobe exatamente HELP_FOOD, menos o consumo do dia');
   const t = newCampaign(11), a2 = t.world.settlements.find(x => x.kind === 'aldeia');
   at(t, a2); const m0 = t.men, g0 = t.food;
   const ev = stepDay(t, { kind: 'recrutar', id: a2.id }, makeRng(1)).events;
