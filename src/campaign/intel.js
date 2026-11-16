@@ -17,7 +17,20 @@ export const SCOUTS = 2;             // batedores de um reconhecimento
 export const RECON_RANGE = 250;      // até onde vão e voltam num dia
 export const RECON_RADIUS = 110;     // o que veem à volta do ponto
 const DRIFT = { pretor: 22 }, DRIFT_DEFAULT = 35, DRIFT_MAX = 150;   // a zona provável cresce com a idade do avistamento
+const CLOSE = 30;                    // ENCOUNTER_RADIUS (simulation.js): tão perto é batalha, e o painel explica-a
 const RELS = ['certa', 'boa', 'fraca'];
+export const DIRS = ['norte', 'nordeste', 'este', 'sudeste', 'sul', 'sudoeste', 'oeste', 'noroeste'];
+
+/** Quantos homens um observador conta: exato até 7, arredondado a 5 daí para cima (nunca mais preciso do que isso). */
+export const estimateMen = n => (n <= 7 ? n : Math.round(n / 5) * 5);
+
+/** Rumo de um deslocamento (y cresce para sul, como no mapa); null se não houver deslocamento. */
+export function compass(dx, dy) {
+  if (Math.hypot(dx, dy) < 1) return null;
+  const a = Math.atan2(dx, -dy);   // 0 = norte, a rodar para este
+  return DIRS[((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8];
+}
+const okDir = d => DIRS.includes(d);
 const SRCS = ['aldeia', 'rumor', 'fumo', 'inicio', 'batedores'];
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -31,28 +44,45 @@ export function validIntel(i) {
     if (!isObj(k) || typeof k.kind !== 'string' || !num(k.x) || !num(k.y) || !num(k.day)) return false;
     if ('men' in k && k.men !== undefined && !(num(k.men) && k.men >= 0)) return false;
     if ('name' in k && k.name !== undefined && typeof k.name !== 'string') return false;
+    if ('dir' in k && k.dir !== undefined && !okDir(k.dir)) return false;
   }
   for (const r of i.reports) {
     if (!isObj(r) || !num(r.id) || typeof r.kind !== 'string' || !num(r.x) || !num(r.y) || !(num(r.r) && r.r >= 0)) return false;
     if (!num(r.seen) || !num(r.got) || !RELS.includes(r.rel) || !SRCS.includes(r.src)) return false;
     for (const key of ['place', 'fid', 'name']) if (key in r && r[key] !== undefined && typeof r[key] !== 'string') return false;
     if ('found' in r && !(Array.isArray(r.found) && r.found.every(x => typeof x === 'string'))) return false;
+    if ('men' in r && r.men !== undefined && !(num(r.men) && r.men >= 0)) return false;
+    if ('dir' in r && r.dir !== undefined && !okDir(r.dir)) return false;
+    if ('sizes' in r && !(Array.isArray(r.sizes) && r.sizes.every(x => num(x) && x >= 0))) return false;
+    if ('dirs' in r && !(Array.isArray(r.dirs) && r.dirs.every(x => x === '' || okDir(x)))) return false;
   }
   return true;
 }
 
 /** As forças romanas tal como estão na simulação. Só para este módulo: a interface nunca as recebe. */
 function realForces(state) {
-  const out = (state.patrols || []).map(p => ({ id: String(p.id), kind: p.kind, x: p.x, y: p.y, men: p.men }));
+  const road = state.world?.road || [];
+  // `to`: para onde vai (o próximo ponto da estrada, ou o alvo dos caçadores); quem a vê percebe o rumo
+  const out = (state.patrols || []).map(p => ({ id: String(p.id), kind: p.kind, x: p.x, y: p.y, men: p.men,
+    to: p.hunt ? p.target : road[p.i] }));
   const p = state.praetor;
   if (p) out.push({ id: String(p.id ?? 'pretor'), kind: 'pretor', x: p.x, y: p.y, men: p.men, name: p.name });
   return out;
 }
 
+/** O rumo de uma força: para onde vai, ou, sem isso (o pretor), de onde a viste da última vez para onde está. */
+function headingOf(f, prev, day) {
+  if (f.to && num(f.to.x) && num(f.to.y)) { const d = compass(f.to.x - f.x, f.to.y - f.y); if (d) return d; }
+  if (prev && day - prev.day <= 3 && Math.hypot(f.x - prev.x, f.y - prev.y) > 5) return compass(f.x - prev.x, f.y - prev.y);
+  return null;
+}
 const see = (it, f, day) => {
+  const prev = it.known[f.id];
   const k = { kind: f.kind, x: f.x, y: f.y, day };
   if (num(f.men)) k.men = f.men;
   if (f.name) k.name = f.name;
+  const dir = headingOf(f, prev, day);
+  if (dir) k.dir = dir;
   it.known[f.id] = k;
 };
 const addReport = (it, r) => { it.n += 1; const rep = { id: it.n, ...r }; it.reports.push(rep); return rep; };
@@ -106,14 +136,27 @@ export function rememberForce(state, id) {
  */
 export function updateIntel(state, { recon = null, dayEvents = [] } = {}) {
   const it = ensureIntel(state), day = state.day, events = [], real = realForces(state);
-  // 1. observação direta
-  for (const f of real) if (dist(f, state.party) <= SIGHT) see(it, f, day);
+  const scouted = new Set(recon ? real.filter(f => dist(f, recon) <= RECON_RADIUS).map(f => f.id) : []);
+  // 1. observação direta; quem entra na vista hoje (ontem não se via) tem uma linha no diário
+  for (const f of real) {
+    const d = dist(f, state.party);
+    if (d > SIGHT) continue;
+    const before = it.known[f.id], fresh = !before || before.day < day - 1;
+    see(it, f, day);
+    if (!fresh || d <= CLOSE || scouted.has(f.id)) continue;
+    const ev = { type: 'avistamento', id: f.id, kind: f.kind, bearing: compass(f.x - state.party.x, f.y - state.party.y), far: Math.round(d) };
+    if (num(f.men)) ev.men = estimateMen(f.men);
+    if (it.known[f.id].dir) ev.dir = it.known[f.id].dir;
+    if (f.name) ev.name = f.name;
+    events.push(ev);
+  }
   // 2. reconhecimento: confirma o que há na zona e apaga o que lá se julgava estar
   if (recon) {
-    const found = real.filter(f => dist(f, recon) <= RECON_RADIUS);
+    const found = real.filter(f => scouted.has(f.id));
     for (const f of found) see(it, f, day);
     for (const [id, k] of Object.entries(it.known)) if (k.day !== day && dist(k, recon) <= RECON_RADIUS) delete it.known[id];
-    addReport(it, { kind: found.length ? 'forcas' : 'livre', x: recon.x, y: recon.y, r: RECON_RADIUS, seen: day, got: day, rel: 'certa', src: 'batedores', found: found.map(f => f.kind) });
+    addReport(it, { kind: found.length ? 'forcas' : 'livre', x: recon.x, y: recon.y, r: RECON_RADIUS, seen: day, got: day, rel: 'certa', src: 'batedores',
+      found: found.map(f => f.kind), sizes: found.map(f => (num(f.men) ? estimateMen(f.men) : 0)), dirs: found.map(f => it.known[f.id].dir || '') });
     events.push({ type: 'reconhecimento', found: found.map(f => f.kind), to: { x: recon.x, y: recon.y } });
   }
   // 3. avistamentos velhos de mais saem do mapa
@@ -140,6 +183,9 @@ export function updateIntel(state, { recon = null, dayEvents = [] } = {}) {
       // próprio alcance da deteção (50; 90 para o exército do pretor). Um raio menor faria o relato mentir.
       const r = { kind: f.kind, x: near.x, y: near.y, r: sight, seen: day, got: day + delay, rel: 'boa', src: 'aldeia', place: near.id, fid: f.id };
       if (f.name) r.name = f.name;
+      if (num(f.men)) r.men = estimateMen(f.men);   // contaram-nos de longe: uma estimativa, não o número
+      const dir = headingOf(f, null, day);
+      if (dir) r.dir = dir;
       addReport(it, r);
     } else if (rng.chance(army ? ARMY_RUMOR : RUMOR_CHANCE)) rumor(it, state, f, rng, day + 1);
   }
@@ -154,6 +200,7 @@ export function updateIntel(state, { recon = null, dayEvents = [] } = {}) {
  * forces: avistamentos (confirmada = vista hoje; estimada = última posição conhecida, com idade e zona provável r).
  * zones: relatos recentes para desenhar como zona (o mais novo por força, se não houver avistamento mais recente).
  * reports: os últimos relatos já recebidos, do mais novo para o mais velho.
+ * recent: só os que ainda não são antigos; archive: os antigos (todos os guardados).
  */
 export function intelView(state) {
   const it = state.intel, day = state.day;
@@ -162,12 +209,13 @@ export function intelView(state) {
   for (const [id, k] of Object.entries(it.known)) {
     const age = Math.max(0, day - k.day);
     if (age > FORGET) continue;
-    forces.push({ id, kind: k.kind, x: k.x, y: k.y, men: k.men, name: k.name, age, status: age === 0 ? 'confirmada' : 'estimada',
+    forces.push({ id, kind: k.kind, x: k.x, y: k.y, men: k.men, name: k.name, dir: k.dir, age, status: age === 0 ? 'confirmada' : 'estimada',
       r: age === 0 ? 0 : Math.min(DRIFT_MAX, age * (DRIFT[k.kind] ?? DRIFT_DEFAULT)) });
   }
   const reports = it.reports.filter(r => r.got <= day).map(r => {
     const age = Math.max(0, day - r.seen);
-    return { id: r.id, kind: r.kind, x: r.x, y: r.y, r: r.r, age, old: age > REPORT_DAYS, rel: r.rel, src: r.src, place: r.place, name: r.name, found: r.found, fid: r.fid, got: r.got };
+    return { id: r.id, kind: r.kind, x: r.x, y: r.y, r: r.r, age, old: age > REPORT_DAYS, rel: r.rel, src: r.src, place: r.place, name: r.name, found: r.found, fid: r.fid, got: r.got,
+      men: r.men, dir: r.dir, sizes: r.sizes, dirs: r.dirs };
   }).reverse();
   const zones = [], done = new Set();
   for (const r of reports) {
@@ -180,5 +228,6 @@ export function intelView(state) {
     if (k && day - k.day <= r.age) continue;   // há um avistamento tão ou mais recente
     zones.push(r);
   }
-  return { forces, zones, reports: reports.slice(0, REPORT_LIST) };
+  // recent: o que serve para decidir hoje; archive: os antigos, guardados para consulta (nada se apaga)
+  return { forces, zones, reports: reports.slice(0, REPORT_LIST), recent: reports.filter(r => !r.old).slice(0, REPORT_LIST), archive: reports.filter(r => r.old) };
 }

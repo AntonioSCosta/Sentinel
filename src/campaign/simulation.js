@@ -4,7 +4,8 @@ import { romansCampaign } from './clock.js';
 import { praetorStep } from './praetor.js';
 import { foodPerDay, recruitsFrom, checkRuin } from './state.js';
 import { updateIntel, SCOUTS, RECON_RANGE } from './intel.js';
-import { ensureDoctrine, tickDoctrine, moveHunter, spottedAmbush, escortBonus, nextSpawnGap, FIRST_SPAWN } from './doctrine.js';
+import { ensureDoctrine, tickDoctrine, moveHunter, spottedAmbush, escortBonus, nextSpawnGap, FIRST_SPAWN, FIRST_SPAWN_MIN, FIRST_NEAR } from './doctrine.js';
+import { makeRng } from './rng.js';
 
 export const MARCH_SPEED = 45;
 export const PATROL_SPEED = 35;
@@ -90,7 +91,7 @@ function applyOrder(state, order) {
       if (state.posts && s.id in state.posts) return refuse({ type: 'posto-atacado', id: s.id });   // uma vez por campanha
       state.posts = state.posts || {};
       state.posts[s.id] = { taken: false };   // tomado só se a batalha for ganha (battles.applyResult)
-      return { events: [], encounter: { kind: 'posto', foe: s, waiting: false } };
+      return { events: [], encounter: { kind: 'posto', foe: s, waiting: false, context: 'ataque' } };
     }
     case 'reconhecer': {   // dois batedores vão ver uma zona e voltam no fim do dia; o bando fica acampado
       const to = order.to;
@@ -128,12 +129,18 @@ function stepPatrols(state, hidden) {
  */
 function spawnPatrol(state, rng) {
   const d = ensureDoctrine(state);
-  if (d.nextSpawn === null) d.nextSpawn = FIRST_SPAWN;
+  const firstRng = () => makeRng(((state.seed | 0) * 131 + 7) >>> 0);   // sorteio próprio do primeiro destacamento
+  if (d.nextSpawn === null) d.nextSpawn = firstRng().int(FIRST_SPAWN_MIN, FIRST_SPAWN);
   if (state.day < d.nextSpawn || !romansCampaign(state.day)) return;
+  const opening = state.day <= FIRST_SPAWN && !state.patrols.length && !(state.battles > 0);   // só pode ser o primeiro
   d.nextSpawn = state.day + nextSpawnGap(state, rng);
   const road = state.world.road, postos = state.world.settlements.filter(s => s.kind === 'posto');
   if (!postos.length || road.length < 2) return;
-  const posto = rng.pick(postos);
+  let posto = rng.pick(postos);
+  if (opening) {   // o primeiro: metade das vezes do posto mais perto do bando
+    const r = firstRng(); r.int(FIRST_SPAWN_MIN, FIRST_SPAWN);
+    if (r.chance(FIRST_NEAR)) posto = postos.reduce((b, q) => (dist(q, state.party) < dist(b, state.party) ? q : b));
+  }
   let at = 0, bd = Infinity;
   for (let k = 0; k < road.length; k++) { const q = dist(road[k], posto); if (q < bd) { bd = q; at = k; } }
   const dir = at < road.length / 2 ? 1 : -1, i = at + dir;
@@ -152,11 +159,11 @@ function feed(state, events) {
   events.push({ type: 'fome', mortos: dead });
 }
 
-/** Uma aldeia intacta a <= VILLAGE_NEAR da party com uma patrulha ou o pretor a <= ENCOUNTER_RADIUS dela.
+/** Uma aldeia intacta a <= VILLAGE_NEAR da party com o pretor ou uma patrulha a <= ENCOUNTER_RADIUS dela.
  *  Os caçadores não contam: vêm atrás do bando, não da aldeia. */
 function villageThreat(state) {
   const roads = state.patrols.filter(p => !p.hunt);
-  const foes = state.praetor ? [...roads, state.praetor] : roads;
+  const foes = state.praetor ? [state.praetor, ...roads] : roads;   // o pretor primeiro: é ele quem queima aldeias
   for (const s of state.world.settlements) {
     if (s.kind !== 'aldeia' || state.villages[s.id]?.burnt || dist(s, state.party) > VILLAGE_NEAR) continue;
     const foe = foes.find(f => dist(f, s) <= ENCOUNTER_RADIUS);
@@ -165,20 +172,33 @@ function villageThreat(state) {
   return null;
 }
 
+/**
+ * O encontro do dia, se houver. `context` diz porque é que se luta (o painel de batalha explica-o):
+ * 'pretor', 'aldeia', 'emboscada', 'descoberta', 'fora-estrada', 'cacadores' ou 'encontro'.
+ * Uma emboscada montada na estrada ataca a coluna que lhe passa à frente antes de esta chegar à aldeia;
+ * só o pretor a chegar a uma aldeia (uma ameaça real: queima-a) passa à frente da emboscada.
+ */
 function detect(state, order, hidden, events) {
   const { party } = state;
-  if (state.praetor && dist(state.praetor, party) <= ENCOUNTER_RADIUS) return { kind: 'pretor', foe: state.praetor, waiting: false };
+  if (state.praetor && dist(state.praetor, party) <= ENCOUNTER_RADIUS) return { kind: 'pretor', foe: state.praetor, waiting: false, context: 'pretor' };
   if (hidden) return null;
-  const threat = villageThreat(state);
-  if (threat) return threat;
+  const waiting = order.kind === 'esperar', onRoad = waiting && nearRoad(state.world, party);
   const foe = state.patrols.find(p => dist(p, party) <= ENCOUNTER_RADIUS);
-  if (!foe) return null;
-  let waiting = order.kind === 'esperar' && nearRoad(state.world, party) && !foe.hunt;
-  if (waiting) {   // Roma aprendeu: batedores ou guarnição descobrem a emboscada e a luta é em campo aberto
-    const why = spottedAmbush(state, foe);
-    if (why) { waiting = false; events.push({ type: 'emboscada-descoberta', why }); }
+  let spotted = null;
+  if (foe && onRoad && !foe.hunt) {
+    spotted = spottedAmbush(state, foe);   // Roma aprendeu: batedores ou guarnição descobrem a emboscada
+    if (spotted) events.push({ type: 'emboscada-descoberta', why: spotted });
+    else {
+      const threat = villageThreat(state);
+      if (threat && threat.foe === state.praetor) return { ...threat, context: 'aldeia' };
+      return { kind: foe.kind, foe, waiting: true, context: 'emboscada' };
+    }
   }
-  return { kind: foe.kind, foe, waiting };
+  const threat = villageThreat(state);
+  if (threat) return { ...threat, context: 'aldeia' };
+  if (!foe) return null;
+  const context = foe.hunt ? 'cacadores' : spotted ? 'descoberta' : waiting ? 'fora-estrada' : 'encontro';
+  return { kind: foe.kind, foe, waiting: false, context };
 }
 
 /**
@@ -195,6 +215,7 @@ export function stepDay(state, order, rng) {
   spawnPatrol(state, rng);
   if (state.praetor) events.push(...praetorStep(state, rng));
   events.push(...tickDoctrine(state));
+  const food = state.food;
   feed(state, events);
   if (checkRuin(state)) events.push({ type: 'derrota' });
   state.day += 1;
@@ -204,5 +225,9 @@ export function stepDay(state, order, rng) {
   if (!encounter && !state.over && !blocked) encounter = detect(state, order, hidden, events);
   // o que o jogador ficou a saber hoje (só lê as posições; os encontros acima usam sempre as reais)
   events.push(...updateIntel(state, { recon: res.recon, dayEvents: events }));
+  // esperar e esconder respondem sempre no diário (o resto do dia explica-se pelos outros eventos)
+  if (!encounter && !state.over && (order.kind === 'esperar' || order.kind === 'esconder')) {
+    events.push({ type: 'espera', order: order.kind, road: nearRoad(state.world, state.party), food: food - state.food });
+  }
   return { events, encounter };
 }
