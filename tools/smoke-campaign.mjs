@@ -615,8 +615,8 @@ function fixWave({ G, doc, win, check, st, setGod, $, shown }) {
   $('m-intel').click();
   { const arch = $('mintel').querySelector('button[data-archive]');
     check(`the reports list ends with the archive toggle (${arch?.textContent})`, !!arch && /Arquivo \(\d+ antigos\)/.test(arch.textContent));
-    const cs = win.getComputedStyle($('mintel'));
-    check(`the reports panel sits at the top left, clear of the place panel (${cs.left}/${cs.top})`, cs.left === '12px' && cs.top === '92px' && cs.bottom !== '76px'); }
+    const cs = win.getComputedStyle($('mpanels'));
+    check(`the reports and places panels share one column at the top left (${cs.left}/${cs.top})`, cs.left === '12px' && cs.top === '64px' && cs.flexDirection === 'column' && $('mintel').parentElement === $('mpanels') && $('mplaces').parentElement === $('mpanels')); }
   $('m-intel').click();
   { const d = f.state.day; G.campaign.order({ kind: 'esperar' });
     const last = [...$('mlog').children].map(li => li.textContent).find(t => /^Esperas/.test(t)) || '';
