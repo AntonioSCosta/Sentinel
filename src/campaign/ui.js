@@ -98,7 +98,12 @@ export function eventText(ev, state) {
     case 'relato': { const r = (state.intel?.reports || []).find(x => x.id === ev.id); return r ? reportText(r, state) : null; }
     case 'reconhecimento': return ev.found.length ? `Os batedores voltam: viram ${list(ev.found.map(um))}.` : 'Os batedores voltam: a zona parece livre.';
     case 'reconhecer-recusado': return `${ev.why === 'homens' ? `Precisas de pelo menos ${SCOUTS + 1} homens para mandar ${SCOUTS} batedores.` : 'É longe de mais para os batedores irem e voltarem num dia.'} ${KEEP_DAY}`;
-    case 'ordem-invalida': return `${INVALID[ev.why]?.(ev.id === undefined ? null : name(ev.id)) ?? 'Não podes fazer isso daqui: aproxima-te primeiro.'} ${KEEP_DAY}`;
+    case 'ordem-invalida': {
+      const why = ev.why === 'destino' && ev.order === 'reconhecer'
+        ? 'O reconhecimento não tem destino válido.'
+        : INVALID[ev.why]?.(ev.id === undefined ? null : name(ev.id));
+      return `${why ?? 'Não podes fazer isso daqui: aproxima-te primeiro.'} ${KEEP_DAY}`;
+    }
     default: return null;
   }
 }
@@ -112,7 +117,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   const $ = id => doc.getElementById(id);
   let flow = null, view = null, active = false, selected = null, logDirty = true;
   let anim = null, shown = null, facing = 1, walk = 0, rafId = 0, hover = null, paintPending = false;
-  let recon = false, focus = null, intelKey = '';   // modo «reconhecer», relato em destaque, e o que a lista de relatos mostra
+  let recon = false, reconClick = null, focus = null, intelKey = '';   // modo «reconhecer», clique que o consumiu, relato em destaque, e o que a lista mostra
   const trail = [];
   const log = [];
   const now = () => (win.performance && win.performance.now ? win.performance.now() : Date.now());
@@ -215,6 +220,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
 
   function order(o) {
     if (!flow || flow.phase !== 'mapa') return null;
+    if (recon) setRecon(false);   // outra ordem cancela o modo de reconhecimento
     const r = flow.order(o);
     say(r.events);
     selected = null;
@@ -226,6 +232,9 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
 
   // --- reconhecimento e relatos ---
   const inRecon = p => Math.hypot(p.x - flow.state.party.x, p.y - flow.state.party.y) <= RECON_RANGE;
+  /** O segundo clique (e o dblclick) do mesmo gesto que mandou os batedores não deve marchar. */
+  const sameReconClick = (sx, sy) => !!reconClick && now() - reconClick.t < 600
+    && Math.hypot(sx - reconClick.x, sy - reconClick.y) <= 8;
   const HINT = $('m-hint')?.textContent ?? '';
   function setRecon(on) {
     recon = !!on;
@@ -357,10 +366,12 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const hit = hitTest(view, flow.state, sx, sy);
     if (recon) {   // o clique manda os batedores; a recusa (longe, poucos homens) não gasta o dia
       const at = toWorld(view, { x: sx, y: sy });
+      reconClick = { t: now(), x: sx, y: sy };
       setRecon(false);
       order({ kind: 'reconhecer', to: { x: at.x, y: at.y } });
       return;
     }
+    if (sameReconClick(sx, sy)) return;   // segundo clique do gesto que já mandou os batedores
     if (hit && hit.type === 'settlement') { selected = hit.id; render(); return; }
     const w = toWorld(view, { x: sx, y: sy });
     const d = Math.hypot(w.x - flow.state.party.x, w.y - flow.state.party.y);
@@ -411,9 +422,10 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
 
   // duplo clique em terreno vazio: três dias de marcha para o mesmo ponto (um por cada clique, mais um)
   $('mapcv').addEventListener('dblclick', e => {
-    if (!active || flow.phase !== 'mapa') return;
+    if (!active || flow.phase !== 'mapa' || recon) return;
     const r = $('mapcv').getBoundingClientRect();
     const sx = e.clientX - r.left, sy = e.clientY - r.top;
+    if (sameReconClick(sx, sy)) { reconClick = null; return; }   // o gesto já mandou os batedores
     if (hitTest(view, flow.state, sx, sy)) return;   // numa povoação manda o painel, não a marcha
     const w = toWorld(view, { x: sx, y: sy });
     if (flow.phase === 'mapa') order({ kind: 'marchar', to: { x: w.x, y: w.y } });
@@ -502,7 +514,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   win.addEventListener('resize', render);
   win.addEventListener('keydown', e => {
     // setas: um dia de marcha para norte/sul/este/oeste (o mapa também se joga sem rato)
-    if (!active || !flow || flow.phase !== 'mapa' || cronOpen() || placesOpen()) return;
+    if (!active || !flow || flow.phase !== 'mapa' || cronOpen() || placesOpen() || intelOpen()) return;
     const dir = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.code];
     if (!dir) return;
     e.preventDefault();
@@ -523,6 +535,10 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     stopMarch(); shown = null; hover = null; facing = 1; trail.length = 0;
     $('mcron').classList.add('hidden'); cronOpener = null; togglePlaces(false); toggleIntel(false); setRecon(false); focus = null;
     log.push(flow.state.day ? 'A marcha continua.' : 'Um ano de guerra começa nos montes. Clica no mapa para marchar.');
+    if (!flow.state.day) {   // o relato do dia 0 também se lê no registo, não só no painel «Relatos»
+      const initial = flow.state.intel?.reports?.find(r => r.src === 'inicio' && r.got <= flow.state.day);
+      if (initial) log.push(reportText(initial, flow.state));
+    }
     $('map').classList.remove('hidden');
     render();
   }

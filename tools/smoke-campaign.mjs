@@ -597,6 +597,7 @@ function fixWave({ G, doc, win, check, st, setGod, $, shown }) {
 
   // --- informação e reconhecimento ---
   G.campaignStorage.clear(); G.startCampaign(41); G.showCampaignMap(); f = G.campaign.flow;
+  check('the day-0 report is in the log, not only in the panel', /junta o exército/.test($('mlog').textContent));
   check('the map has «Reconhecer» and «Relatos» buttons', $('m-recon')?.tagName === 'BUTTON' && $('m-intel')?.tagName === 'BUTTON' && $('m-intel').getAttribute('aria-expanded') === 'false');
   $('m-intel').click();
   check(`«Relatos» opens with where the praetor gathers his army (${$('mintel').textContent.slice(0, 60)})`, shown('mintel') && /junta o exército/.test($('mintel').textContent) && $('mintel').querySelectorAll('button[data-report]').length >= 1);
@@ -609,6 +610,31 @@ function fixWave({ G, doc, win, check, st, setGod, $, shown }) {
   G.campaign.order({ kind: 'reconhecer', to: { x: f.state.party.x + 900, y: f.state.party.y + 900 } });
   check('scouting too far is refused for free', f.state.day === 1 && /longe de mais para os batedores.*O dia não passa\./.test([...$('mlog').children].at(-1)?.textContent || ''));
   $('m-intel').click();
+
+  // --- reconhecer: duplo clique, setas e outras ordens ---
+  G.campaignStorage.clear(); G.startCampaign(41); G.showCampaignMap(); f = G.campaign.flow;
+  {
+    const rv = G.campaign.view(), cv = $('mapcv');
+    cv.getBoundingClientRect = () => ({ left: 0, top: 0, width: rv.width, height: rv.height });
+    const at = { x: f.state.party.x + 60, y: f.state.party.y };
+    const q = { x: rv.ox + at.x * rv.scale, y: rv.oy + at.y * rv.scale };
+    const day0 = f.state.day, px = f.state.party.x, py = f.state.party.y;
+    $('m-recon').click();
+    for (let i = 0; i < 2; i++) cv.dispatchEvent(new win.MouseEvent('click', { clientX: q.x, clientY: q.y, bubbles: true }));
+    cv.dispatchEvent(new win.MouseEvent('dblclick', { clientX: q.x, clientY: q.y, bubbles: true }));
+    check(`double click in scouting mode sends the scouts once, not three days (${f.state.day - day0} day)`,
+      f.phase === 'mapa' && f.state.day === day0 + 1 && f.state.party.x === px && f.state.party.y === py);
+    $('m-intel').click();
+    const d1 = f.state.day, x1 = f.state.party.x, y1 = f.state.party.y;
+    win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'ArrowUp', key: 'ArrowUp' }));
+    check('arrow keys do not march while the reports panel is open', f.state.day === d1 && f.state.party.x === x1 && f.state.party.y === y1 && shown('mintel'));
+    $('m-intel').click();
+    $('m-recon').click();
+    const d2 = f.state.day;
+    G.campaign.order({ kind: 'acampar' });
+    check('another order cancels the scouting mode', $('m-recon').getAttribute('aria-pressed') === 'false'
+      && f.state.day === d2 + 1 && /Clica para marchar/.test($('m-hint').textContent));
+  }
 
   // --- lista de lugares pelo teclado ---
   check('the map has a «Lugares» button', $('m-places')?.tagName === 'BUTTON' && $('m-places').textContent.trim() === 'Lugares' && $('m-places').getAttribute('aria-expanded') === 'false');

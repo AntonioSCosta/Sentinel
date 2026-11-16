@@ -6,7 +6,7 @@ import { newCampaign, serialize, deserialize } from '../src/campaign/state.js';
 import { stepDay } from '../src/campaign/simulation.js';
 import { makeRng } from '../src/campaign/rng.js';
 import { createFlow, loadFlow, STORAGE_KEY } from '../src/campaign/flow.js';
-import { ensureIntel, updateIntel, intelView, validIntel, forgetForce, SIGHT, FORGET, REPORT_DAYS, RECON_RANGE, RECON_RADIUS, SCOUTS } from '../src/campaign/intel.js';
+import { ensureIntel, updateIntel, intelView, validIntel, forgetForce, SIGHT, FORGET, REPORT_DAYS, RECON_RANGE, RECON_RADIUS, SCOUTS, ARMY_SIGHT } from '../src/campaign/intel.js';
 import { makeView, toScreen, hitTest, drawMap } from '../src/campaign/map-view.js';
 import { eventText } from '../src/campaign/ui.js';
 
@@ -77,6 +77,40 @@ test('3b. um relato que ainda vem a caminho não se mostra antes de chegar', () 
   assert.equal(intelView(s).reports[0].age, 2);
 });
 
+test('3c. um relato com mais de seis dias é antigo mesmo que o dia avance só o suficiente', () => {
+  const s = quiet(); const it = ensureIntel(s);
+  it.reports.push({ id: 1, kind: 'comboio', x: 200, y: 200, r: 50, seen: s.day, got: s.day, rel: 'boa', src: 'aldeia', fid: 'x' });
+  s.day += 7;
+  const v = intelView(s);
+  assert.equal(REPORT_DAYS, 6);
+  assert.equal(v.reports[0].old, true);
+  assert.equal(v.zones.length, 0, 'já não se desenha no mapa');
+});
+
+test('3d. um relato de aldeia cobre toda a zona de deteção, mesmo com o pretor a 90', () => {
+  const s = newCampaign(3);
+  s.food = 1e6; s.patrols = []; s.day = 1;
+  const v = s.world.settlements.find(x => x.kind === 'aldeia');
+  for (const x of s.world.settlements) if (x.kind === 'aldeia') s.villages[x.id].burnt = x.id !== v.id;
+  s.world.settlements = s.world.settlements.filter(x => x.kind === 'aldeia' && x.id === v.id);
+  const px = v.x + ARMY_SIGHT - 5 <= s.world.w ? v.x + ARMY_SIGHT - 5 : v.x - (ARMY_SIGHT - 5);
+  s.praetor = { id: 'vetilio', name: 'Caio Vetílio', x: px, y: v.y, men: 60, speed: 22, traits: { pursuit: 0, scorch: .5 }, rest: 99 };
+  const corners = [{ x: 0, y: 0 }, { x: s.world.w, y: 0 }, { x: 0, y: s.world.h }, { x: s.world.w, y: s.world.h }];
+  s.party = corners.sort((a, b) => Math.hypot(b.x - px, b.y - v.y) - Math.hypot(a.x - px, a.y - v.y))[0];
+  assert.ok(Math.hypot(s.party.x - px, s.party.y - v.y) > SIGHT, 'o bando não vê o pretor diretamente');
+  s.intel = { known: {}, reports: [], n: 0 };
+  const reps = [];
+  for (let d = 1; d <= 60; d++) {
+    s.day = d; updateIntel(s);
+    reps.push(...s.intel.reports.filter(r => r.src === 'aldeia' && r.fid === 'vetilio'));
+  }
+  assert.ok(reps.length > 0, 'a aldeia dá pelo pretor');
+  for (const r of reps) {
+    assert.ok(r.r >= ARMY_SIGHT, `raio ${r.r} cobre a deteção ${ARMY_SIGHT}`);
+    assert.ok(Math.hypot(r.x - px, r.y - v.y) <= r.r, 'a posição real fica dentro da zona');
+  }
+});
+
 test('4. forças nunca observadas não aparecem em lado nenhum', () => {
   const s = quiet(); s.patrols = [hunter(900, 100), { id: 'p1', kind: 'patrulha', x: 50, y: 600, i: 1, dir: 1, men: 6 }];
   s.praetor = { id: 'vetilio', name: 'Caio Vetílio', x: 950, y: 650, men: 60, speed: 22, traits: { pursuit: 0, scorch: .5 }, rest: 99 };
@@ -134,6 +168,15 @@ test('reconhecer recusado (poucos homens, longe, sem destino): não gasta o dia 
   }
   const s = quiet();
   assert.equal(stepDay(s, { kind: 'reconhecer' }, rng()).refused, true);
+});
+
+test('reconhecer sem destino válido fala do reconhecimento, não de uma marcha', () => {
+  const s = quiet(); ensureIntel(s);
+  const before = JSON.stringify(s), r = stepDay(s, { kind: 'reconhecer', to: { x: NaN, y: 0 } }, rng());
+  assert.equal(r.refused, true);
+  assert.equal(r.events[0].why, 'destino');
+  assert.match(eventText(r.events[0], s), /reconhecimento.*destino válido/i);
+  assert.equal(JSON.stringify(s), before, 'não gasta o dia');
 });
 
 test('7. dados de informação inválidos são rejeitados ao carregar', () => {
@@ -206,10 +249,56 @@ test('10. a interface não chega à posição real de forças desconhecidas (des
   }
 });
 
-test('vencer uma força tira-a do mapa do jogador; a posição antiga não fica como fantasma', () => {
-  const s = quiet(); s.patrols = [hunter(600, 350)]; updateIntel(s);
+test('vencer uma força tira-a do mapa do jogador e apaga os relatos dela; a posição antiga não fica como fantasma', () => {
+  const s = quiet(); s.patrols = [hunter(600, 350)]; const it = ensureIntel(s);
+  updateIntel(s);
+  it.reports.push({ id: 7, kind: 'patrulha', x: 600, y: 350, r: 50, seen: s.day, got: s.day, rel: 'boa', src: 'aldeia', fid: 'c1' });
   forgetForce(s, 'c1');
   assert.equal(force(s, 'c1'), undefined);
+  assert.equal(it.reports.some(r => r.fid === 'c1'), false, 'um relato de uma força eliminada não fica no mapa');
+});
+
+test('finishBattle: uma patrulha vencida sai do mapa e dos relatos', () => {
+  const f = createFlow({ seed: 5 }), s = f.state;
+  const p = { id: 'p1', kind: 'patrulha', x: s.party.x + 40, y: s.party.y, i: 1, dir: 1, men: 6 };
+  s.patrols = [p];
+  s.intel.known.p1 = { kind: 'patrulha', x: p.x, y: p.y, men: 6, day: s.day };
+  s.intel.reports.push({ id: 1, kind: 'patrulha', x: p.x, y: p.y, r: 50, seen: s.day, got: s.day, rel: 'boa', src: 'aldeia', fid: 'p1' });
+  f.phase = 'batalha';
+  f.battle = { type: 'campo-aberto', seed: 1, site: 'campo', allies: Math.min(s.men, 25), realMen: s.men,
+    enemies: { legio: 4, velites: 2, centurion: false }, bonus: { allies: 0, enemies: 0 }, foeId: 'p1', retreat: { possible: false } };
+  f.finishBattle({ won: true, alliesLost: 0, enemiesKilled: 6 });
+  assert.equal(s.patrols.some(x => x.id === 'p1'), false);
+  assert.equal(s.intel.known.p1, undefined);
+  assert.equal(s.intel.reports.some(x => x.fid === 'p1'), false);
+});
+
+test('finishBattle: o pretor que sobrevive a uma defesa de aldeia não é apagado do mapa', () => {
+  const f = createFlow({ seed: 5 }), s = f.state;
+  const village = s.world.settlements.find(x => x.kind === 'aldeia');
+  s.praetor = { id: 'vetilio', name: 'Caio Vetílio', x: s.party.x + 10, y: s.party.y, men: 60, speed: 22, traits: { pursuit: 0, scorch: .5 }, rest: 0 };
+  s.patrols = [];
+  s.intel.known.vetilio = { kind: 'pretor', x: s.praetor.x, y: s.praetor.y, men: 60, name: 'Caio Vetílio', day: s.day };
+  f.phase = 'batalha';
+  f.battle = { type: 'defesa-aldeia', seed: 1, site: 'castro', allies: Math.min(s.men, 25), realMen: s.men,
+    enemies: { legio: 4, velites: 2, centurion: false }, bonus: { allies: 0, enemies: 0 }, foeId: 'vetilio', villageId: village.id, retreat: { possible: false } };
+  f.finishBattle({ won: true, alliesLost: 0, enemiesKilled: 6 });
+  assert.equal(s.praetor.men, 54, 'o pretor recua com menos homens');
+  assert.ok(s.intel.known.vetilio, 'continua no mapa');
+  assert.equal(s.intel.known.vetilio.men, 54, 'o que o jogador sabe foi atualizado');
+});
+
+test('finishBattle: a vitória decisiva elimina o pretor do mapa', () => {
+  const f = createFlow({ seed: 5 }), s = f.state;
+  s.praetor = { id: 'vetilio', name: 'Caio Vetílio', x: s.party.x + 10, y: s.party.y, men: 60, speed: 22, traits: { pursuit: 0, scorch: .5 }, rest: 0 };
+  s.patrols = [];
+  s.intel.known.vetilio = { kind: 'pretor', x: s.praetor.x, y: s.praetor.y, men: 60, name: 'Caio Vetílio', day: s.day };
+  f.phase = 'batalha';
+  f.battle = { type: 'decisiva', seed: 1, site: 'campo', allies: Math.min(s.men, 25), realMen: s.men,
+    enemies: { legio: 4, velites: 2, centurion: true }, bonus: { allies: 0, enemies: 0 }, foeId: 'vetilio', retreat: { possible: false } };
+  f.finishBattle({ won: true, alliesLost: 0, enemiesKilled: 10 });
+  assert.equal(s.over, 'vitoria');
+  assert.equal(s.intel.known.vetilio, undefined);
 });
 
 test('relatos de aldeias: zona à volta da aldeia, não a posição da coluna; deterministas; chegam com atraso de longe', () => {

@@ -9,7 +9,6 @@ export const REPORT_DAYS = 6;        // um relato mais velho do que isto é «an
 export const REPORT_LIST = 12;       // relatos mostrados na lista
 const REPORT_STORE = 40;             // relatos guardados
 export const VILLAGE_SIGHT = 50;     // uma aldeia ou castro dá por uma força a esta distância
-export const VILLAGE_ZONE = 50;      // raio da zona de um relato de aldeia («passou perto»)
 export const REPORT_CHANCE = 0.5, REPORT_GAP = 3;   // por força: no máximo um relato de 3 em 3 dias
 export const RUMOR_CHANCE = 0.06, RUMOR_ZONE = 130; // rumor: zona larga, pouco fiável
 export const ARMY_SIGHT = 90, ARMY_RUMOR = 0.2;     // o exército do pretor dá mais nas vistas do que uma patrulha
@@ -85,9 +84,19 @@ function rumor(it, state, f, rng, got) {
   return addReport(it, r);
 }
 
-/** O jogador venceu esta força: sabe que já não existe. */
+/** O jogador venceu esta força: sabe que já não existe (nem ela nem os relatos dela). */
 export function forgetForce(state, id) {
-  if (state.intel && id !== undefined) delete state.intel.known[String(id)];
+  if (!state.intel || id === undefined) return;
+  const sid = String(id);
+  delete state.intel.known[sid];
+  state.intel.reports = (state.intel.reports || []).filter(r => String(r.fid) !== sid);
+}
+
+/** O jogador voltou a ver esta força (por exemplo, no fim de uma batalha que ela sobreviveu). */
+export function rememberForce(state, id) {
+  if (!state.intel || id === undefined) return;
+  const f = realForces(state).find(x => x.id === String(id));
+  if (f) see(state.intel, f, state.day);
 }
 
 /**
@@ -127,7 +136,9 @@ export function updateIntel(state, { recon = null, dayEvents = [] } = {}) {
     if (near) {
       if (!rng.chance(REPORT_CHANCE)) continue;
       const delay = Math.min(3, Math.floor(dist(near, state.party) / MESSENGER));
-      const r = { kind: f.kind, x: near.x, y: near.y, r: VILLAGE_ZONE, seen: day, got: day + delay, rel: 'boa', src: 'aldeia', place: near.id, fid: f.id };
+      // A zona tem de conter qualquer posição em que a aldeia podia ter visto a força: o raio é o
+      // próprio alcance da deteção (50; 90 para o exército do pretor). Um raio menor faria o relato mentir.
+      const r = { kind: f.kind, x: near.x, y: near.y, r: sight, seen: day, got: day + delay, rel: 'boa', src: 'aldeia', place: near.id, fid: f.id };
       if (f.name) r.name = f.name;
       addReport(it, r);
     } else if (rng.chance(army ? ARMY_RUMOR : RUMOR_CHANCE)) rumor(it, state, f, rng, day + 1);
