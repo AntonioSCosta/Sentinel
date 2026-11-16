@@ -2,13 +2,13 @@
 // painel de batalha, recusar o combate, relatos com efetivos e sentido de marcha, e o início da campanha.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { newCampaign } from '../src/campaign/state.js';
-import { stepDay } from '../src/campaign/simulation.js';
+import { newCampaign, foodPerDay } from '../src/campaign/state.js';
+import { stepDay, HELP_FOOD } from '../src/campaign/simulation.js';
 import { makeRng } from '../src/campaign/rng.js';
 import { battleSpec } from '../src/campaign/battles.js';
 import { createFlow } from '../src/campaign/flow.js';
 import { ensureIntel, updateIntel, intelView, validIntel, estimateMen, REPORT_DAYS } from '../src/campaign/intel.js';
-import { eventText, reportText, battleBrief } from '../src/campaign/ui.js';
+import { eventText, reportText, battleBrief, EPISODES, goalLines } from '../src/campaign/ui.js';
 import { FIRST_SPAWN, FIRST_SPAWN_MIN } from '../src/campaign/doctrine.js';
 import { makePraetor } from '../src/campaign/praetor.js';
 
@@ -329,4 +329,33 @@ test('o relato pouco fiável desenha-se com outro traço', async () => {
     return calls.filter(c => c[0] === 'setLineDash').map(c => JSON.stringify(c[1]));
   };
   assert.notDeepEqual(dashes('fraca'), dashes('boa'));
+});
+
+test('capítulo III no painel de batalha: diz como entrar sem ser descoberto (agachar) e o perigo de ficar à vista', () => {
+  const t = EPISODES.acampamento[1];
+  assert.match(t, /agacha-te \(C\)/i, t);
+  assert.match(t, /à vista/, t);
+  assert.match(t, /Invenção do jogo/, 'continua a dizer que o episódio é invenção');
+});
+
+test('painel «Objetivo»: a comida vem dos castros e do saque, nunca «das aldeias»; o texto bate com a simulação real', () => {
+  const s = newCampaign(11);
+  const text = goalLines(s).join(' ');
+  assert.match(text, /Comida: pede ajuda nos castros e obtém mantimentos como saque nas vitórias em combate/);
+  assert.doesNotMatch(text, /pede-a nas aldeias|pede comida .*aldeia|comida.{0,40}aldeias? e saqueia/i, 'a indicação errada não pode voltar');
+  assert.match(text, /recruta numa aldeia, pede ajuda \(comida\) num castro/);
+  // as mecânicas reais por trás do texto
+  const at = (st, p) => { st.party.x = p.x; st.party.y = p.y; };
+  const castro = s.world.settlements.find(x => x.kind === 'castro'), aldeia = s.world.settlements.find(x => x.kind === 'aldeia');
+  at(s, castro); const f0 = s.food, need = foodPerDay(s.men);
+  const help = stepDay(s, { kind: 'pedir-ajuda', id: castro.id }, makeRng(1)).events.filter(e => e.type === 'ajuda');
+  assert.equal(help.length, 1, 'pedir ajuda num castro gera um evento «ajuda»');
+  assert.equal(help[0].food, HELP_FOOD, 'o evento regista exatamente HELP_FOOD de comida');
+  assert.equal(s.food, f0 + HELP_FOOD - need, 'o saldo sobe exatamente HELP_FOOD, menos o consumo do dia');
+  const t = newCampaign(11), a2 = t.world.settlements.find(x => x.kind === 'aldeia');
+  at(t, a2); const m0 = t.men, g0 = t.food;
+  const ev = stepDay(t, { kind: 'recrutar', id: a2.id }, makeRng(1)).events;
+  assert.ok(ev.some(e => e.type === 'recrutou') && t.men > m0, 'a aldeia dá homens');
+  assert.ok(t.food <= g0, 'a aldeia não dá comida');
+  assert.match(text, /Fama: sobe com vitórias, desce com derrotas e recuos/);
 });
