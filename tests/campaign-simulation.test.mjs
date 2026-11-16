@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { MARCH_SPEED, PATROL_SPEED, ENCOUNTER_RADIUS, nearRoad, stepDay } from '../src/campaign/simulation.js';
 import { newCampaign, foodPerDay, recruitsFrom } from '../src/campaign/state.js';
 import { makeRng } from '../src/campaign/rng.js';
-import { ensureDoctrine, sectorOf, FIRST_SPAWN, COUNTERS } from '../src/campaign/doctrine.js';
+import { ensureDoctrine, sectorOf, FIRST_SPAWN, FIRST_SPAWN_MIN, COUNTERS } from '../src/campaign/doctrine.js';
 import { battleSpec, applyResult } from '../src/campaign/battles.js';
 
 const rng = () => makeRng(7);
@@ -81,10 +81,10 @@ function spawns(seed, days = 200) {
   return seen;
 }
 
-test('destacamentos saem a partir de FIRST_SPAWN, a intervalos sorteados de 3 a 9 dias', () => {
+test('o primeiro destacamento sai entre FIRST_SPAWN_MIN e FIRST_SPAWN, os seguintes a intervalos sorteados de 3 a 9 dias', () => {
   const seen = spawns(11);
   assert.ok(seen.length >= 15, `${seen.length} destacamentos em 200 dias`);
-  assert.ok(seen[0].day >= FIRST_SPAWN + 1);   // nasce ao passar o dia marcado
+  assert.ok(seen[0].day >= FIRST_SPAWN_MIN + 1 && seen[0].day <= FIRST_SPAWN + 1);   // nasce ao passar o dia marcado (PR #10)
   const gaps = seen.slice(1).map((p, k) => p.day - seen[k].day);
   for (const g of gaps) assert.ok(g >= 3 && g <= 9, `intervalo ${g}`);
   assert.ok(new Set(gaps).size >= 3, 'os intervalos variam');

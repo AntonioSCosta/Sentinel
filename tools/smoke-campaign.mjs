@@ -611,6 +611,29 @@ function fixWave({ G, doc, win, check, st, setGod, $, shown }) {
   check('scouting too far is refused for free', f.state.day === 1 && /longe de mais para os batedores.*O dia não passa\./.test([...$('mlog').children].at(-1)?.textContent || ''));
   $('m-intel').click();
 
+  // --- PR #10: arquivo de relatos, diário de espera, painel de batalha e recusar o combate ---
+  $('m-intel').click();
+  { const arch = $('mintel').querySelector('button[data-archive]');
+    check(`the reports list ends with the archive toggle (${arch?.textContent})`, !!arch && /Arquivo \(\d+ antigos\)/.test(arch.textContent));
+    const cs = win.getComputedStyle($('mpanels'));
+    check(`the reports and places panels share one column at the top left (${cs.left}/${cs.top})`, cs.left === '12px' && cs.top === '64px' && cs.flexDirection === 'column' && $('mintel').parentElement === $('mpanels') && $('mplaces').parentElement === $('mpanels')); }
+  $('m-intel').click();
+  { const d = f.state.day; G.campaign.order({ kind: 'esperar' });
+    const last = [...$('mlog').children].map(li => li.textContent).find(t => /^Esperas/.test(t)) || '';
+    check(`waiting writes a diary line (${last})`, f.state.day === d + 1 && (/^Esperas/.test(last) || f.phase !== 'mapa')); }
+  if (f.phase === 'mapa') {
+    const serra = f.state.world.settlements.find(x => x.kind === 'serra');
+    const sp = { type: 'decisiva', seed: 9, site: 'campo', allies: 10, realMen: f.state.men, enemies: { legio: 22, velites: 8, centurion: true }, bonus: { allies: 0, enemies: 30 },
+      retreat: { possible: true, serraId: serra.id }, withdraw: { possible: true, serraId: serra.id, lost: 2 }, foeKind: 'pretor', context: 'pretor', commander: 'Caio Vetílio' };
+    G.campaignTest.forceBattle(sp);
+    check(`the decisive battle says who and offers to withdraw (${$('mb-info').textContent.slice(0, 80)})`, shown('mbattle') && shown('mb-withdraw') && /Caio Vetílio/.test($('mb-info').textContent) && /Podes recusar o combate/.test($('mb-info').textContent));
+    const men = f.state.men; $('mb-withdraw').click();
+    check(`withdrawing goes back to the map at the serra, with the rearguard lost (${[...$('mlog').children].at(-1)?.textContent})`, !shown('mbattle') && f.phase === 'mapa' && f.state.men === men - 2 && f.state.party.x === serra.x && /Recusas o combate/.test($('mlog').textContent));
+    G.campaignTest.forceBattle({ type: 'emboscada', seed: 9, site: 'estrada', allies: 8, realMen: 8, enemies: { legio: 5, velites: 1, centurion: false }, bonus: { allies: 0, enemies: 0 }, withdraw: { possible: false, why: 'escolhida' }, foeKind: 'patrulha', context: 'emboscada' });
+    check(`an ambush cannot be refused, and names the patrol (${$('mb-info').textContent.slice(0, 60)})`, shown('mbattle') && !shown('mb-withdraw') && /patrulha/.test($('mb-info').textContent));
+    G.campaign.simulateBattle({ won: true, alliesLost: 0, enemiesKilled: 6 });
+  }
+
   // --- reconhecer: duplo clique, setas e outras ordens ---
   G.campaignStorage.clear(); G.startCampaign(41); G.showCampaignMap(); f = G.campaign.flow;
   {

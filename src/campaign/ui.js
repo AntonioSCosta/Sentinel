@@ -1,6 +1,6 @@
 // Ecrã do mapa da campanha: HUD em HTML + canvas 2D. Liga o DOM ao Flow; não conhece Three.js nem as batalhas 3D.
 import { makeView, drawMap, hitTest, toWorld, agoLabel } from './map-view.js';
-import { intelView, SCOUTS, RECON_RANGE, RECON_RADIUS } from './intel.js';
+import { intelView, estimateMen, SCOUTS, RECON_RANGE, RECON_RADIUS } from './intel.js';
 import { createFlow, loadFlow, clearSave, WIN_MEN, WIN_FAME } from './flow.js';
 import { dateLabel, season, daysLeft, YEAR_DAYS } from './clock.js';
 import { entryFor, CHRONICLE, SOURCE_LABELS, isUnlocked } from './chronicle.js';
@@ -57,24 +57,49 @@ const INVALID = {
 const UM = { patrulha: 'uma patrulha', comboio: 'um comboio', cacadores: 'uma coluna de caçadores', pretor: 'o exército do pretor' };
 const FORCE_NAMES = { patrulha: 'Patrulha romana', comboio: 'Comboio romano', cacadores: 'Caçadores romanos' };
 const um = kind => UM[kind] || 'uma força romana';
+/** «de» com o artigo contraído: «do exército», «de uma patrulha». */
+const de = t => (t.startsWith('o ') ? `do ${t.slice(2)}` : t.startsWith('a ') ? `da ${t.slice(2)}` : `de ${t}`);
 const list = xs => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} e ${xs.at(-1)}` : xs[0] || '');
+/** Uma estimativa de efetivos: «6 homens», «uns 15 homens» (estimateMen já arredondou). */
+const menText = n => (n > 7 ? `uns ${n} homens` : `${n} ${n === 1 ? 'homem' : 'homens'}`);
+/** «a menos de um dia de marcha», «a cerca de 2 dias». */
+const farText = d => (d <= MARCH_SPEED ? 'a menos de um dia de marcha' : `a cerca de ${days(Math.round(d / MARCH_SPEED))} de marcha`);
 
 /** Um relato por extenso: quem o traz, o que viu e com que certeza. Nunca diz mais do que o relato sabe. */
 export function reportText(r, state) {
   const place = id => state.world.settlements.find(s => s.id === id)?.name;
   const nearest = () => state.world.settlements.reduce((a, b) => (Math.hypot(b.x - r.x, b.y - r.y) < Math.hypot(a.x - r.x, a.y - r.y) ? b : a)).name;
   switch (r.src) {
-    case 'aldeia': return `Relato de ${place(r.place) ?? 'uma aldeia'}: viram ${um(r.kind)} por perto.`;
-    case 'rumor': return `Rumor: fala-se de ${um(r.kind)} para os lados de ${nearest()}. Nada de certo.`;
+    case 'aldeia': return `Relato de ${place(r.place) ?? 'uma aldeia'}: viram ${um(r.kind)} por perto${r.men ? `, ${menText(r.men)}` : ''}${r.dir ? `, a seguir para ${r.dir}` : ''}.`;
+    case 'rumor': return `Rumor: fala-se ${de(um(r.kind))} para os lados de ${nearest()}. Nada de certo.`;
     case 'fumo': return `Fumo sobre ${place(r.place) ?? 'uma aldeia'}: o pretor esteve lá.`;
     case 'inicio': return `Sabe-se que ${r.name || 'o pretor'} junta o exército em ${nearest()}.`;
-    case 'batedores': return r.found?.length ? `Batedores: ${list(r.found.map(um))} na zona de ${nearest()}.` : `Batedores: a zona de ${nearest()} parece livre.`;
+    case 'batedores': return r.found?.length
+      ? `Batedores: ${list(r.found.map((k, i) => `${um(k)}${r.sizes?.[i] ? ` (${menText(r.sizes[i])})` : ''}${r.dirs?.[i] ? ` a seguir para ${r.dirs[i]}` : ''}`))} na zona de ${nearest()}.`
+      : `Batedores: a zona de ${nearest()} parece livre.`;
     default: return 'Relato sem origem certa.';
   }
 }
 
-/** Uma frase curta (pt-PT) por evento devolvido por flow.order()/finishBattle(). */
-export function eventText(ev, state) {
+const WAIT_TEXT = {
+  estrada: 'Esperas na estrada: ninguém passou.',
+  longe: 'Esperas longe da estrada: daqui não se embosca ninguém.',
+  esconder: 'O bando fica escondido; ninguém deu por vós.',
+};
+/** A linha do diário de um dia de espera: o que se vê (só o que o jogador sabe), o risco e a comida gasta. */
+function waitText(ev, state, dayEvents) {
+  const fresh = new Set(dayEvents.filter(e => e.type === 'avistamento').map(e => e.id));   // já têm a sua linha
+  const v = intelView(state), p = state.party;
+  const seen = v.forces.filter(f => f.status === 'confirmada' && !fresh.has(f.id));
+  const near = v.forces.find(f => f.kind === 'pretor' && f.status === 'estimada' && Math.hypot(f.x - p.x, f.y - p.y) <= 2 * MARCH_SPEED);
+  return [WAIT_TEXT[ev.order === 'esconder' ? 'esconder' : ev.road ? 'estrada' : 'longe'],
+    seen.length ? `À vista: ${list(seen.map(f => `${um(f.kind)}${f.dir ? ` (para ${f.dir})` : ''}`))}.` : '',
+    near ? `O pretor foi visto ${agoLabel(near.age)} a menos de dois dias daqui.` : '',
+    ev.food > 0 ? `Comida: −${ev.food}.` : ''].filter(Boolean).join(' ');
+}
+
+/** Uma frase curta (pt-PT) por evento devolvido por flow.order()/finishBattle(); `dayEvents` são os outros eventos do mesmo dia. */
+export function eventText(ev, state, dayEvents = []) {
   const name = id => state.world.settlements.find(s => s.id === id)?.name ?? 'o povoado';
   switch (ev.type) {
     case 'recrutou': return ev.men ? `${name(ev.id)}: ${ev.men} homens juntam-se a ti.` : `${name(ev.id)}: ninguém tem armas para dar.`;
@@ -86,7 +111,13 @@ export function eventText(ev, state) {
     case 'fome': return `Fome no bando: morrem ${ev.mortos}.`;
     case 'derrota': return ev.lost !== undefined ? `Derrota: perdes ${ev.lost} homens.` : 'O bando está arruinado.';
     case 'vitoria': return `Vitória: perdes ${ev.lost}, ganhas ${ev.food} de comida, ${ev.arms} armas e ${ev.fame} de fama.`;
-    case 'retirada': return ev.serraId ? `O bando recua para ${name(ev.serraId)}; perdes ${ev.lost} homens.` : `Recuas, perdendo ${ev.lost} homens.`;
+    case 'retirada': if (ev.withdrew) return `Recusas o combate e recuas para ${name(ev.serraId)}; ${ev.lost ? `a retaguarda perde ${ev.lost} ${ev.lost === 1 ? 'homem' : 'homens'}` : 'a retaguarda escapa inteira'}.`;
+      return ev.serraId ? `O bando recua para ${name(ev.serraId)}; perdes ${ev.lost} homens.` : `Recuas, perdendo ${ev.lost} homens.`;
+    case 'espera': return waitText(ev, state, dayEvents);
+    case 'avistamento': {
+      const who = ev.kind === 'pretor' ? `o exército de ${ev.name || 'o pretor'}` : um(ev.kind);
+      return `Avistas ${who} a ${ev.bearing}, ${farText(ev.far)}${ev.men ? `: ${menText(ev.men)}` : ''}${ev.dir ? `, a seguir para ${ev.dir}` : ''}.`;
+    }
     case 'fuga': return `A coluna escapou-se com a carga${ev.lost ? `; perdes ${ev.lost} homens` : ''}.`;
     case 'ano-vencido': return 'O exército do pretor foi desfeito.';
     case 'ruina': return 'O bando desfez-se.';
@@ -106,6 +137,37 @@ export function eventText(ev, state) {
     }
     default: return null;
   }
+}
+
+const FOE_WHO = { patrulha: 'uma patrulha romana', comboio: 'um comboio romano', cacadores: 'uma coluna de caçadores', posto: 'a guarnição do posto' };
+const CONTEXT_TEXT = {
+  emboscada: 'Esperavas na estrada e caíram na emboscada.',
+  descoberta: 'Esperavas na estrada, mas descobriram a emboscada: a luta é a descoberto.',
+  'fora-estrada': 'Esperavas longe da estrada: deram convosco antes de os poderes emboscar.',
+  encontro: 'Esbarraste com eles em campo aberto.',
+  cacadores: 'Os caçadores deram com o rasto do bando.',
+  ataque: 'Atacas o posto.',
+};
+/**
+ * O texto do painel de batalha: quem é a força, quantos são, porque se luta e o que está em jogo.
+ * Só usa a especificação da batalha (o inimigo está à frente do bando: os números são os que se veem).
+ */
+export function battleBrief(b, state) {
+  const name = id => state.world.settlements.find(s => s.id === id)?.name;
+  const mine = b.allies + (b.bonus?.allies || 0), theirs = b.enemies.legio + b.enemies.velites + (b.bonus?.enemies || 0) + (b.enemies.centurion && !b.commander ? 1 : 0);
+  const chief = b.commander || state.praetor?.name || 'o pretor';
+  const who = b.foeKind === 'pretor' ? `o exército de ${chief}` : FOE_WHO[b.foeKind] || 'uma força romana';
+  const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+  const why = b.type === 'defesa-aldeia' ? `${cap(who)} chegou a ${name(b.villageId) ?? 'uma aldeia'}: se não a defenderes, a aldeia arde.`
+    : b.type === 'decisiva' ? `${chief} apanhou o bando. Vencê-lo acaba com a campanha deste ano.`
+    : b.type === 'assalto-coluna' ? 'O comboio caiu na emboscada: toma os carros antes que fujam.'
+    : `${cap(who)}. ${CONTEXT_TEXT[b.context] || ''}`.trim();
+  const out = b.withdraw?.possible
+    ? `Podes recusar o combate e recuar para ${name(b.withdraw.serraId) ?? 'a serra'}${b.withdraw.lost ? `, perdendo ${b.withdraw.lost} ${b.withdraw.lost === 1 ? 'homem' : 'homens'} na retaguarda` : ''}${b.type === 'defesa-aldeia' ? ', mas a aldeia fica entregue' : ''}.`
+    : b.withdraw?.why === 'sem-serra' ? 'Não há serra perto para onde recuar.' : '';
+  return [why, `${mine} dos teus contra ${theirs} romanos.`,
+    b.bonus?.allies > 0 ? `Os teus ${b.realMen} homens pesam na linha.` : '',
+    b.bonus?.enemies > 0 ? 'Há mais romanos do que os que entram em campo.' : '', out].filter(Boolean).join(' ');
 }
 
 /**
@@ -214,8 +276,16 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     for (const b of $('map').querySelectorAll('[data-act]')) b.disabled = busy;
   }
 
+  // a mesma linha em dias seguidos (esperar três dias sem nada) conta-se em vez de se repetir
+  let lastSaid = null, repeat = 1;
   function say(events) {
-    for (const ev of events || []) { const t = eventText(ev, flow.state); if (t) log.push(t); logDirty = true; }
+    for (const ev of events || []) {
+      const t = eventText(ev, flow.state, events);
+      if (!t) continue;
+      if (t === lastSaid && log.length) { repeat += 1; log[log.length - 1] = `${t} (${repeat}.º dia)`; }
+      else { lastSaid = t; repeat = 1; log.push(t); }
+      logDirty = true;
+    }
   }
 
   function order(o) {
@@ -245,15 +315,28 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   $('m-recon').addEventListener('click', () => { if (active && flow?.phase === 'mapa') setRecon(!recon); });
   const intelOpen = () => !$('mintel').classList.contains('hidden');
   /** Lista dos últimos relatos; só se reconstrói quando mudam. Escolher um destaca a zona no mapa. */
+  let archive = false;   // a lista mostra os relatos recentes; os antigos ficam no arquivo, a um clique
   function renderIntel() {
-    const reports = intelView(flow.state).reports;
-    $('m-intel').textContent = reports.some(r => r.got === flow.state.day) ? 'Relatos •' : 'Relatos';
+    const v = intelView(flow.state), reports = archive ? v.archive : v.recent;
+    $('m-intel').textContent = v.recent.some(r => r.got === flow.state.day) ? 'Relatos •' : 'Relatos';
     if (!intelOpen()) return;
-    const k = `${flow.state.day}:${reports.map(r => r.id).join(',')}`;
+    const k = `${flow.state.day}:${archive}:${reports.map(r => r.id).join(',')}:${v.archive.length}`;
     if (k === intelKey) return;
     intelKey = k;
     const ul = $('mintel'); ul.textContent = '';
-    if (!reports.length) { const li = doc.createElement('li'); li.className = 'none'; li.textContent = 'Sem relatos. Manda batedores ou espera por notícias das aldeias.'; ul.append(li); return; }
+    const toggle = doc.createElement('li'), tb = doc.createElement('button');
+    tb.type = 'button'; tb.className = 'arch'; tb.dataset.archive = archive ? 'on' : 'off';
+    tb.textContent = archive ? '← Relatos recentes' : `Arquivo (${v.archive.length} antigos)`;
+    tb.disabled = !archive && !v.archive.length;
+    tb.addEventListener('click', () => { archive = !archive; focus = null; renderIntel(); schedulePaint(); $('mintel').querySelector('button')?.focus?.(); });
+    toggle.append(tb);
+    const legend = doc.createElement('li'); legend.className = 'legend';
+    legend.textContent = 'No mapa: figura nítida, à vista hoje; esbatida, vista há dias; círculo com «?», relato (pontilhado largo: rumor).';
+    if (!reports.length) {
+      const li = doc.createElement('li'); li.className = 'none';
+      li.textContent = archive ? 'Sem relatos antigos.' : 'Sem relatos recentes. Manda batedores ou espera por notícias das aldeias.';
+      ul.append(li, toggle, legend); return;
+    }
     for (const r of reports) {
       const li = doc.createElement('li'), b = doc.createElement('button'), t = doc.createElement('small');
       b.type = 'button'; b.dataset.report = r.id; if (r.old) b.className = 'old';
@@ -262,11 +345,12 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
       b.addEventListener('click', () => { focus = { x: r.x, y: r.y, r: r.r }; schedulePaint(); });
       li.append(b); ul.append(li);
     }
+    ul.append(toggle, legend);
   }
   function toggleIntel(on) {
     $('mintel').classList.toggle('hidden', !on);
     $('m-intel').setAttribute('aria-expanded', on ? 'true' : 'false');
-    if (on) { intelKey = ''; renderIntel(); $('mintel').querySelector('button')?.focus?.(); } else if (focus) { focus = null; schedulePaint(); }
+    if (on) { intelKey = ''; archive = false; renderIntel(); $('mintel').querySelector('button')?.focus?.(); } else if (focus) { focus = null; schedulePaint(); }
   }
   $('m-intel').addEventListener('click', () => { if (active && flow) toggleIntel(!intelOpen()); });
 
@@ -301,11 +385,9 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const b = flow.battle, ep = isStory(b) && EPISODES[b.chapter];
     $('mb-type').textContent = ep ? ep[0] : BATTLE_NAMES[b.type] || 'Batalha';
     if (!m.dataset.shown) { m.dataset.shown = '1'; $('mb-fight').focus?.(); }
+    $('mb-withdraw').classList.toggle('hidden', !!ep || !b.withdraw?.possible);
     if (ep) { $('mb-info').textContent = ep[1]; return; }   // a cena é a do capítulo, com os seus homens: sem contas que não batem certo
-    const mine = b.allies + (b.bonus?.allies || 0), theirs = b.enemies.legio + b.enemies.velites + (b.bonus?.enemies || 0) + (b.enemies.centurion && !b.commander ? 1 : 0);
-    $('mb-info').textContent = `${mine} dos teus contra ${theirs} romanos.` + (b.commander ? ` Comanda-os ${b.commander}.` : '')
-      + (b.bonus?.allies > 0 ? ` Os teus ${b.realMen} homens pesam na linha.` : '')
-      + (b.bonus?.enemies > 0 ? ' Há mais romanos do que os que entram em campo.' : '');
+    $('mb-info').textContent = battleBrief(b, flow.state);
   }
 
   function renderEnd() {
@@ -394,7 +476,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (hit?.type === 'patrol' || hit?.type === 'praetor') {   // só o que o jogador sabe (intel.js), com a idade
       const f = intelView(s).forces.find(x => x.id === hit.id);
       if (!f) return when;
-      const what = f.kind === 'pretor' ? `${f.name || 'Pretor'} · pretor` : `${FORCE_NAMES[f.kind] || 'Força romana'}${f.men ? ` · ${f.men} homens` : ''}`;
+      const what = f.kind === 'pretor' ? `${f.name || 'Pretor'} · pretor` : `${FORCE_NAMES[f.kind] || 'Força romana'}${f.men ? ` · ${menText(estimateMen(f.men))}` : ''}${f.dir ? ` · para ${f.dir}` : ''}`;
       return f.status === 'confirmada' ? `${what} · à vista` : `${what} · visto ${agoLabel(f.age)}`;
     }
     return when;
@@ -443,6 +525,12 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     // uma batalha sem cena (gravação antiga): o bando evita-a, com o custo de uma retirada
     log.push('Não há como travar esta batalha; o bando evita-a.'); logDirty = true;
     simulateBattle({ won: false, retreated: true, alliesLost: 0, enemiesKilled: 0 });
+  });
+  $('mb-withdraw')?.addEventListener('click', () => {
+    if (!active || flow?.phase !== 'batalha') return;
+    const r = flow.withdraw();
+    if (r.refused) return;
+    say(r.events); render();
   });
   /** O 3D tomou conta do ecrã: esconde o mapa sem voltar ao menu. */
   function suspend() { stopMarch(); hover = null; active = false; $('map').classList.add('hidden'); }
@@ -531,7 +619,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   });
 
   function open(f) {
-    flow = f; active = true; selected = null; log.length = 0; logDirty = true;
+    flow = f; active = true; selected = null; log.length = 0; logDirty = true; lastSaid = null; repeat = 1;
     stopMarch(); shown = null; hover = null; facing = 1; trail.length = 0;
     $('mcron').classList.add('hidden'); cronOpener = null; togglePlaces(false); toggleIntel(false); setRecon(false); focus = null;
     log.push(flow.state.day ? 'A marcha continua.' : 'Um ano de guerra começa nos montes. Clica no mapa para marchar.');

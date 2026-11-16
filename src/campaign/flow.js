@@ -5,7 +5,7 @@ import { YEAR_DAYS } from './clock.js';
 import { newCampaign, serialize, deserialize } from './state.js';
 import { makePraetor } from './praetor.js';
 import { stepDay } from './simulation.js';
-import { battleSpec, BATTLE_TYPES, applyResult, ALLY_CAP } from './battles.js';
+import { battleSpec, BATTLE_TYPES, applyResult, withdrawFrom, ALLY_CAP } from './battles.js';
 import { dueScheduled, rollEvent } from './events.js';
 import { ensureIntel, forgetForce, rememberForce } from './intel.js';
 
@@ -54,6 +54,17 @@ function build(state, storage, phase, battle) {
       if (state.over && flow.phase !== 'batalha') flow.phase = 'fim';
       flow.save();
       return { events, battle: flow.battle };
+    },
+    /** Recusar o combate pendente (battles.withdrawFrom). Recusado sem mexer em nada quando não se pode. */
+    withdraw() {
+      if (flow.phase !== 'batalha') return { events: [], refused: true };
+      const events = withdrawFrom(state, flow.battle);
+      if (!events) return { events: [], refused: true };
+      flow.battle = null;
+      yearEnd();
+      flow.phase = state.over ? 'fim' : 'mapa';
+      flow.save();
+      return { events };
     },
     finishBattle(result) {
       if (flow.phase !== 'batalha') return { events: [], refused: true };

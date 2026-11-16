@@ -403,16 +403,34 @@ const plateWidth = text => Math.max(42, text.length * 5.9 + 10);
 const praetorPlate = f => (f.status === 'confirmada' ? f.name || 'Pretor' : `${f.name || 'Pretor'} · ${agoLabel(f.age)}`);
 
 /** Círculo tracejado a tinta romana: a zona onde uma força pode estar. */
-function dashedZone(ctx, x, y, r, fill = false) {
+function dashedZone(ctx, x, y, r, fill = false, weak = false) {
   ctx.save();
-  ctx.strokeStyle = 'rgba(160,33,26,.6)';
+  ctx.strokeStyle = weak ? 'rgba(160,33,26,.45)' : 'rgba(160,33,26,.6)';
   ctx.lineWidth = 1.2;
-  ctx.setLineDash([5, 4]);
+  ctx.setLineDash(weak ? [2, 7] : [5, 4]);   // pouco fiável (rumor): pontilhado largo
   ctx.beginPath(); ctx.arc(x, y, Math.max(8, r), 0, TAU);
   if (fill) { ctx.fillStyle = 'rgba(160,33,26,.07)'; ctx.fill(); }
   ctx.stroke();
   ctx.setLineDash([]);
   ctx.restore();
+}
+
+/**
+ * Notas das zonas e das figuras sem se encavalitarem: cada nota tenta o sítio pedido e, se já houver outra
+ * lá, desce uma linha (até duas vezes); se não couber, fica por escrever (o texto completo está na lista).
+ */
+function noteLayer() {
+  const boxes = [];
+  const box = (text, x, y) => ({ x: x - text.length * 2.5, y: y - 10, w: text.length * 5, h: 12 });
+  const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  return (ctx, text, x, y) => {
+    for (const dy of [0, 12, 24]) {
+      const b = box(text, x, y + dy);
+      if (boxes.some(o => hit(o, b))) continue;
+      boxes.push(b); note(ctx, text, x, y + dy); return true;
+    }
+    return false;
+  };
 }
 
 /** Nota pequena a tinta, por baixo de uma figura ou de uma zona. */
@@ -435,7 +453,7 @@ function labelObstacles(view, state) {
     const q = toScreen(view, s);
     obs.push({ x: q.x - 14, y: q.y - 12, w: 28, h: 22 });
   }
-  const intel = intelView(state);
+  const intel = intelView(state), place = noteLayer();
   for (const z of intel.zones) { const q = toScreen(view, z); obs.push({ x: q.x - 46, y: q.y - (z.place ? 34 : 16), w: 92, h: z.place ? 52 : 34 }); }   // «?» e a nota do relato
   for (const f of intel.forces) {
     const q = toScreen(view, f);
@@ -606,23 +624,23 @@ export function drawMap(ctx, view, state, fx = {}) {
   }
 
   // o que o jogador sabe dos romanos (intel.js): relatos como zonas, avistamentos como figuras
-  const intel = intelView(state);
+  const intel = intelView(state), place = noteLayer();
   for (const z of intel.zones) {
     const q = toScreen(view, z);
     if (z.src === 'batedores') {   // zona reconhecida hoje
       ctx.save(); ctx.strokeStyle = 'rgba(90,70,40,.55)'; ctx.lineWidth = 1.2; ctx.setLineDash([2, 4]);
       ctx.beginPath(); ctx.arc(q.x, q.y, z.r * view.scale, 0, TAU); ctx.stroke(); ctx.setLineDash([]); ctx.restore();
-      if (z.kind === 'livre') note(ctx, 'zona livre', q.x, q.y + 4);
+      if (z.kind === 'livre') place(ctx, 'zona livre', q.x, q.y + 4);
       continue;
     }
-    dashedZone(ctx, q.x, q.y, z.r * view.scale, true);
+    dashedZone(ctx, q.x, q.y, z.r * view.scale, true, z.rel === 'fraca');
     ctx.save();
     ctx.fillStyle = 'rgba(160,33,26,.8)';
     ctx.font = `bold ${z.rel === 'fraca' ? 20 : 15}px serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('?', q.x, q.y - (z.place ? 24 : 4));   // por cima do ícone, quando a zona é uma povoação
     ctx.restore();
-    note(ctx, `${ZONE_NAMES[z.kind] || 'romanos'} · ${z.age ? agoLabel(z.age) : 'hoje'}`, q.x, q.y + 14);
+    place(ctx, `${ZONE_NAMES[z.kind] || 'romanos'} · ${z.age ? agoLabel(z.age) : 'hoje'}`, q.x, q.y + 14);
   }
   for (const f of intel.forces) {
     const q = toScreen(view, f), old = f.status !== 'confirmada';
@@ -632,7 +650,7 @@ export function drawMap(ctx, view, state, fx = {}) {
     if (f.kind === 'pretor') drawPraetor(ctx, q.x, q.y); else drawPatrol(ctx, f, q);
     ctx.globalAlpha = 1;
     ctx.restore();
-    if (old && f.kind !== 'pretor') note(ctx, agoLabel(f.age), q.x, q.y + 18);
+    if (old && f.kind !== 'pretor') place(ctx, agoLabel(f.age), q.x, q.y + 18);
   }
   // destaque do relato escolhido na lista
   if (fx.focus && Number.isFinite(fx.focus.x) && Number.isFinite(fx.focus.y)) {
