@@ -8,7 +8,7 @@ import { makeRng } from '../src/campaign/rng.js';
 import { battleSpec } from '../src/campaign/battles.js';
 import { createFlow } from '../src/campaign/flow.js';
 import { ensureIntel, updateIntel, intelView, validIntel, estimateMen, REPORT_DAYS } from '../src/campaign/intel.js';
-import { eventText, reportText, battleBrief, EPISODES } from '../src/campaign/ui.js';
+import { eventText, reportText, battleBrief, EPISODES, goalLines } from '../src/campaign/ui.js';
 import { FIRST_SPAWN, FIRST_SPAWN_MIN } from '../src/campaign/doctrine.js';
 import { makePraetor } from '../src/campaign/praetor.js';
 
@@ -336,4 +336,24 @@ test('capítulo III no painel de batalha: diz como entrar sem ser descoberto (ag
   assert.match(t, /agacha-te \(C\)/i, t);
   assert.match(t, /à vista/, t);
   assert.match(t, /Invenção do jogo/, 'continua a dizer que o episódio é invenção');
+});
+
+test('painel «Objetivo»: a comida vem dos castros e do saque, nunca «das aldeias»; o texto bate com a simulação real', () => {
+  const s = newCampaign(11);
+  const text = goalLines(s).join(' ');
+  assert.match(text, /Comida: pede ajuda nos castros e obtém mantimentos como saque nas vitórias em combate/);
+  assert.doesNotMatch(text, /pede-a nas aldeias|pede comida .*aldeia|comida.{0,40}aldeias? e saqueia/i, 'a indicação errada não pode voltar');
+  assert.match(text, /recruta numa aldeia, pede ajuda \(comida\) num castro/);
+  // as mecânicas reais por trás do texto
+  const at = (st, p) => { st.party.x = p.x; st.party.y = p.y; };
+  const castro = s.world.settlements.find(x => x.kind === 'castro'), aldeia = s.world.settlements.find(x => x.kind === 'aldeia');
+  at(s, castro); const f0 = s.food;
+  stepDay(s, { kind: 'pedir-ajuda', id: castro.id }, makeRng(1));
+  assert.ok(s.food > f0 - 10, 'pedir ajuda num castro dá comida (descontado o consumo do dia)');
+  const t = newCampaign(11), a2 = t.world.settlements.find(x => x.kind === 'aldeia');
+  at(t, a2); const m0 = t.men, g0 = t.food;
+  const ev = stepDay(t, { kind: 'recrutar', id: a2.id }, makeRng(1)).events;
+  assert.ok(ev.some(e => e.type === 'recrutou') && t.men > m0, 'a aldeia dá homens');
+  assert.ok(t.food <= g0, 'a aldeia não dá comida');
+  assert.match(text, /Fama: sobe com vitórias, desce com derrotas e recuos/);
 });

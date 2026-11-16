@@ -26,6 +26,17 @@ const BATTLE_NAMES = {
 const RELIABILITY = { certa: 'visto pelos teus', boa: 'fiável', fraca: 'pouco fiável' };
 const KIND_NAMES = { aldeia: 'Aldeia', castro: 'Castro', posto: 'Posto romano', serra: 'Serra' };
 /** Episódios históricos: título e uma linha sóbria; o que é invenção diz-se (ver a Crónica). */
+/** As linhas do painel «Objetivo»; os números e as fontes de comida/recrutas seguem as regras reais (simulation.js, battles.js). */
+export function goalLines(s) {
+  return [
+    `Objetivo: aguentar um ano de guerra (${YEAR_DAYS} dias) contra Roma.`,
+    `Vitória: derrotar o pretor romano na batalha decisiva, ou chegar ao fim do ano com ${WIN_MEN}+ homens e ${WIN_FAME}+ de fama.`,
+    `Derrota: ficar sem homens ou sem fama, ou acabar o ano abaixo desses mínimos.`,
+    `Homens: o teu bando; comem ${foodPerDay(s.men)} de comida por dia e, sem comida, morrem. Comida: pede ajuda nos castros e obtém mantimentos como saque nas vitórias em combate. Armas: vêm do saque e gastam-se a recrutar nas aldeias. Fama: sobe com vitórias, desce com derrotas e recuos; mais fama, mais recrutas.`,
+    'Primeiros dias: abre «Lugares»: recruta numa aldeia, pede ajuda (comida) num castro, manda batedores (Reconhecer) e lê os Relatos antes de aceitar combate.',
+  ];
+}
+
 export const EPISODES = {
   cativos: ['Os Cativos', 'Cena inspirada nas consequências da traição de Galba (ver a Crónica): uma coluna romana leva cativos para serem vendidos e parou numa clareira. Viriato vai com dois homens.'],
   acampamento: ['O acampamento', 'Invenção do jogo: o posto guarda os mantimentos da guarnição. Entra sem dar o alarme: agacha-te (C) e avança pelo mato, porque à vista a guarnição descobre-te depressa. Queima os três depósitos e derruba o centurião.'],
@@ -416,15 +427,6 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   // --- «Objetivo»: o que se ganha, o que se perde e o que fazer primeiro (regras lidas do código, não copiadas) ---
   const goalOpen = () => !$('mgoal').classList.contains('hidden');
   let goalSeen = false;   // o ponto no botão some depois da primeira leitura
-  function goalLines(s) {
-    return [
-      `Objetivo: aguentar um ano de guerra (${YEAR_DAYS} dias) contra Roma.`,
-      `Vitória: derrotar o pretor romano na batalha decisiva, ou chegar ao fim do ano com ${WIN_MEN}+ homens e ${WIN_FAME}+ de fama.`,
-      `Derrota: ficar sem homens ou sem fama, ou acabar o ano abaixo desses mínimos.`,
-      `Homens: o teu bando; comem ${foodPerDay(s.men)} de comida por dia e, sem comida, morrem. Comida: pede-a nas aldeias e saqueia-a. Armas: gastam-se a recrutar. Fama: sobe com vitórias, desce com derrotas e recuos; mais fama, mais recrutas.`,
-      'Primeiros dias: abre «Lugares», pede comida e recruta na aldeia mais próxima, manda batedores (Reconhecer) e lê os Relatos antes de aceitar combate.',
-    ];
-  }
   function renderGoal() {
     const s = flow.state, ul = $('mgoal');
     $('m-goal').textContent = goalSeen ? 'Objetivo' : 'Objetivo •';
