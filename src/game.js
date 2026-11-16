@@ -694,7 +694,7 @@ function rigSoldier(kind, look = null) {
   if (!chars.weave) chars.weave = weaveTexture(THREE);
   const cloth = outfit === 'roman_mail' ? null : (look && look.palette && look.palette.dress) || { lusitano: 0x7a5a36, lusitano_b: 0x5c4630, lusitano_c: 0x96682c, lusitano_d: 0x605440, roman_red: 0x9a2a20, roman_white: 0xd8d0bc, velite: 0x9a2a20 }[outfit] || 0x6b4a2e;
   const tint = rr(.86, 1.05);
-  const rig = makeRig(THREE, chars.clone, chars, { female: !!(look && look.female), palette: look && look.palette, outfit, hair, shielded: !!shield, cloth, tint, hairColor: look ? look.hairColor : [0x2a1d14, 0x3b2a1e, 0x1c1410, 0x4a3524][Math.floor(rand() * 4)] });
+  const rig = makeRig(THREE, chars.clone, chars, { female: !!(look && look.female), child: !!(look && look.child), palette: look && look.palette, outfit, hair, shielded: !!shield, cloth, tint, hairColor: look ? look.hairColor : [0x2a1d14, 0x3b2a1e, 0x1c1410, 0x4a3524][Math.floor(rand() * 4)] });
   // helmet / cap: everything on the old head except the skin
   const hk = new THREE.Group();
   for (const o of [...p.head.children]) if (!(o.isMesh && o.material === p.skin)) hk.add(o);
@@ -1403,6 +1403,9 @@ function villager() {
     palette: { dress: pick(DRESS), skin: pick([0x9c6e52, 0x8a5e44, 0xa87a5a, 0x93664a]), long: woman || (child && rand() < .5) },
     scale: child ? rr(.56, .68) : woman ? rr(.9, .96) : rr(.95, 1.06),
     dress: woman || (child && rand() < .5), hair: woman ? ['hair_long'] : child ? [rand() < .5 ? 'hair_long' : 'hair_buzzed'] : [rand() < .6 ? 'hair_long' : 'hair_buzzed', 'hair_beard'] };
+  if (child) {   // girl or boy follows from the hair the draw above already gave (long or buzzed), so the seeded sequence is unchanged
+    const girl = look.hair[0] === 'hair_long'; look.child = true; look.female = girl; look.dress = girl && look.dress; look.hair = [girl ? 'hair_long' : 'hair_buzzed'];
+  }
   return { look, child };
 }
 function spawnCiv(look, x, z, child) {
@@ -1641,9 +1644,10 @@ function resetCativos() {
     const st = new THREE.Mesh(stakeGeo, stakeMat); st.position.set(g.x, Y(g.x, g.z) + .85, g.z); st.castShadow = true; add(st);
     const cs = g.captives.map(c => {
       const child = c.kind === 'child', woman = c.kind === 'woman', old = c.kind === 'elder';
-      const look = { unarmed: true, cap: false, outfit: pick(OUT), hairColor: old ? 0x8f8a82 : pick(HC), female: woman || child,
+      const girl = child && (Math.round(c.x * 7 + c.z * 13) & 1) === 0;   // half of the captive children are girls, by where they stand (no extra draw)
+      const look = { unarmed: true, cap: false, outfit: pick(OUT), hairColor: old ? 0x8f8a82 : pick(HC), female: woman || girl, child,
         palette: { dress: pick(DRESS), skin: pick([0x9c6e52, 0x8a5e44, 0xa87a5a, 0x93664a]), long: woman }, scale: child ? rr(.56, .68) : woman ? rr(.9, .96) : rr(.95, 1.04),
-        dress: woman, hair: woman ? ['hair_long'] : child ? ['hair_buzzed'] : [old || rand() < .6 ? 'hair_long' : 'hair_buzzed', 'hair_beard'] };
+        dress: woman, hair: woman || girl ? ['hair_long'] : child ? ['hair_buzzed'] : [old || rand() < .6 ? 'hair_long' : 'hair_buzzed', 'hair_beard'] };
       const e = spawnCiv(look, c.x, c.z, child); e.kind2 = c.kind; e.yaw = c.yaw; e.bound = true; e.crouch = true; return e;
     });
     g.guards.forEach((q, k) => { const e = spawn('legio', q.x, q.z, 'halt'); e.yaw = q.yaw; e.wT = rr(2, 7); e.beat = k ? 6 : 1.5; });
