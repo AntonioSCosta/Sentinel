@@ -7,6 +7,7 @@ import { makePraetor } from './praetor.js';
 import { stepDay } from './simulation.js';
 import { battleSpec, BATTLE_TYPES, applyResult, ALLY_CAP } from './battles.js';
 import { dueScheduled, rollEvent } from './events.js';
+import { ensureIntel, forgetForce, rememberForce } from './intel.js';
 
 export const STORAGE_KEY = 'viriato.campaign';
 const PHASES = ['mapa', 'batalha', 'fim'];
@@ -23,6 +24,7 @@ function scheduledSpec(entry, state, rng) {
 }
 
 function build(state, storage, phase, battle) {
+  ensureIntel(state);   // campanha nova ou gravação antiga: o jogador começa a saber o que tem à vista
   const flow = {
     state, phase, battle,
     save() {
@@ -55,7 +57,17 @@ function build(state, storage, phase, battle) {
     },
     finishBattle(result) {
       if (flow.phase !== 'batalha') return { events: [], refused: true };
-      const events = applyResult(state, flow.battle, result ?? {});
+      const battle = flow.battle;
+      const events = applyResult(state, battle, result ?? {});
+      if (result?.won && battle?.foeId !== undefined) {
+        // Só se esquece uma força que deixou de existir. O pretor derrotado numa defesa de aldeia
+        // recua e sobrevive: nesse caso volta a ser visto, com os homens que lhe restam.
+        const id = String(battle.foeId);
+        const survives = (state.patrols || []).some(p => String(p.id) === id)
+          || (battle.type !== 'decisiva' && state.praetor && String(state.praetor.id ?? 'pretor') === id);
+        if (survives) rememberForce(state, battle.foeId);
+        else forgetForce(state, battle.foeId);
+      }
       flow.battle = null;
       yearEnd();
       flow.phase = state.over ? 'fim' : 'mapa';

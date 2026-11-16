@@ -4,6 +4,14 @@ import { makeView, toScreen, toWorld, hitTest, drawMap, layoutMapLabels } from '
 import { newCampaign } from '../src/campaign/state.js';
 import { dateLabel } from '../src/campaign/clock.js';
 
+/** Põe à vista do jogador as forças do estado (como se o bando as visse hoje): a vista só desenha o que ele sabe. */
+function sighted(s) {
+  s.intel = { known: {}, reports: [], n: 0 };
+  for (const f of s.patrols || []) s.intel.known[f.id] = { kind: f.kind, x: f.x, y: f.y, day: s.day };
+  if (s.praetor) s.intel.known[s.praetor.id] = { kind: 'pretor', x: s.praetor.x, y: s.praetor.y, day: s.day, name: s.praetor.name };
+  return s;
+}
+
 const SIZES = [[1000, 700], [1920, 1080], [3000, 400], [300, 2000], [640, 480], [1, 1], [0, 0]];
 const near = (a, b, e = 1e-6) => Math.abs(a - b) < e;
 
@@ -51,6 +59,7 @@ test('hitTest finds settlement, patrol, praetor; nearest wins; null outside', ()
   assert.deepEqual(hitTest(v, s, p.x + 3, p.y - 3), { type: 'settlement', id: st.id });
   s.patrols = [{ id: 'p1', kind: 'ronda', x: st.x + 5, y: st.y }];
   s.praetor = { id: 'pr', x: st.x + 40, y: st.y, name: 'Galba' };
+  sighted(s);
   const pp = toScreen(v, s.patrols[0]);
   assert.deepEqual(hitTest(v, s, pp.x + 1, pp.y), { type: 'patrol', id: 'p1' });
   const pr = toScreen(v, s.praetor);
@@ -84,6 +93,7 @@ test('drawMap tolerates no praetor, patrols, and draws them when present', () =>
   assert.doesNotThrow(() => drawMap(fakeCtx(), v, s));
   s.praetor = { id: 'pr', x: 100, y: 100, name: 'Galba' };
   s.patrols = [{ id: 'a', kind: 'ronda', x: 50, y: 50 }, { id: 'b', kind: 'comboio', x: 60, y: 60 }];
+  sighted(s);
   const c = fakeCtx();
   drawMap(c, v, s);
   assert.ok(c.calls.some(x => x[0] === 'fillText' && x[1] === 'Galba'));
@@ -111,6 +121,7 @@ test('desenha uma figura para cada tipo de povoação, com e sem queimar, sem re
   for (const p of s.world.settlements) if (p.kind === 'posto') s.posts[p.id] = { taken: true };
   s.praetor = { id: 'pr', x: 100, y: 100, name: 'Vetílio' };
   s.patrols = [{ id: 'a', kind: 'ronda', x: 50, y: 50 }, { id: 'b', kind: 'comboio', x: 60, y: 60 }];
+  sighted(s);
   const c = fakeCtx();
   assert.doesNotThrow(() => drawMap(c, v, s));
   assert.equal(count(c, 'save'), count(c, 'restore'));
@@ -148,6 +159,7 @@ test('layoutMapLabels: nomes reais ficam no canvas, não se sobrepõem e evitam 
     const s = newCampaign(seed);
     s.praetor = { id: 'pr', name: 'Vetílio', x: 520, y: 340, men: 40 };
     s.patrols = [{ id: 'p1', kind: 'ronda', x: 300, y: 400 }, { id: 'p2', kind: 'comboio', x: 700, y: 300 }];
+    sighted(s);
     for (const [w, h] of sizes) {
       const v = makeView(s.world, w, h);
       const { placed } = layoutMapLabels(v, s, conservative);
@@ -190,6 +202,7 @@ test('drawMap desenha cada nome na posição calculada e todo o texto fica no ca
   const s = newCampaign(7);
   s.praetor = { id: 'pr', name: 'Vetílio', x: 520, y: 340 };
   s.patrols = [{ id: 'p1', kind: 'ronda', x: 300, y: 400 }];
+  sighted(s);
   const v = makeView(s.world, 800, 600);
   const c = fakeCtx();
   c.measureText = text => ({ width: conservative(text) });
@@ -222,6 +235,7 @@ test('grelha de último recurso: ecrãs de proporção extrema ficam sem sobrepo
     const s = newCampaign(seed);
     s.praetor = { id: 'pr', name: 'Vetílio', x: 520, y: 340 };
     s.patrols = [{ id: 'p1', kind: 'ronda', x: 300, y: 400 }];
+    sighted(s);
     for (const [w, h] of [[300, 2000], [3000, 400], [200, 2000], [1000, 200]]) {
       const v = makeView(s.world, w, h);
       const { placed } = layoutMapLabels(v, s, conservative);

@@ -14,7 +14,7 @@
   #mapcv{position:absolute;left:0;right:0;top:52px;bottom:64px;width:100%;height:calc(100% - 116px);display:block;cursor:crosshair}
   #mtop,#mbot{position:absolute;left:0;right:0;display:flex;align-items:center;gap:18px;padding:0 16px;background:rgba(16,13,10,.96);border:0 solid #4a3a2a;font-size:17px}
   #mtop{top:0;height:52px;border-bottom-width:1px}#mbot{bottom:0;height:64px;border-top-width:1px;gap:12px}
-  #mbot button{white-space:nowrap;padding:10px 16px}#mbot .hint{flex:1;min-width:0;color:var(--dim);font-size:15px;line-height:1.2}
+  #mbot button{white-space:nowrap;padding:10px 16px}#mbot .hint{flex:1;min-width:0;max-height:56px;overflow:hidden;color:var(--dim);font-size:14px;line-height:1.2}
   #mtop .res b{font-family:'Cinzel',serif;font-size:13px;letter-spacing:.14em;color:var(--gold);margin-right:6px;font-weight:400}
   #mtop .res span{margin-right:4px}#mtop .grow{flex:1}
   #mlog{position:absolute;left:12px;bottom:76px;width:min(340px,50vw);margin:0;padding:6px 10px;list-style:none;background:rgba(16,13,10,.72);border:1px solid #4a3a2a;font-size:14px;line-height:1.3;pointer-events:none}
@@ -38,6 +38,10 @@
   #mcron-list li.locked h3{color:#8d7f6c}#mcron-list li.locked .lk{margin:4px 0 0;font-size:15px;font-style:italic;color:#8d7f6c}
   #mcron .row{margin-top:12px}
   #mplaces{position:absolute;left:12px;top:64px;width:min(320px,46vw);max-height:calc(100% - 160px);overflow-y:auto;margin:0;padding:4px;list-style:none;background:rgba(16,13,10,.94);border:1px solid #4a3a2a}
+  #mintel{position:absolute;right:12px;bottom:76px;width:min(360px,60vw);max-height:min(46%,330px);overflow-y:auto;margin:0;padding:4px;list-style:none;background:rgba(16,13,10,.94);border:1px solid #4a3a2a}
+  #mintel button{display:block;width:100%;text-align:left;margin:2px 0;padding:6px 10px;font:inherit;font-size:15px;letter-spacing:0;line-height:1.25;text-transform:none}
+  #mintel small{display:block;color:var(--dim);font-size:13px}#mintel button.old{opacity:.55}#mintel li.none{padding:8px 10px;color:var(--dim);font-size:15px}
+  #m-recon[aria-pressed="true"]{border-color:var(--gold);color:var(--gold)}
   #mplaces button{display:block;width:100%;text-align:left;margin:2px 0;padding:7px 10px;font-size:15px;letter-spacing:.02em}
   #camp-confirm{margin-top:12px;padding:12px 16px;border:1px solid #6a5238;background:rgba(16,13,10,.9)}#camp-confirm p{margin:0 0 8px}
   /* ---------- HUD ---------- */
@@ -196,13 +200,16 @@
   <ul id="mlog" role="status" aria-live="polite" aria-label="Registo da campanha"></ul>
   <div id="mctx" class="hidden" role="region" aria-label="Povoação"></div>
   <ul id="mplaces" class="hidden" aria-label="Lugares do mapa"></ul>
+  <ul id="mintel" class="hidden" aria-label="Relatos sobre os romanos"></ul>
   <div id="mbot">
     <button type="button" data-act="acampar" data-order="acampar" id="m-acampar">Acampar</button>
     <button type="button" data-act="esperar" data-order="esperar" id="m-esperar">Esperar na estrada</button>
     <button type="button" data-act="esconder" data-order="esconder" id="m-esconder">Esconder</button>
+    <button type="button" data-act="reconhecer" id="m-recon" aria-pressed="false">Reconhecer</button>
     <button type="button" id="m-places" aria-expanded="false" aria-controls="mplaces">Lugares</button>
+    <button type="button" id="m-intel" aria-expanded="false" aria-controls="mintel">Relatos</button>
     <button type="button" id="m-cronica" aria-haspopup="dialog">Crónica</button>
-    <span class="hint">Clica para marchar um dia; duplo clique, três · as setas também marcham · ESC: menu</span>
+    <span class="hint" id="m-hint">Clica para marchar um dia; duplo clique, três · ESC: menu</span>
   </div>
   <div id="mbattle" class="hidden" role="dialog" aria-modal="true" aria-labelledby="mb-type"><div class="card">
     <p class="kicker">BATALHA</p><h2 id="mb-type"></h2><p class="brief" id="mb-info"></p>

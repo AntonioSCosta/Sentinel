@@ -1,5 +1,6 @@
 // Ecrã do mapa da campanha: HUD em HTML + canvas 2D. Liga o DOM ao Flow; não conhece Three.js nem as batalhas 3D.
-import { makeView, drawMap, hitTest, toWorld } from './map-view.js';
+import { makeView, drawMap, hitTest, toWorld, agoLabel } from './map-view.js';
+import { intelView, SCOUTS, RECON_RANGE, RECON_RADIUS } from './intel.js';
 import { createFlow, loadFlow, clearSave, WIN_MEN, WIN_FAME } from './flow.js';
 import { dateLabel, season, daysLeft, YEAR_DAYS } from './clock.js';
 import { entryFor, CHRONICLE, SOURCE_LABELS, isUnlocked } from './chronicle.js';
@@ -22,6 +23,7 @@ const BATTLE_NAMES = {
   emboscada: 'Emboscada', 'campo-aberto': 'Combate em campo aberto', 'defesa-aldeia': 'Defesa da aldeia',
   'assalto-coluna': 'Assalto a um comboio', retirada: 'Retirada', decisiva: 'A batalha decisiva', historica: 'Um episódio da guerra',
 };
+const RELIABILITY = { certa: 'visto pelos teus', boa: 'fiável', fraca: 'pouco fiável' };
 const KIND_NAMES = { aldeia: 'Aldeia', castro: 'Castro', posto: 'Posto romano', serra: 'Serra' };
 /** Episódios históricos: título e uma linha sóbria; o que é invenção diz-se (ver a Crónica). */
 const EPISODES = {
@@ -52,6 +54,25 @@ const INVALID = {
   desconhecido: () => 'Essa ordem não se pode dar aqui.',
 };
 
+const UM = { patrulha: 'uma patrulha', comboio: 'um comboio', cacadores: 'uma coluna de caçadores', pretor: 'o exército do pretor' };
+const FORCE_NAMES = { patrulha: 'Patrulha romana', comboio: 'Comboio romano', cacadores: 'Caçadores romanos' };
+const um = kind => UM[kind] || 'uma força romana';
+const list = xs => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} e ${xs.at(-1)}` : xs[0] || '');
+
+/** Um relato por extenso: quem o traz, o que viu e com que certeza. Nunca diz mais do que o relato sabe. */
+export function reportText(r, state) {
+  const place = id => state.world.settlements.find(s => s.id === id)?.name;
+  const nearest = () => state.world.settlements.reduce((a, b) => (Math.hypot(b.x - r.x, b.y - r.y) < Math.hypot(a.x - r.x, a.y - r.y) ? b : a)).name;
+  switch (r.src) {
+    case 'aldeia': return `Relato de ${place(r.place) ?? 'uma aldeia'}: viram ${um(r.kind)} por perto.`;
+    case 'rumor': return `Rumor: fala-se de ${um(r.kind)} para os lados de ${nearest()}. Nada de certo.`;
+    case 'fumo': return `Fumo sobre ${place(r.place) ?? 'uma aldeia'}: o pretor esteve lá.`;
+    case 'inicio': return `Sabe-se que ${r.name || 'o pretor'} junta o exército em ${nearest()}.`;
+    case 'batedores': return r.found?.length ? `Batedores: ${list(r.found.map(um))} na zona de ${nearest()}.` : `Batedores: a zona de ${nearest()} parece livre.`;
+    default: return 'Relato sem origem certa.';
+  }
+}
+
 /** Uma frase curta (pt-PT) por evento devolvido por flow.order()/finishBattle(). */
 export function eventText(ev, state) {
   const name = id => state.world.settlements.find(s => s.id === id)?.name ?? 'o povoado';
@@ -74,7 +95,15 @@ export function eventText(ev, state) {
     case 'doutrina': return DOCTRINE_TEXT[ev.id]?.[ev.on ? 0 : 1] || '';
     case 'emboscada-descoberta': return ev.why === 'guarnicao' ? 'A guarnição da estrada descobriu a emboscada: a luta é em campo aberto.' : 'Os batedores romanos descobriram a emboscada: a luta é em campo aberto.';
     case 'cacadores': return `Uma coluna de caçadores (${ev.men} homens) saiu do posto atrás do sítio onde foste visto.`;
-    case 'ordem-invalida': return `${INVALID[ev.why]?.(ev.id === undefined ? null : name(ev.id)) ?? 'Não podes fazer isso daqui: aproxima-te primeiro.'} ${KEEP_DAY}`;
+    case 'relato': { const r = (state.intel?.reports || []).find(x => x.id === ev.id); return r ? reportText(r, state) : null; }
+    case 'reconhecimento': return ev.found.length ? `Os batedores voltam: viram ${list(ev.found.map(um))}.` : 'Os batedores voltam: a zona parece livre.';
+    case 'reconhecer-recusado': return `${ev.why === 'homens' ? `Precisas de pelo menos ${SCOUTS + 1} homens para mandar ${SCOUTS} batedores.` : 'É longe de mais para os batedores irem e voltarem num dia.'} ${KEEP_DAY}`;
+    case 'ordem-invalida': {
+      const why = ev.why === 'destino' && ev.order === 'reconhecer'
+        ? 'O reconhecimento não tem destino válido.'
+        : INVALID[ev.why]?.(ev.id === undefined ? null : name(ev.id));
+      return `${why ?? 'Não podes fazer isso daqui: aproxima-te primeiro.'} ${KEEP_DAY}`;
+    }
     default: return null;
   }
 }
@@ -88,6 +117,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   const $ = id => doc.getElementById(id);
   let flow = null, view = null, active = false, selected = null, logDirty = true;
   let anim = null, shown = null, facing = 1, walk = 0, rafId = 0, hover = null, paintPending = false;
+  let recon = false, reconClick = null, focus = null, intelKey = '';   // modo «reconhecer», clique que o consumiu, relato em destaque, e o que a lista mostra
   const trail = [];
   const log = [];
   const now = () => (win.performance && win.performance.now ? win.performance.now() : Date.now());
@@ -110,7 +140,8 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (!ctx) return;
     const dpr = win.devicePixelRatio || 1;
     ctx.setTransform?.(dpr, 0, 0, dpr, 0, 0);
-    drawMap(ctx, view, flow.state, { party: shown || flow.state.party, facing, step: walk, selected, hover, trail, reach: REACH });
+    const scouting = recon && flow.phase === 'mapa' ? { range: RECON_RANGE, radius: RECON_RADIUS, ok: !!hover && inRecon(hover) } : null;
+    drawMap(ctx, view, flow.state, { party: shown || flow.state.party, facing, step: walk, selected, hover, trail, reach: REACH, focus, recon: scouting });
   }
 
   /** Redesenha no máximo uma vez por frame (o rato pode disparar dezenas de eventos por segundo). */
@@ -177,7 +208,8 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
       const ul = $('mlog'); ul.textContent = '';
       for (const line of log.slice(-LOG_LINES)) { const li = doc.createElement('li'); li.textContent = line; ul.append(li); }
     }
-    renderBattle(); renderEnd(); renderContext(); renderPlaces();
+    renderBattle(); renderEnd(); renderContext(); renderPlaces(); renderIntel();
+    if (flow.phase !== 'mapa' && recon) setRecon(false);
     const busy = flow.phase !== 'mapa';
     for (const b of $('map').querySelectorAll('[data-act]')) b.disabled = busy;
   }
@@ -188,13 +220,55 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
 
   function order(o) {
     if (!flow || flow.phase !== 'mapa') return null;
+    if (recon) setRecon(false);   // outra ordem cancela o modo de reconhecimento
     const r = flow.order(o);
     say(r.events);
     selected = null;
     hover = null;
+    focus = null;
     render();
     return r;
   }
+
+  // --- reconhecimento e relatos ---
+  const inRecon = p => Math.hypot(p.x - flow.state.party.x, p.y - flow.state.party.y) <= RECON_RANGE;
+  /** O segundo clique (e o dblclick) do mesmo gesto que mandou os batedores não deve marchar. */
+  const sameReconClick = (sx, sy) => !!reconClick && now() - reconClick.t < 600
+    && Math.hypot(sx - reconClick.x, sy - reconClick.y) <= 8;
+  const HINT = $('m-hint')?.textContent ?? '';
+  function setRecon(on) {
+    recon = !!on;
+    $('m-recon').setAttribute('aria-pressed', recon ? 'true' : 'false');
+    if ($('m-hint')) $('m-hint').textContent = recon ? `Clica na zona a reconhecer, dentro do círculo: ${SCOUTS} batedores, 1 dia · ESC desiste` : HINT;
+    schedulePaint();
+  }
+  $('m-recon').addEventListener('click', () => { if (active && flow?.phase === 'mapa') setRecon(!recon); });
+  const intelOpen = () => !$('mintel').classList.contains('hidden');
+  /** Lista dos últimos relatos; só se reconstrói quando mudam. Escolher um destaca a zona no mapa. */
+  function renderIntel() {
+    const reports = intelView(flow.state).reports;
+    $('m-intel').textContent = reports.some(r => r.got === flow.state.day) ? 'Relatos •' : 'Relatos';
+    if (!intelOpen()) return;
+    const k = `${flow.state.day}:${reports.map(r => r.id).join(',')}`;
+    if (k === intelKey) return;
+    intelKey = k;
+    const ul = $('mintel'); ul.textContent = '';
+    if (!reports.length) { const li = doc.createElement('li'); li.className = 'none'; li.textContent = 'Sem relatos. Manda batedores ou espera por notícias das aldeias.'; ul.append(li); return; }
+    for (const r of reports) {
+      const li = doc.createElement('li'), b = doc.createElement('button'), t = doc.createElement('small');
+      b.type = 'button'; b.dataset.report = r.id; if (r.old) b.className = 'old';
+      t.textContent = `${r.age ? agoLabel(r.age) : 'hoje'} · ${r.old ? 'antigo' : RELIABILITY[r.rel] || ''}`;
+      b.append(doc.createTextNode(reportText(r, flow.state)), t);
+      b.addEventListener('click', () => { focus = { x: r.x, y: r.y, r: r.r }; schedulePaint(); });
+      li.append(b); ul.append(li);
+    }
+  }
+  function toggleIntel(on) {
+    $('mintel').classList.toggle('hidden', !on);
+    $('m-intel').setAttribute('aria-expanded', on ? 'true' : 'false');
+    if (on) { intelKey = ''; renderIntel(); $('mintel').querySelector('button')?.focus?.(); } else if (focus) { focus = null; schedulePaint(); }
+  }
+  $('m-intel').addEventListener('click', () => { if (active && flow) toggleIntel(!intelOpen()); });
 
   function renderContext() {
     const box = $('mctx');
@@ -215,6 +289,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (s.kind === 'castro') add('Pedir ajuda', 'pedir-ajuda', { kind: 'pedir-ajuda', id: s.id });
     if (s.kind === 'posto') { if (st) note(st === 'tomado' ? 'Tomado pelo bando.' : 'Já atacado: a guarnição está avisada.'); else add('Atacar', 'atacar', { kind: 'atacar', id: s.id }); }
     add('Marchar para aqui', 'marchar', { kind: 'marchar', to: { x: s.x, y: s.y } });
+    add('Reconhecer a zona', 'reconhecer', { kind: 'reconhecer', to: { x: s.x, y: s.y } });
     const x = doc.createElement('button'); x.type = 'button'; x.textContent = 'Fechar';
     x.addEventListener('click', () => { selected = null; render(); }); box.append(x);
   }
@@ -289,6 +364,14 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const r = $('mapcv').getBoundingClientRect();
     const sx = e.clientX - r.left, sy = e.clientY - r.top;
     const hit = hitTest(view, flow.state, sx, sy);
+    if (recon) {   // o clique manda os batedores; a recusa (longe, poucos homens) não gasta o dia
+      const at = toWorld(view, { x: sx, y: sy });
+      reconClick = { t: now(), x: sx, y: sy };
+      setRecon(false);
+      order({ kind: 'reconhecer', to: { x: at.x, y: at.y } });
+      return;
+    }
+    if (sameReconClick(sx, sy)) return;   // segundo clique do gesto que já mandou os batedores
     if (hit && hit.type === 'settlement') { selected = hit.id; render(); return; }
     const w = toWorld(view, { x: sx, y: sy });
     const d = Math.hypot(w.x - flow.state.party.x, w.y - flow.state.party.y);
@@ -303,16 +386,17 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const d = Math.hypot(at.x - s.party.x, at.y - s.party.y);
     const days = d <= REACH ? 0 : Math.max(1, Math.ceil((d - REACH) / MARCH_SPEED));
     const when = days ? `${days} ${days === 1 ? 'dia' : 'dias'}` : 'aqui';
+    if (recon) return inRecon(at) ? `Reconhecer · ${SCOUTS} batedores, 1 dia` : 'Longe de mais para os batedores';
     if (hit?.type === 'settlement') {
       const st = s.world.settlements.find(x => x.id === hit.id);
       return st ? `${st.name} · ${when}` : when;
     }
-    if (hit?.type === 'patrol') {
-      const p = (s.patrols || []).find(x => x.id === hit.id);
-      const what = p?.kind === 'comboio' ? 'Comboio romano' : p?.kind === 'cacadores' ? 'Caçadores romanos' : 'Patrulha romana';
-      return `${what}${p?.men ? ` · ${p.men} homens` : ''}`;
+    if (hit?.type === 'patrol' || hit?.type === 'praetor') {   // só o que o jogador sabe (intel.js), com a idade
+      const f = intelView(s).forces.find(x => x.id === hit.id);
+      if (!f) return when;
+      const what = f.kind === 'pretor' ? `${f.name || 'Pretor'} · pretor` : `${FORCE_NAMES[f.kind] || 'Força romana'}${f.men ? ` · ${f.men} homens` : ''}`;
+      return f.status === 'confirmada' ? `${what} · à vista` : `${what} · visto ${agoLabel(f.age)}`;
     }
-    if (hit?.type === 'praetor') return `${s.praetor?.name || 'Pretor'} · pretor`;
     return when;
   }
 
@@ -338,9 +422,10 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
 
   // duplo clique em terreno vazio: três dias de marcha para o mesmo ponto (um por cada clique, mais um)
   $('mapcv').addEventListener('dblclick', e => {
-    if (!active || flow.phase !== 'mapa') return;
+    if (!active || flow.phase !== 'mapa' || recon) return;
     const r = $('mapcv').getBoundingClientRect();
     const sx = e.clientX - r.left, sy = e.clientY - r.top;
+    if (sameReconClick(sx, sy)) { reconClick = null; return; }   // o gesto já mandou os batedores
     if (hitTest(view, flow.state, sx, sy)) return;   // numa povoação manda o painel, não a marcha
     const w = toWorld(view, { x: sx, y: sy });
     if (flow.phase === 'mapa') order({ kind: 'marchar', to: { x: w.x, y: w.y } });
@@ -429,7 +514,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   win.addEventListener('resize', render);
   win.addEventListener('keydown', e => {
     // setas: um dia de marcha para norte/sul/este/oeste (o mapa também se joga sem rato)
-    if (!active || !flow || flow.phase !== 'mapa' || cronOpen() || placesOpen()) return;
+    if (!active || !flow || flow.phase !== 'mapa' || cronOpen() || placesOpen() || intelOpen()) return;
     const dir = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.code];
     if (!dir) return;
     e.preventDefault();
@@ -440,14 +525,20 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (!active || e.code !== 'Escape') return;
     if (cronOpen()) { closeChronicle(); return; }   // ESC fecha a Crónica primeiro, sem sair do mapa
     if (placesOpen()) { togglePlaces(false); $('m-places').focus?.(); return; }   // depois a lista de lugares
+    if (recon) { setRecon(false); return; }
+    if (intelOpen()) { toggleIntel(false); $('m-intel').focus?.(); return; }
     close();
   });
 
   function open(f) {
     flow = f; active = true; selected = null; log.length = 0; logDirty = true;
     stopMarch(); shown = null; hover = null; facing = 1; trail.length = 0;
-    $('mcron').classList.add('hidden'); cronOpener = null; togglePlaces(false);
+    $('mcron').classList.add('hidden'); cronOpener = null; togglePlaces(false); toggleIntel(false); setRecon(false); focus = null;
     log.push(flow.state.day ? 'A marcha continua.' : 'Um ano de guerra começa nos montes. Clica no mapa para marchar.');
+    if (!flow.state.day) {   // o relato do dia 0 também se lê no registo, não só no painel «Relatos»
+      const initial = flow.state.intel?.reports?.find(r => r.src === 'inicio' && r.got <= flow.state.day);
+      if (initial) log.push(reportText(initial, flow.state));
+    }
     $('map').classList.remove('hidden');
     render();
   }

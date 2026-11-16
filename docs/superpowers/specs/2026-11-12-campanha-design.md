@@ -213,6 +213,21 @@ Roma lembra-se de como o bando combate e responde (`src/campaign/doctrine.js`). 
 
 **Leitura.** As contramedidas custam mais ao repetidor (−5 vitórias, −18 dias, −5 pontos de emboscadas, 0,7 emboscadas descobertas por ano) do que ao variado (−3 vitórias, 0 dias, −1 ponto, nenhuma descoberta). A diferença existe, mas é pequena: estes robôs combatem pouco (mediana 8–10 batalhas) e a perseguição do pretor pesa mais do que a tática. O variado fica abaixo do repetidor em valor absoluto porque deixa passar colunas e marcha mais; isso é custo da sua própria política, não de Roma. Para o robô «atual», a campanha com contramedidas fica mais dura: 19/60 vitórias, contra 26/60 na tabela anterior desta secção (versão antes de «Roma aprende») e 28/60 anos na faixa de 12–25 batalhas. O 31/60 «sem contramedidas» não é a versão anterior: mantém a pressão romana e o novo calendário das colunas. Afinações feitas: memória 40 → 60 dias, batedores e escolta 2,5/2 → 1,8, força +4 → +3 homens, caçadores 6 → 7 de pressão. Com 20 sementes os números variam muito (atual 2/20 a 5/20).
 
+### Informação e reconhecimento (Mapa de Campanha 2.0, fase 1)
+
+O jogador deixa de ver todas as forças romanas. A simulação continua a usar as posições reais (`state.patrols`, `state.praetor`); o mapa só desenha `intelView(state)`, feito apenas de `state.intel` (`src/campaign/intel.js`).
+
+| Estado | Quando | No mapa |
+|---|---|---|
+| Confirmada | à vista do bando hoje (≤ 150; o pretor vê o bando a 140) ou vista hoje pelos batedores | figura normal |
+| Estimada | vista há 1–8 dias | figura esbatida na última posição, zona tracejada que cresce 35 por dia (22 para o pretor, máx. 150), «há N dias» |
+| Relato | notícia de uma aldeia, rumor ou fumo, até 6 dias | zona tracejada com «?»; nunca a posição exata |
+| Desconhecida | o resto | nada |
+
+**Relatos.** Aldeias por queimar e castros dão por uma força a ≤ 50 (≤ 90 para o exército do pretor): 50 % por dia, no máximo um relato por força de 3 em 3 dias, zona de raio 50 à volta da povoação (90 quando é o exército do pretor, que se vê de mais longe). O mensageiro demora um dia por cada 150 de caminho (máx. 3). Rumores: 6 % por dia (20 % para o pretor), zona de raio 130, pouco fiáveis, chegam no dia seguinte. Uma aldeia queimada pelo pretor dá um relato de fumo. No dia 0 sabe-se em que posto o pretor junta o exército. Nesta fase os relatos nunca mentem: a fiabilidade só mede a largura da zona. O sorteio é próprio (semente e dia), por isso o balance não muda.
+
+**Reconhecer.** Ordem nova: 2 batedores vão a um ponto até 250 do bando e voltam no fim do dia; confirmam o que há a ≤ 110 desse ponto, ou dizem que a zona parece livre. Gasta o dia (o bando fica acampado) e exige 3 homens. Recusada, não gasta nada. Não há risco de captura nesta fase.
+
 ## 10. Lacunas que o construtor encontrou (decididas por mim)
 
 7. **Quando é que o pretor dá batalha?** Quando a coluna dele chega ao teu ponto no mapa, ou quando tu o procuras. Não há batalha decisiva «agendada»: a que decide o ano é aquela em que o pretor te apanha em campo aberto, ou em que tu o apanhas numa emboscada.

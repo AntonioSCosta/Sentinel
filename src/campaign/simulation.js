@@ -3,6 +3,7 @@
 import { romansCampaign } from './clock.js';
 import { praetorStep } from './praetor.js';
 import { foodPerDay, recruitsFrom, checkRuin } from './state.js';
+import { updateIntel, SCOUTS, RECON_RANGE } from './intel.js';
 import { ensureDoctrine, tickDoctrine, moveHunter, spottedAmbush, escortBonus, nextSpawnGap, FIRST_SPAWN } from './doctrine.js';
 
 export const MARCH_SPEED = 45;
@@ -90,6 +91,13 @@ function applyOrder(state, order) {
       state.posts = state.posts || {};
       state.posts[s.id] = { taken: false };   // tomado só se a batalha for ganha (battles.applyResult)
       return { events: [], encounter: { kind: 'posto', foe: s, waiting: false } };
+    }
+    case 'reconhecer': {   // dois batedores vão ver uma zona e voltam no fim do dia; o bando fica acampado
+      const to = order.to;
+      if (!to || !Number.isFinite(to.x) || !Number.isFinite(to.y)) return invalid('destino');
+      if (state.men < SCOUTS + 1) return refuse({ type: 'reconhecer-recusado', why: 'homens' });
+      if (dist(to, party) > RECON_RANGE) return refuse({ type: 'reconhecer-recusado', why: 'longe' });
+      return { events: [], encounter: null, recon: { x: Math.min(world.w, Math.max(0, to.x)), y: Math.min(world.h, Math.max(0, to.y)) } };
     }
     case 'acampar': case 'esperar': case 'esconder': return none;
     default: return invalid('desconhecido');
@@ -194,5 +202,7 @@ export function stepDay(state, order, rng) {
   if (blocked) state.cooldown -= 1;
   let encounter = res.encounter;
   if (!encounter && !state.over && !blocked) encounter = detect(state, order, hidden, events);
+  // o que o jogador ficou a saber hoje (só lê as posições; os encontros acima usam sempre as reais)
+  events.push(...updateIntel(state, { recon: res.recon, dayEvents: events }));
   return { events, encounter };
 }

@@ -1,6 +1,7 @@
 // Vista do mapa estratégico: enquadramento, conversão de coordenadas, seleção e desenho.
 // Módulo puro: sem DOM nem Three.js; o desenho só usa a API mínima de um contexto Canvas 2D.
 import { dateLabel, season } from './clock.js';
+import { intelView } from './intel.js';   // as forças romanas vêm sempre daqui (o que o jogador sabe), nunca do estado real
 
 const MARGIN = 12;
 const TAU = Math.PI * 2;
@@ -31,8 +32,7 @@ export function hitTest(view, state, sx, sy, r = 14) {
     if (d <= rad && d < bestD) { bestD = d; best = hit; }
   };
   for (const s of view.world.settlements) consider(s, { type: 'settlement', id: s.id }, r + (s.kind === 'serra' ? 4 : 8));
-  for (const p of state.patrols || []) consider(p, { type: 'patrol', id: p.id }, r);
-  if (state.praetor) consider(state.praetor, { type: 'praetor', id: state.praetor.id }, r + 3);
+  for (const f of intelView(state).forces) consider(f, { type: f.kind === 'pretor' ? 'praetor' : 'patrol', id: f.id }, f.kind === 'pretor' ? r + 3 : r);
   return best;
 }
 
@@ -396,6 +396,38 @@ function labelCandidates(w) {
   return out;
 }
 
+/** «há 1 dia», «há 3 dias». */
+export const agoLabel = age => `há ${age} ${age === 1 ? 'dia' : 'dias'}`;
+const plateWidth = text => Math.max(42, text.length * 5.9 + 10);
+/** Placa do pretor: o nome, e a idade do avistamento quando já não está à vista. */
+const praetorPlate = f => (f.status === 'confirmada' ? f.name || 'Pretor' : `${f.name || 'Pretor'} · ${agoLabel(f.age)}`);
+
+/** Círculo tracejado a tinta romana: a zona onde uma força pode estar. */
+function dashedZone(ctx, x, y, r, fill = false) {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(160,33,26,.6)';
+  ctx.lineWidth = 1.2;
+  ctx.setLineDash([5, 4]);
+  ctx.beginPath(); ctx.arc(x, y, Math.max(8, r), 0, TAU);
+  if (fill) { ctx.fillStyle = 'rgba(160,33,26,.07)'; ctx.fill(); }
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+/** Nota pequena a tinta, por baixo de uma figura ou de uma zona. */
+function note(ctx, text, x, y) {
+  ctx.save();
+  ctx.fillStyle = ROMAN_DARK;
+  ctx.font = 'italic 10px serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
+const ZONE_NAMES = { patrulha: 'patrulha', comboio: 'comboio', cacadores: 'caçadores', pretor: 'pretor', livre: 'zona livre', forcas: 'reconhecida' };
+
 /** Caixas que uma etiqueta não pode cobrir: ícones, unidades, placas e a data. */
 function labelObstacles(view, state) {
   const obs = [];
@@ -403,13 +435,12 @@ function labelObstacles(view, state) {
     const q = toScreen(view, s);
     obs.push({ x: q.x - 14, y: q.y - 12, w: 28, h: 22 });
   }
-  for (const p of state.patrols || []) {
-    const q = toScreen(view, p);
-    obs.push({ x: q.x - 11, y: q.y - 8, w: 22, h: 16 });
-  }
-  if (state.praetor) {
-    const q = toScreen(view, state.praetor), name = state.praetor.name || 'Pretor';
-    const w = Math.max(42, name.length * 5.9 + 10);
+  const intel = intelView(state);
+  for (const z of intel.zones) { const q = toScreen(view, z); obs.push({ x: q.x - 46, y: q.y - (z.place ? 34 : 16), w: 92, h: z.place ? 52 : 34 }); }   // «?» e a nota do relato
+  for (const f of intel.forces) {
+    const q = toScreen(view, f);
+    if (f.kind !== 'pretor') { obs.push({ x: q.x - 11, y: q.y - 8, w: 22, h: 16 }); continue; }
+    const w = plateWidth(praetorPlate(f));
     obs.push({ x: q.x - 7, y: q.y - 19, w: 14, h: 28 });          // vexilo
     obs.push({ x: q.x - w / 2, y: q.y - 33, w, h: 14 });          // placa do nome
   }
@@ -574,13 +605,47 @@ export function drawMap(ctx, view, state, fx = {}) {
     ctx.restore();
   }
 
-  // patrulhas romanas
-  for (const p of state.patrols || []) drawPatrol(ctx, p, toScreen(view, p));
-
-  // pretor: estandarte romano (vexilo)
-  if (state.praetor) {
-    const q = toScreen(view, state.praetor);
-    drawPraetor(ctx, q.x, q.y);
+  // o que o jogador sabe dos romanos (intel.js): relatos como zonas, avistamentos como figuras
+  const intel = intelView(state);
+  for (const z of intel.zones) {
+    const q = toScreen(view, z);
+    if (z.src === 'batedores') {   // zona reconhecida hoje
+      ctx.save(); ctx.strokeStyle = 'rgba(90,70,40,.55)'; ctx.lineWidth = 1.2; ctx.setLineDash([2, 4]);
+      ctx.beginPath(); ctx.arc(q.x, q.y, z.r * view.scale, 0, TAU); ctx.stroke(); ctx.setLineDash([]); ctx.restore();
+      if (z.kind === 'livre') note(ctx, 'zona livre', q.x, q.y + 4);
+      continue;
+    }
+    dashedZone(ctx, q.x, q.y, z.r * view.scale, true);
+    ctx.save();
+    ctx.fillStyle = 'rgba(160,33,26,.8)';
+    ctx.font = `bold ${z.rel === 'fraca' ? 20 : 15}px serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('?', q.x, q.y - (z.place ? 24 : 4));   // por cima do ícone, quando a zona é uma povoação
+    ctx.restore();
+    note(ctx, `${ZONE_NAMES[z.kind] || 'romanos'} · ${z.age ? agoLabel(z.age) : 'hoje'}`, q.x, q.y + 14);
+  }
+  for (const f of intel.forces) {
+    const q = toScreen(view, f), old = f.status !== 'confirmada';
+    if (old) dashedZone(ctx, q.x, q.y, f.r * view.scale);
+    ctx.save();
+    if (old) ctx.globalAlpha = 0.4;   // última posição conhecida: figura esbatida
+    if (f.kind === 'pretor') drawPraetor(ctx, q.x, q.y); else drawPatrol(ctx, f, q);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+    if (old && f.kind !== 'pretor') note(ctx, agoLabel(f.age), q.x, q.y + 18);
+  }
+  // destaque do relato escolhido na lista
+  if (fx.focus && Number.isFinite(fx.focus.x) && Number.isFinite(fx.focus.y)) {
+    const q = toScreen(view, fx.focus);
+    ctx.save(); ctx.strokeStyle = GOLD; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(q.x, q.y, Math.max(16, (fx.focus.r || 0) * view.scale + 4), 0, TAU); ctx.stroke(); ctx.restore();
+  }
+  // reconhecimento a preparar: até onde os batedores vão e o que veriam
+  if (fx.recon) {
+    ctx.save(); ctx.strokeStyle = 'rgba(90,70,40,.5)'; ctx.lineWidth = 1; ctx.setLineDash([6, 5]);
+    ctx.beginPath(); ctx.arc(pq.x, pq.y, fx.recon.range * view.scale, 0, TAU); ctx.stroke();
+    if (hover && Number.isFinite(hover.x) && fx.recon.ok) { const hq = toScreen(view, hover); ctx.setLineDash([2, 4]); ctx.beginPath(); ctx.arc(hq.x, hq.y, fx.recon.radius * view.scale, 0, TAU); ctx.stroke(); }
+    ctx.setLineDash([]); ctx.restore();
   }
 
   // Viriato
@@ -609,10 +674,11 @@ export function drawMap(ctx, view, state, fx = {}) {
   ctx.restore();
 
   // placas por cima de tudo: o nome do comandante e o de Viriato lêem-se sempre
-  if (state.praetor) {
-    const q = toScreen(view, state.praetor);
-    const name = state.praetor.name || 'Pretor';
-    const w = Math.max(42, name.length * 5.9 + 10);
+  for (const f of intel.forces) {
+    if (f.kind !== 'pretor') continue;
+    const q = toScreen(view, f);
+    const name = praetorPlate(f);
+    const w = plateWidth(name);
     ctx.save();
     ctx.fillStyle = 'rgba(227,211,168,.86)';
     ctx.fillRect(q.x - w / 2, q.y - 33, w, 14);
