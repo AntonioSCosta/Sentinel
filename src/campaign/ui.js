@@ -5,7 +5,7 @@ import { createFlow, loadFlow, clearSave, WIN_MEN, WIN_FAME } from './flow.js';
 import { dateLabel, season, daysLeft, YEAR_DAYS } from './clock.js';
 import { entryFor, CHRONICLE, SOURCE_LABELS, isUnlocked } from './chronicle.js';
 import { isBridged, isStory } from './bridge.js';
-import { START } from './state.js';
+import { START, foodPerDay } from './state.js';
 import { MARCH_SPEED } from './simulation.js';
 
 /** Relatos de Roma (doctrine.js): o que muda quando uma contramedida entra e quando sai. */
@@ -26,9 +26,9 @@ const BATTLE_NAMES = {
 const RELIABILITY = { certa: 'visto pelos teus', boa: 'fiável', fraca: 'pouco fiável' };
 const KIND_NAMES = { aldeia: 'Aldeia', castro: 'Castro', posto: 'Posto romano', serra: 'Serra' };
 /** Episódios históricos: título e uma linha sóbria; o que é invenção diz-se (ver a Crónica). */
-const EPISODES = {
+export const EPISODES = {
   cativos: ['Os Cativos', 'Cena inspirada nas consequências da traição de Galba (ver a Crónica): uma coluna romana leva cativos para serem vendidos e parou numa clareira. Viriato vai com dois homens.'],
-  acampamento: ['O acampamento', 'Invenção do jogo: o posto guarda os mantimentos da guarnição. Entra sem dar o alarme, queima os três depósitos e derruba o centurião.'],
+  acampamento: ['O acampamento', 'Invenção do jogo: o posto guarda os mantimentos da guarnição. Entra sem dar o alarme: agacha-te (C) e avança pelo mato, porque à vista a guarnição descobre-te depressa. Queima os três depósitos e derruba o centurião.'],
 };
 const REACH = 20;   // a esta distância (no mapa) já se está no lugar
 /** Estado de um lugar, para o painel e a lista: «queimada», «tomado», «já atacado» ou nada. */
@@ -270,7 +270,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
       const ul = $('mlog'); ul.textContent = '';
       for (const line of log.slice(-LOG_LINES)) { const li = doc.createElement('li'); li.textContent = line; ul.append(li); }
     }
-    renderBattle(); renderEnd(); renderContext(); renderPlaces(); renderIntel();
+    renderBattle(); renderEnd(); renderContext(); renderPlaces(); renderIntel(); renderGoal();
     if (flow.phase !== 'mapa' && recon) setRecon(false);
     const busy = flow.phase !== 'mapa';
     for (const b of $('map').querySelectorAll('[data-act]')) b.disabled = busy;
@@ -350,7 +350,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   function toggleIntel(on) {
     $('mintel').classList.toggle('hidden', !on);
     $('m-intel').setAttribute('aria-expanded', on ? 'true' : 'false');
-    if (on) { intelKey = ''; archive = false; renderIntel(); $('mintel').querySelector('button')?.focus?.(); } else if (focus) { focus = null; schedulePaint(); }
+    if (on) { if (goalOpen()) toggleGoal(false); intelKey = ''; archive = false; renderIntel(); $('mintel').querySelector('button')?.focus?.(); } else if (focus) { focus = null; schedulePaint(); }
   }
   $('m-intel').addEventListener('click', () => { if (active && flow) toggleIntel(!intelOpen()); });
 
@@ -413,6 +413,36 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (!e.dataset.shown) { e.dataset.shown = '1'; $('mend-new').focus?.(); }
   }
 
+  // --- «Objetivo»: o que se ganha, o que se perde e o que fazer primeiro (regras lidas do código, não copiadas) ---
+  const goalOpen = () => !$('mgoal').classList.contains('hidden');
+  let goalSeen = false;   // o ponto no botão some depois da primeira leitura
+  function goalLines(s) {
+    return [
+      `Objetivo: aguentar um ano de guerra (${YEAR_DAYS} dias) contra Roma.`,
+      `Vitória: derrotar o pretor romano na batalha decisiva, ou chegar ao fim do ano com ${WIN_MEN}+ homens e ${WIN_FAME}+ de fama.`,
+      `Derrota: ficar sem homens ou sem fama, ou acabar o ano abaixo desses mínimos.`,
+      `Homens: o teu bando; comem ${foodPerDay(s.men)} de comida por dia e, sem comida, morrem. Comida: pede-a nas aldeias e saqueia-a. Armas: gastam-se a recrutar. Fama: sobe com vitórias, desce com derrotas e recuos; mais fama, mais recrutas.`,
+      'Primeiros dias: abre «Lugares», pede comida e recruta na aldeia mais próxima, manda batedores (Reconhecer) e lê os Relatos antes de aceitar combate.',
+    ];
+  }
+  function renderGoal() {
+    const s = flow.state, ul = $('mgoal');
+    $('m-goal').textContent = goalSeen ? 'Objetivo' : 'Objetivo •';
+    if (!goalOpen()) return;
+    ul.textContent = '';
+    const st = doc.createElement('li'); st.className = 'status';   // o estado vem primeiro: lê-se sem rolar
+    st.textContent = `Agora: ${s.men} homens (mín. ${WIN_MEN}) · ${s.fame} de fama (mín. ${WIN_FAME}) · faltam ${daysLeft(s.day)} dias`;
+    ul.append(st);
+    for (const t of goalLines(s)) { const li = doc.createElement('li'); li.textContent = t; ul.append(li); }
+  }
+  function toggleGoal(on) {
+    if (on) { togglePlaces(false); toggleIntel(false); goalSeen = true; }
+    $('mgoal').classList.toggle('hidden', !on);
+    $('m-goal').setAttribute('aria-expanded', on ? 'true' : 'false');
+    if (flow) renderGoal();
+  }
+  $('m-goal').addEventListener('click', () => { if (active && flow?.phase === 'mapa') toggleGoal(!goalOpen()); });
+
   // --- lista de lugares (o mapa pelo teclado) ---
   let placesKey = '';
   const placesOpen = () => !$('mplaces').classList.contains('hidden');
@@ -436,7 +466,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   function togglePlaces(on) {
     $('mplaces').classList.toggle('hidden', !on);
     $('m-places').setAttribute('aria-expanded', on ? 'true' : 'false');
-    if (on) { placesKey = ''; renderPlaces(); $('mplaces').querySelector('button')?.focus?.(); }
+    if (on) { if (goalOpen()) toggleGoal(false); placesKey = ''; renderPlaces(); $('mplaces').querySelector('button')?.focus?.(); }
   }
   $('m-places').addEventListener('click', () => { if (active && flow?.phase === 'mapa') togglePlaces(!placesOpen()); });
 
@@ -612,6 +642,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   win.addEventListener('keydown', e => {
     if (!active || e.code !== 'Escape') return;
     if (cronOpen()) { closeChronicle(); return; }   // ESC fecha a Crónica primeiro, sem sair do mapa
+    if (goalOpen()) { toggleGoal(false); $('m-goal').focus?.(); return; }
     if (placesOpen()) { togglePlaces(false); $('m-places').focus?.(); return; }   // depois a lista de lugares
     if (recon) { setRecon(false); return; }
     if (intelOpen()) { toggleIntel(false); $('m-intel').focus?.(); return; }
@@ -621,8 +652,8 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   function open(f) {
     flow = f; active = true; selected = null; log.length = 0; logDirty = true; lastSaid = null; repeat = 1;
     stopMarch(); shown = null; hover = null; facing = 1; trail.length = 0;
-    $('mcron').classList.add('hidden'); cronOpener = null; togglePlaces(false); toggleIntel(false); setRecon(false); focus = null;
-    log.push(flow.state.day ? 'A marcha continua.' : 'Um ano de guerra começa nos montes. Clica no mapa para marchar.');
+    $('mcron').classList.add('hidden'); cronOpener = null; togglePlaces(false); toggleIntel(false); toggleGoal(false); goalSeen = !!flow.state.day; setRecon(false); focus = null;
+    log.push(flow.state.day ? 'A marcha continua.' : `Um ano de guerra começa nos montes: aguenta com ${WIN_MEN}+ homens e ${WIN_FAME}+ de fama (botão «Objetivo»). Clica no mapa para marchar.`);
     if (!flow.state.day) {   // o relato do dia 0 também se lê no registo, não só no painel «Relatos»
       const initial = flow.state.intel?.reports?.find(r => r.src === 'inicio' && r.got <= flow.state.day);
       if (initial) log.push(reportText(initial, flow.state));

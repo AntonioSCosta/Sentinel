@@ -8,7 +8,7 @@ import { makeRng } from '../src/campaign/rng.js';
 import { battleSpec } from '../src/campaign/battles.js';
 import { createFlow } from '../src/campaign/flow.js';
 import { ensureIntel, updateIntel, intelView, validIntel, estimateMen, REPORT_DAYS } from '../src/campaign/intel.js';
-import { eventText, reportText, battleBrief } from '../src/campaign/ui.js';
+import { eventText, reportText, battleBrief, EPISODES } from '../src/campaign/ui.js';
 import { FIRST_SPAWN, FIRST_SPAWN_MIN } from '../src/campaign/doctrine.js';
 import { makePraetor } from '../src/campaign/praetor.js';
 
@@ -329,4 +329,11 @@ test('o relato pouco fiável desenha-se com outro traço', async () => {
     return calls.filter(c => c[0] === 'setLineDash').map(c => JSON.stringify(c[1]));
   };
   assert.notDeepEqual(dashes('fraca'), dashes('boa'));
+});
+
+test('capítulo III no painel de batalha: diz como entrar sem ser descoberto (agachar) e o perigo de ficar à vista', () => {
+  const t = EPISODES.acampamento[1];
+  assert.match(t, /agacha-te \(C\)/i, t);
+  assert.match(t, /à vista/, t);
+  assert.match(t, /Invenção do jogo/, 'continua a dizer que o episódio é invenção');
 });

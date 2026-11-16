@@ -1,6 +1,8 @@
 // Task 12: o ecrã do mapa da campanha (estado 'map'), HUD, ordens, modal de batalha provisório e ecrã final.
 import { rollEvent } from '../src/campaign/events.js';
 import { CHRONICLE } from '../src/campaign/chronicle.js';
+import { WIN_MEN, WIN_FAME } from '../src/campaign/flow.js';
+import { YEAR_DAYS } from '../src/campaign/clock.js';
 export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   const $ = id => doc.getElementById(id), shown = id => !!$(id) && !$(id).classList.contains('hidden');
   // espião do contexto 2D (o jsdom não traz canvas): conta as chamadas de desenho
@@ -16,6 +18,10 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   check('a new campaign starts in the prologue, not the map', G.chapter === 'prologo' && G.state !== 'map' && (G.state === 'intro' || G.state === 'play'));
   check('the new campaign is saved immediately (resume → map, prologue not replayed)', G.campaign.saveState() === 'meio');
   check('the map is hidden while the campaign prologue plays', !shown('map'));
+  // «ENTER para saltar» (abertura/epílogo) não pode ficar no ecrã do mapa: o controlo positivo prova que o teste a vê
+  const skipHint = () => [...doc.body.children].filter(e => e.textContent === 'ENTER para saltar');
+  st(1);
+  check('the «ENTER para saltar» hint shows during the prologue intro', G.state === 'intro' && skipHint().length === 1 && skipHint()[0].style.display === 'block');
   // Conduz o prólogo até à fuga; deve terminar no mapa da campanha, dia 0.
   setGod(true);
   { let n = 0; while (G.state === 'intro' && n++ < 2500) st(1); }
@@ -25,6 +31,8 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   { let n = 0; while (G.state === 'outro' && n++ < 2500) st(1); }
   setGod(false);
   check('the campaign prologue hands off to the map at day 0', G.state === 'map' && shown('map') && !shown('hud') && !shown('end') && G.campaign.flow.state.day === 0 && G.campIntro === false);
+  st(2);
+  check('the «ENTER para saltar» hint is hidden once the map shows', G.state === 'map' && skipHint().every(e => e.style.display === 'none'));
   check('no end screen or next-chapter after the campaign prologue', G.nextChapter === null && !shown('end'));
   const f = G.campaign.flow, s = f.state;
   // 3D is not drawn under the map, and is drawn again after leaving
@@ -673,6 +681,20 @@ function fixWave({ G, doc, win, check, st, setGod, $, shown }) {
   check('the list is scrollable', /auto|scroll/.test(win.getComputedStyle($('mplaces')).overflowY || ''));
   win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'Escape', key: 'Escape' }));
   check('Escape closes the list first, stays on the map, focus back on «Lugares»', !shown('mplaces') && G.state === 'map' && doc.activeElement === $('m-places'));
+  // --- «Objetivo»: regras reais, curto, sem janela que interrompa ---
+  check('the map has an «Objetivo» button, collapsed, with an unread dot', $('m-goal')?.tagName === 'BUTTON' && $('m-goal').getAttribute('aria-expanded') === 'false' && /•/.test($('m-goal').textContent) && !shown('mgoal'));
+  $('m-places').click();
+  $('m-goal').click();
+  const gt = $('mgoal').textContent;
+  check('«Objetivo» opens, closes «Lugares» (panels never stack) and loses its dot', shown('mgoal') && !shown('mplaces') && $('m-goal').getAttribute('aria-expanded') === 'true' && !/•/.test($('m-goal').textContent));
+  check(`«Objetivo» states the real win/lose numbers (${WIN_MEN} homens, ${WIN_FAME} fama, ${YEAR_DAYS} dias) and the first steps`,
+    gt.includes(`${WIN_MEN}+ homens`) && gt.includes(`${WIN_FAME}+ de fama`) && gt.includes(String(YEAR_DAYS)) && /Vitória/.test(gt) && /Derrota/.test(gt)
+    && /Homens/.test(gt) && /Comida/.test(gt) && /Armas/.test(gt) && /Fama/.test(gt) && /Primeiros dias/.test(gt) && /Agora: \d+ homens/.test(gt));
+  $('m-places').click();
+  check('opening «Lugares» closes «Objetivo»', shown('mplaces') && !shown('mgoal'));
+  $('m-goal').click();
+  win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'Escape', key: 'Escape' }));
+  check('Escape closes «Objetivo» first, stays on the map', !shown('mgoal') && G.state === 'map');
   check('map copy uses post-1990 spelling', !/acç|direcç|selecç/.test($('map').innerHTML));
   G.campaign.close();
 

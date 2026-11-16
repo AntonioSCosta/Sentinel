@@ -3035,7 +3035,7 @@ let introVeil = null, introTitled = false, introHorn = false;
 const OPENING = {
   cativos: ['I · Os Cativos', 'Agacha-te (C), mata os guardas pelas costas ou com dardos, e corta as cordas (E). Os teus dois homens só atacam quando a luta começar.'],
   emboscada: ['II · A Emboscada', 'Agacha-te (C) e aproxima-te sem seres visto. Um golpe pelas costas é mortal.'],
-  acampamento: ['III · O Acampamento', 'Entra sem dar o alarme. Queima os três depósitos (E) e o centurião sai para te enfrentar.'],
+  acampamento: ['III · O Acampamento', 'Agacha-te (C) e avança pelo mato: à vista, a guarnição dá o alarme. Queima os três depósitos (E) e o centurião sai para te enfrentar.'],
 };
 function startGame(intro = false) {
   initAudio();
@@ -3228,7 +3228,7 @@ $('camp-cont').addEventListener('click', () => openCampaign(() => campUI.resume(
 refreshCampMenu();
 let menuT = 0;
 function step(dt) {
-  if (state === 'map') { frameNo++; return; }
+  if (state === 'map') { frameNo++; skipHint(); return; }   // o «ENTER para saltar» do epílogo não fica no mapa
   frameNo++;
   updateBoughs(P.pos.x, P.pos.z, camera.position.x, camera.position.z);
   WIND.tick(dt);
