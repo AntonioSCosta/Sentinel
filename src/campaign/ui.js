@@ -32,7 +32,7 @@ export function goalLines(s) {
     `Objetivo: aguentar um ano de guerra (${YEAR_DAYS} dias) contra Roma.`,
     `Vitória: derrotar o pretor romano na batalha decisiva, ou chegar ao fim do ano com ${WIN_MEN}+ homens e ${WIN_FAME}+ de fama.`,
     `Derrota: ficar sem homens ou sem fama, ou acabar o ano abaixo desses mínimos.`,
-    `Homens: o teu bando; comem ${foodPerDay(s.men)} de comida por dia e, sem comida, morrem. Comida: pede ajuda nos castros e obtém mantimentos como saque nas vitórias em combate. Armas: vêm do saque e gastam-se a recrutar nas aldeias. Fama: sobe com vitórias, desce com derrotas e recuos; mais fama, mais recrutas.`,
+    `Homens: o teu bando; comem ${foodPerDay(s.men)} de comida por dia e, sem comida, morrem. Comida: pede ajuda nos castros e obtém mantimentos como saque nas vitórias em combate. Armas: vêm do saque e gastam-se a recrutar nas aldeias. Fama: sobe com vitórias, desce com derrotas e recuos. Recrutas: cada aldeia dá o que a confiança permite, enquanto tiver jovens e tu armas.`,
     'Primeiros dias: abre «Lugares»: recruta numa aldeia, pede ajuda (comida) num castro, manda batedores (Reconhecer) e lê os Relatos antes de aceitar combate.',
   ];
 }

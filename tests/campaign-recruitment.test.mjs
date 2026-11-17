@@ -1,13 +1,14 @@
 // PR 2 — recrutamento com custo real: postura, jovens, armas; origem dos homens; baixas e produção da aldeia de origem.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { newCampaign, spend, serialize, deserialize, recruitsFrom } from '../src/campaign/state.js';
+import { newCampaign, spend, serialize, deserialize } from '../src/campaign/state.js';
 import { stepDay } from '../src/campaign/simulation.js';
 import { makeRng } from '../src/campaign/rng.js';
 import { applyResult } from '../src/campaign/battles.js';
 import { eventText } from '../src/campaign/ui.js';
 import {
-  COMMUNITY_IDS, IDENTITY, RECRUIT_SHARE, POSTURES, youth, production, bandOrigins, loseMen, postureFor, margin,
+  makeCommunity, COMMUNITY_IDS, IDENTITY, RECRUIT_RULE, LEVY_TRUST, DEATH_TRUST, POSTURES, youth, youthCap, production, bandOrigins, loseMen,
+  recruitLimit, levy, postureFor, margin,
 } from '../src/campaign/communities.js';
 
 const rng = () => makeRng(7);
@@ -26,11 +27,13 @@ function visit(s, id, { posture, arms = 20, fame = 20 } = {}) {
 }
 const order = (s, id) => ({ kind: 'recrutar', id: s.communities[id].settlement });
 const snap = s => JSON.stringify(s);
+const fresh_c = id => makeCommunity(id, 'x');
 const awaySum = s => COMMUNITY_IDS.reduce((n, id) => n + s.communities[id].away, 0);
 
-test('recrutar numa aldeia amiga: os homens vêm dos jovens dela e ficam registados como dela', () => {
-  const s = fresh(), c = visit(s, 'souto', { posture: 'amiga', fame: 35 });
-  const men = s.men, arms = s.arms, y0 = youth(c), n = recruitsFrom(35);
+test('recrutar numa aldeia amiga: até um quarto dos jovens, e saem dos jovens dela', () => {
+  const s = fresh(), c = visit(s, 'souto', { posture: 'amiga' });
+  const men = s.men, arms = s.arms, y0 = youth(c), n = Math.floor(y0 / 4);
+  assert.ok(n >= 2);
   const r = stepDay(s, order(s, 'souto'), rng());
   assert.notEqual(r.refused, true);
   assert.equal(s.men, men + n); assert.equal(s.arms, arms - n);
@@ -56,22 +59,41 @@ test('aldeia receosa ou que colabora com Roma não dá homens; nada muda e o dia
     assert.deepEqual(r.events.map(e => [e.type, e.why]), [['recrutar-recusado', 'postura']], posture);
     assert.equal(snap(s), before, posture);
   }
-  assert.equal(RECRUIT_SHARE.receosa, 0); assert.equal(RECRUIT_SHARE.colabora, 0);
+  assert.deepEqual(RECRUIT_RULE.receosa, {}); assert.deepEqual(RECRUIT_RULE.colabora, {});
 });
 
-test('a postura limita quantos jovens dá por visita (mais confiança, mais homens)', () => {
-  const take = posture => {
-    const s = fresh(), c = visit(s, 'penedo', { posture, fame: 200, arms: 99 });
-    const y0 = youth(c); stepDay(s, order(s, 'penedo'), rng());
-    return { got: c.away, cap: Math.max(1, Math.ceil(y0 * RECRUIT_SHARE[posture])) };
+test('limites do GDD: comprometida um terço, amiga um quarto, neutra só 3 voluntários, receosa e colabora nada', () => {
+  const got = posture => {   // o Penedo tem 28 jovens
+    const s = fresh(), c = visit(s, 'penedo', { posture, arms: 99 });
+    assert.equal(youth(c), 28);
+    stepDay(s, order(s, 'penedo'), rng());
+    return c.away;
   };
-  for (const p of ['neutra', 'amiga', 'comprometida']) { const { got, cap } = take(p); assert.equal(got, cap, p); }
-  assert.ok(take('neutra').got < take('amiga').got && take('amiga').got < take('comprometida').got);
+  assert.equal(got('comprometida'), 9);   // floor(28 / 3)
+  assert.equal(got('amiga'), 7);          // floor(28 / 4)
+  assert.equal(got('neutra'), 3);         // voluntários, não percentagem
+  assert.deepEqual(RECRUIT_RULE.neutra, { volunteers: 3 });
+  for (const p of ['receosa', 'colabora']) assert.equal(recruitLimit({ ...fresh_c('penedo'), posture: p }, 99).limit, 0, p);
 });
 
-test('os jovens disponíveis são o teto: sem jovens recusa; com um, dá um', () => {
-  const s = fresh(), c = visit(s, 'vau', { posture: 'comprometida', fame: 200, arms: 99 });
-  c.away = Math.floor(c.families * IDENTITY.vau.youthRate) - 1; s.men += c.away;
+test('neutra: o número de voluntários não cresce com a aldeia; com poucos jovens dá os que há', () => {
+  const small = fresh_c('vau'), big = fresh_c('ribeira');
+  big.posture = small.posture = 'neutra';
+  assert.equal(recruitLimit(big, 99).limit, 3); assert.equal(recruitLimit(small, 99).limit, 3);
+  small.away = youthCap(small) - 2; assert.equal(recruitLimit(small, 99).limit, 2);
+});
+
+test('a fama não limita o recrutamento', () => {
+  const run = fame => { const s = fresh(), c = visit(s, 'souto', { posture: 'amiga', fame }); stepDay(s, order(s, 'souto'), rng()); return { away: c.away, fame: s.fame }; };
+  const low = run(1), high = run(500);
+  assert.equal(low.away, high.away);
+  assert.equal(low.away, 3);   // floor(15 / 4), com a fama a 1 ou a 500
+  assert.equal(recruitLimit(fresh_c('souto'), 99).byPosture, 3);
+});
+
+test('os jovens disponíveis são o teto: sem jovens recusa; com um, a neutra dá um', () => {
+  const s = fresh(), c = visit(s, 'vau', { posture: 'neutra', arms: 99 });
+  c.away = youthCap(c) - 1; s.men += c.away;
   assert.equal(youth(c), 1);
   stepDay(s, order(s, 'vau'), rng());
   assert.equal(youth(c), 0);
@@ -79,6 +101,13 @@ test('os jovens disponíveis são o teto: sem jovens recusa; com um, dá um', ()
   assert.equal(r.refused, true);
   assert.deepEqual(r.events.map(e => [e.type, e.why]), [['recrutar-recusado', 'jovens']]);
   assert.equal(snap(s), before);
+});
+
+test('uma aldeia amiga com menos de 4 jovens não dá nenhum («até um quarto»)', () => {
+  const s = fresh(), c = visit(s, 'vau', { posture: 'amiga', arms: 99 });
+  c.away = youthCap(c) - 3; s.men += c.away;
+  const before = snap(s), r = stepDay(s, order(s, 'vau'), rng());
+  assert.equal(r.refused, true); assert.equal(r.events[0].why, 'jovens'); assert.equal(snap(s), before);
 });
 
 test('as armas são o teto: uma arma, um homem; sem armas, recusa sem gastar a vez', () => {
@@ -146,13 +175,16 @@ test('morrem todos: away nunca fica negativo nem passa de men', () => {
   assert.equal(s.men, 0); assert.equal(awaySum(s), 0);
 });
 
-test('produção da aldeia desce em proporção aos homens que estão fora', () => {
-  const s = fresh(), c = s.communities.souto;   // 30 famílias, serra: 1.6 no outono
+test('produção: desce METADE da proporção de jovens que estão fora (GDD)', () => {
+  const s = fresh(), c = s.communities.souto;   // 15 jovens; serra: 48 no outono
+  assert.equal(youthCap(c), 15);
   assert.equal(production(c, 'outono').food, 48);
-  c.away = 3; assert.equal(production(c, 'outono').food, Math.round(30 * 1.6 * 0.9));
-  c.away = 15; assert.equal(production(c, 'outono').food, Math.round(30 * 1.6 * 0.5));
-  const f = s.communities.fonte; f.away = 0; assert.equal(production(f, 'verão').arms, 4);
-  f.away = 22; assert.equal(production(f, 'verão').arms, Math.round(4 * (1 - 22 / 45)));
+  c.away = 3;  assert.equal(production(c, 'outono').food, Math.round(48 * (1 - 0.5 * 3 / 15)));    // 20% fora -> -10%
+  c.away = 15; assert.equal(production(c, 'outono').food, 24);                                      // todos fora -> metade
+  c.away = 7;  assert.equal(production(c, 'outono').food, Math.round(48 * (1 - 0.5 * 7 / 15)));
+  const f = s.communities.fonte; f.away = 0; assert.equal(production(f, 'verão').arms, 4);   // 22 jovens
+  f.away = 22; assert.equal(production(f, 'verão').arms, 2);
+  f.away = 11; assert.equal(production(f, 'verão').arms, 3);
   f.families = 0; f.away = 0; assert.deepEqual(production(f, 'verão'), { food: 0, arms: 0 });
 });
 
@@ -163,4 +195,45 @@ test('gravação: os homens fora não podem ser mais do que o bando; ida e volta
   assert.ok(back); assert.equal(back.communities.souto.away, c.away);
   const o = JSON.parse(serialize(s)); o.men = awaySum(s) - 1;
   assert.equal(deserialize(JSON.stringify(o)), null);
+});
+
+test('levar jovens acima de um sexto custa −2 de confiança por homem', () => {
+  const c = fresh_c('souto');   // 15 jovens: o sexto livre são 2
+  assert.equal(LEVY_TRUST, -2);
+  const t0 = c.trust;
+  levy(c, 2, 5); assert.equal(c.trust, t0, 'até um sexto não custa');
+  levy(c, 1, 6); assert.equal(c.trust, t0 - 2, 'o terceiro já custa 2');
+  levy(c, 2, 7); assert.equal(c.trust, t0 - 6, 'depois do sexto, cada um custa 2 (conta os que já lá estão)');
+  assert.equal(c.away, 5);
+});
+
+test('recrutar acima de um sexto regista o motivo «Levaste-nos os filhos»', () => {
+  const s = fresh(), c = visit(s, 'souto', { posture: 'comprometida', arms: 99 });   // um terço de 15 = 5; o sexto livre são 2
+  const t0 = c.trust; stepDay(s, order(s, 'souto'), rng());
+  assert.equal(c.away, 5); assert.equal(c.trust, t0 - 2 * 3);
+  const m = c.motives.at(-1);
+  assert.deepEqual([m.key, m.text, m.v, m.day], ['jovens-levados', 'Levaste-nos os filhos', -6, 0]);
+});
+
+test('cada baixa de um homem da aldeia custa −3 de confiança', () => {
+  assert.equal(DEATH_TRUST, -3);
+  const s = fresh(); s.men = 20; s.communities.souto.away = 10;
+  const t0 = s.communities.souto.trust;
+  spend(s, { men: 4 });   // 4 de 20: metade do bando é do Souto -> 2 mortos seus
+  assert.equal(s.communities.souto.away, 8);
+  assert.equal(s.communities.souto.trust, t0 - 6);
+  const m = s.communities.souto.motives.at(-1);
+  assert.deepEqual([m.key, m.v], ['baixas', -6]);
+  assert.equal(s.communities.vau.trust, newCampaign(3).communities.vau.trust, 'quem não perdeu ninguém não sente nada');
+});
+
+test('baixas de uma batalha custam confiança à aldeia de origem; a fome e o traidor não', () => {
+  const s = fresh(); s.men = 20; s.communities.souto.away = 10;
+  const t0 = s.communities.souto.trust;
+  const spec = { type: 'emboscada', allies: 20, realMen: 20, enemies: { legio: 6, velites: 2, centurion: false }, bonus: { allies: 0, enemies: 0 } };
+  applyResult(s, spec, { won: true, alliesLost: 8, enemiesKilled: 8, cartsCaptured: 0, cartsTotal: 0 });
+  assert.equal(s.communities.souto.trust, t0 - 12);   // 4 homens do Souto
+  const u = fresh(); u.men = 20; u.communities.souto.away = 10; u.food = 0;
+  const t1 = u.communities.souto.trust; stepDay(u, { kind: 'acampar' }, rng());
+  assert.ok(u.communities.souto.away < 10 || u.men < 20); assert.equal(u.communities.souto.trust, t1);
 });

@@ -2,8 +2,8 @@
 // Módulo puro (sem DOM nem Three.js).
 import { romansCampaign } from './clock.js';
 import { praetorStep } from './praetor.js';
-import { foodPerDay, recruitsFrom, checkRuin } from './state.js';
-import { communityAt, youth, loseMen, RECRUIT_SHARE } from './communities.js';
+import { foodPerDay, checkRuin } from './state.js';
+import { communityAt, recruitLimit, levy, loseMen } from './communities.js';
 import { updateIntel, SCOUTS, RECON_RANGE } from './intel.js';
 import { ensureDoctrine, tickDoctrine, moveHunter, spottedAmbush, escortBonus, nextSpawnGap, FIRST_SPAWN, FIRST_SPAWN_MIN, FIRST_NEAR } from './doctrine.js';
 import { makeRng } from './rng.js';
@@ -71,12 +71,11 @@ function applyOrder(state, order) {
       if (v?.burnt) return invalid('queimada', s.id);
       const c = communityAt(state, s.id);
       if (!c) return s.kind === 'aldeia' ? refuse({ type: 'recrutar-recusado', id: s.id, why: 'sem-comunidade' }) : invalid('desconhecido');
-      const share = RECRUIT_SHARE[c.posture] ?? 0, avail = youth(c);
-      if (share <= 0) return refuse({ type: 'recrutar-recusado', id: s.id, why: 'postura', posture: c.posture });
-      if (avail <= 0) return refuse({ type: 'recrutar-recusado', id: s.id, why: 'jovens' });
-      if (state.arms <= 0) return refuse({ type: 'sem-armas', id: s.id });   // não gasta a vez da aldeia
-      const n = Math.min(recruitsFrom(state.fame), state.arms, avail, Math.max(1, Math.ceil(avail * share)));
-      state.men += n; state.arms -= n; c.away += n;
+      const { limit: n, why } = recruitLimit(c, state.arms);   // postura, jovens e armas; a fama não conta (GDD v2)
+      if (why === 'sem-armas') return refuse({ type: 'sem-armas', id: s.id });   // não gasta a vez da aldeia
+      if (why) return refuse({ type: 'recrutar-recusado', id: s.id, why, ...(why === 'postura' ? { posture: c.posture } : {}) });
+      levy(c, n, state.day);   // os jovens saem da aldeia (e, acima de um sexto, custam confiança)
+      state.men += n; state.arms -= n;
       if (v) v.recruitedDay = state.day;   // só registo: já não há espera entre recrutamentos
       return { events: [{ type: 'recrutou', id: s.id, men: n }], encounter: null };
     }

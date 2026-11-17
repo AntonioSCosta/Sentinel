@@ -76,15 +76,22 @@ export const HYSTERESIS = 5;         // margem extra para mudar de degrau: a pos
 export const MOTIVE_MIN = 5;         // mudanças mais pequenas não criam motivo
 export const MAX_MOTIVES = 8;
 /**
- * Que parte dos jovens disponíveis (arredondada para cima, mínimo 1) uma comunidade deixa ir numa visita, por postura.
- * 0 = recusa. Afinar com `npm run balance`.
+ * O que cada postura deixa levar por visita (GDD v2, tabela «A postura»): `over: n` = até 1/n dos jovens disponíveis
+ * (arredondado para baixo); `volunteers: n` = só n voluntários, sem percentagem; sem regra = não dá homens.
+ * A fama NÃO entra: o GDD não a define como limite de recrutamento (só as armas, a postura e os jovens).
  */
-export const RECRUIT_SHARE = { comprometida: 0.5, amiga: 0.35, neutra: 0.15, receosa: 0, colabora: 0 };
+export const RECRUIT_RULE = { comprometida: { over: 3 }, amiga: { over: 4 }, neutra: { volunteers: 3 }, receosa: {}, colabora: {} };
+export const LEVY_FREE = 6;          // levar jovens acima de 1/6 dos que a aldeia tem em idade de combate custa confiança…
+export const LEVY_TRUST = -2;        // …−2 por homem acima desse sexto (motivo «Levaste-nos os filhos»)
+export const DEATH_TRUST = -3;       // −3 de confiança por cada homem da aldeia que morre em batalha («O filho de … não voltou»)
 export const START_FOOD = 0.6;       // reservas iniciais por família
 export const SITUATIONS = ['livre', 'tributada', 'castigada', 'ocupada', 'queimada', 'abandonada'];
 
 const clamp = v => Math.min(100, Math.max(0, v));
 const idx = id => POSTURES.findIndex(p => p.id === id);
+
+/** Ponto de observação para `npm run balance`: se `diag.loss` for um array, cada perda de homens é lá registada. */
+export const diag = { loss: null };
 
 /** confiança − medo */
 export const margin = c => c.trust - c.fear;
@@ -101,17 +108,43 @@ export function postureFor(m, prev = null) {
   return POSTURES[k].id;
 }
 
+/** Jovens em idade de combate que a aldeia tem (os que estão no bando incluídos). */
+export const youthCap = c => Math.floor(c.families * IDENTITY[c.id].youthRate);
+
 /** Jovens que a aldeia ainda pode dar (os que já estão no bando contam como dados). */
-export const youth = c => Math.max(0, Math.floor(c.families * IDENTITY[c.id].youthRate) - c.away);
+export const youth = c => Math.max(0, youthCap(c) - c.away);
 
 /**
- * Comida e armas que a aldeia produz numa estação. Cada homem que está no bando é uma mão a menos: a produção desce na
- * proporção `away / families` (os homens fora sobre as famílias que trabalham), até zero.
+ * Comida e armas que a aldeia produz numa estação. Os que partem fazem falta (GDD v2): a produção desce METADE da
+ * proporção de jovens que estão fora (`away / youthCap`), ou seja, com todos os jovens fora produz metade.
  */
 export function production(c, season) {
-  const o = OFFICES[IDENTITY[c.id].office];
-  const hands = c.families > 0 ? Math.max(0, 1 - c.away / c.families) : 0;
-  return { food: Math.round(c.families * (o.yield[season] ?? 0) * hands), arms: Math.round(o.arms * hands) };
+  const o = OFFICES[IDENTITY[c.id].office], cap = youthCap(c);
+  const hands = 1 - 0.5 * (cap > 0 ? Math.min(1, c.away / cap) : 0);
+  return { food: Math.round(c.families * (o.yield[season] ?? 0) * hands), arms: c.families > 0 ? Math.round(o.arms * hands) : 0 };
+}
+
+/**
+ * O que a aldeia deixa levar agora: { limit, byPosture, avail, arms, why }. `limit` é o mínimo da regra da postura
+ * (RECRUIT_RULE, sobre os jovens disponíveis), dos jovens e das armas. Se for 0, `why` diz porquê:
+ * 'postura' (não dá homens), 'jovens' (não sobram jovens para a regra) ou 'sem-armas'. A fama não conta.
+ */
+export function recruitLimit(c, arms) {
+  const avail = youth(c), r = RECRUIT_RULE[c.posture] ?? {};
+  const byPosture = r.volunteers != null ? Math.min(r.volunteers, avail) : r.over ? Math.floor(avail / r.over) : 0;
+  const limit = Math.max(0, Math.min(byPosture, avail, arms));
+  const why = limit > 0 ? null : (r.volunteers == null && !r.over) ? 'postura' : byPosture <= 0 ? 'jovens' : 'sem-armas';
+  return { limit, byPosture, avail, arms, why };
+}
+
+/**
+ * A aldeia dá `n` jovens ao bando: sobe `away` e custa confiança (−2 por homem acima de 1/6 dos jovens da aldeia, contando
+ * os que já lá estão). Não mexe em homens nem armas do bando (isso é de quem recruta). Devolve a mudança de postura ou null.
+ */
+export function levy(c, n, day) {
+  const free = Math.floor(youthCap(c) / LEVY_FREE), over = Math.max(0, c.away + n - Math.max(free, c.away));
+  c.away += n;
+  return over > 0 ? shift(c, { trust: LEVY_TRUST * over }, { key: 'jovens-levados', text: 'Levaste-nos os filhos' }, day) : null;
 }
 
 /** A comunidade que ocupa o lugar `settlementId` do mundo, se houver. */
@@ -133,8 +166,10 @@ export function bandOrigins(state) {
  * Tira `n` homens ao bando e atribui as baixas às origens em proporção ao que cada uma tem no bando (restos para quem
  * tem a maior fração; empate pela ordem do vale e `sem` por último): determinístico, sem sorteio.
  * Baixa `away` das comunidades e devolve só as parcelas não nulas, ex.: { souto: 2, sem: 5 }.
+ * Com `grieve` (mortes em batalha) cada aldeia perde DEATH_TRUST de confiança por homem seu que morreu; a fome e o
+ * traidor não contam: o GDD só prevê o luto pelos mortos em batalha.
  */
-export function loseMen(state, n) {
+export function loseMen(state, n, { grieve = false } = {}) {
   const w = bandOrigins(state), keys = Object.keys(w).filter(k => w[k] > 0);
   const total = keys.reduce((t, k) => t + w[k], 0);
   const k = Math.min(Math.max(0, Math.floor(Number.isFinite(n) ? n : 0)), total);
@@ -145,9 +180,13 @@ export function loseMen(state, n) {
   for (const p of part) {
     if (p.base <= 0) continue;
     out[p.key] = p.base;
-    if (p.key !== 'sem') state.communities[p.key].away -= p.base;
+    if (p.key === 'sem') continue;
+    const c = state.communities[p.key];
+    c.away -= p.base;
+    if (grieve) shift(c, { trust: DEATH_TRUST * p.base }, { key: 'baixas', text: 'O filho de uma família da aldeia não voltou' }, state.day ?? 0);
   }
   state.men = Math.max(0, state.men - k);
+  diag.loss?.push({ day: state.day ?? 0, out, grieve });
   return out;
 }
 

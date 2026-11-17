@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MARCH_SPEED, PATROL_SPEED, ENCOUNTER_RADIUS, nearRoad, stepDay } from '../src/campaign/simulation.js';
-import { newCampaign, foodPerDay, recruitsFrom } from '../src/campaign/state.js';
+import { newCampaign, foodPerDay } from '../src/campaign/state.js';
 import { makeRng } from '../src/campaign/rng.js';
 import { ensureDoctrine, sectorOf, FIRST_SPAWN, FIRST_SPAWN_MIN, COUNTERS } from '../src/campaign/doctrine.js';
 import { battleSpec, applyResult } from '../src/campaign/battles.js';
@@ -258,7 +258,7 @@ test('cooldown suprime encontros e desce 1 por dia', () => {
 test('recrutar numa aldeia', () => {
   const s = fresh(), v = souto(s);
   at(s, v); s.fame = 35; s.arms = 10;
-  const men = s.men, gain = recruitsFrom(35);
+  const men = s.men, gain = 3;   // amiga: até um quarto dos 15 jovens (a fama não conta)
   stepDay(s, { kind: 'recrutar', id: v.id }, rng());
   assert.equal(s.men, men + gain);
   assert.equal(s.arms, 10 - gain);
@@ -270,7 +270,7 @@ test('recrutar numa aldeia', () => {
 
 test('recrutar não excede as armas', () => {
   const s = fresh(), v = souto(s);
-  at(s, v); s.fame = 80; s.arms = 2;
+  at(s, v); s.arms = 2;
   const men = s.men;
   stepDay(s, { kind: 'recrutar', id: v.id }, rng());
   assert.equal(s.men, men + 2);

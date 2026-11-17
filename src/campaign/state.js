@@ -7,12 +7,9 @@ import { newCommunities, validCommunities, loseMen } from './communities.js';
 /** Tabela de equilíbrio, afinada na Task 18 com `npm run balance` (ver a spec, secção 9). */
 export const START = { men: 14, food: 60, arms: 15, fame: 20 };
 export const MEN_PER_FOOD = 12;
-export const FAME_PER_RECRUIT = 15;
 
 /** Comida gasta por dia: 1 por cada MEN_PER_FOOD homens (arredondado para cima), mínimo 1. */
 export const foodPerDay = men => Math.max(1, Math.ceil(men / MEN_PER_FOOD));
-/** Recrutas por visita a uma aldeia. */
-export const recruitsFrom = fame => Math.floor(fame / FAME_PER_RECRUIT) + 1;
 
 export function newCampaign(seed) {
   const world = generateWorld(seed);
@@ -22,9 +19,9 @@ export function newCampaign(seed) {
     villages, communities: newCommunities(world), praetor: null, patrols: [], done: [], over: null, cooldown: 0 };
 }
 
-/** Subtrai cada campo dado, saturando em 0. Os homens perdidos saem das aldeias de origem (communities.loseMen). */
+/** Subtrai cada campo dado, saturando em 0. Os homens perdidos (em batalha) saem das aldeias de origem, que choram os seus mortos (communities.loseMen). */
 export function spend(state, cost) {
-  if (cost.men !== undefined) loseMen(state, cost.men);
+  if (cost.men !== undefined) loseMen(state, cost.men, { grieve: true });
   for (const k of ['food', 'arms', 'fame']) if (cost[k] !== undefined) state[k] = Math.max(0, state[k] - cost[k]);
   return state;
 }
