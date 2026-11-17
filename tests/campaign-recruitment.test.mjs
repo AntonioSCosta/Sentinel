@@ -103,11 +103,41 @@ test('os jovens disponíveis são o teto: sem jovens recusa; com um, a neutra d�
   assert.equal(snap(s), before);
 });
 
-test('uma aldeia amiga com menos de 4 jovens não dá nenhum («até um quarto»)', () => {
+/** Uma comunidade com `avail` jovens disponíveis e a postura dada. */
+const withYouth = (id, posture, avail) => { const c = fresh_c(id); c.posture = posture; c.away = youthCap(c) - avail; return c; };
+
+test('mínimo de um recruta: comprometida com dois jovens disponíveis dá um', () => {
+  const c = withYouth('vau', 'comprometida', 2);
+  assert.equal(youth(c), 2);
+  assert.equal(recruitLimit(c, 99).limit, 1);   // floor(2 / 3) = 0, sobe para 1
+});
+
+test('mínimo de um recruta: amiga com três jovens disponíveis dá um', () => {
+  const c = withYouth('vau', 'amiga', 3);
+  assert.equal(youth(c), 3);
+  assert.equal(recruitLimit(c, 99).limit, 1);   // floor(3 / 4) = 0, sobe para 1
+});
+
+test('sem jovens disponíveis não dá nenhum, comprometida ou amiga', () => {
+  for (const p of ['comprometida', 'amiga']) {
+    const c = withYouth('vau', p, 0);
+    assert.equal(youth(c), 0);
+    const r = recruitLimit(c, 99);
+    assert.deepEqual([r.limit, r.why], [0, 'jovens'], p);
+  }
+});
+
+test('o mínimo de um não rompe o teto: com jovens a sério continua 1/3 e 1/4; a neutra, 3', () => {
+  for (const [p, avail, want] of [['comprometida', 3, 1], ['comprometida', 6, 2], ['comprometida', 28, 9], ['amiga', 4, 1], ['amiga', 8, 2], ['amiga', 28, 7], ['neutra', 1, 1], ['neutra', 28, 3]])
+    assert.equal(recruitLimit(withYouth('penedo', p, avail), 99).limit, want, `${p} com ${avail}`);
+  for (const p of ['receosa', 'colabora']) assert.equal(recruitLimit(withYouth('penedo', p, 28), 99).limit, 0, p);
+});
+
+test('uma aldeia pequena e leal recruta em jogo: um homem de uma amiga com três jovens', () => {
   const s = fresh(), c = visit(s, 'vau', { posture: 'amiga', arms: 99 });
   c.away = youthCap(c) - 3; s.men += c.away;
-  const before = snap(s), r = stepDay(s, order(s, 'vau'), rng());
-  assert.equal(r.refused, true); assert.equal(r.events[0].why, 'jovens'); assert.equal(snap(s), before);
+  const men = s.men; stepDay(s, order(s, 'vau'), rng());
+  assert.equal(s.men, men + 1); assert.equal(youth(c), 2);
 });
 
 test('as armas são o teto: uma arma, um homem; sem armas, recusa sem gastar a vez', () => {

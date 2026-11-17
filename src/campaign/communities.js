@@ -77,7 +77,7 @@ export const MOTIVE_MIN = 5;         // mudanças mais pequenas não criam motiv
 export const MAX_MOTIVES = 8;
 /**
  * O que cada postura deixa levar por visita (GDD v2, tabela «A postura»): `over: n` = até 1/n dos jovens disponíveis
- * (arredondado para baixo); `volunteers: n` = só n voluntários, sem percentagem; sem regra = não dá homens.
+ * (arredondado para baixo, mas nunca menos de 1 se houver algum: uma aldeia pequena e leal não fica inútil); `volunteers: n` = só n voluntários, sem percentagem; sem regra = não dá homens.
  * A fama NÃO entra: o GDD não a define como limite de recrutamento (só as armas, a postura e os jovens).
  */
 export const RECRUIT_RULE = { comprometida: { over: 3 }, amiga: { over: 4 }, neutra: { volunteers: 3 }, receosa: {}, colabora: {} };
@@ -131,7 +131,7 @@ export function production(c, season) {
  */
 export function recruitLimit(c, arms) {
   const avail = youth(c), r = RECRUIT_RULE[c.posture] ?? {};
-  const byPosture = r.volunteers != null ? Math.min(r.volunteers, avail) : r.over ? Math.floor(avail / r.over) : 0;
+  const byPosture = r.volunteers != null ? Math.min(r.volunteers, avail) : r.over ? (avail > 0 ? Math.max(1, Math.floor(avail / r.over)) : 0) : 0;
   const limit = Math.max(0, Math.min(byPosture, avail, arms));
   const why = limit > 0 ? null : (r.volunteers == null && !r.over) ? 'postura' : byPosture <= 0 ? 'jovens' : 'sem-armas';
   return { limit, byPosture, avail, arms, why };
