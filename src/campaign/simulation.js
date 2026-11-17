@@ -4,6 +4,7 @@ import { romansCampaign } from './clock.js';
 import { praetorStep } from './praetor.js';
 import { foodPerDay, checkRuin } from './state.js';
 import { communityAt, recruitLimit, levy, loseMen } from './communities.js';
+import { closeDay } from './harvest.js';
 import { updateIntel, SCOUTS, RECON_RANGE } from './intel.js';
 import { ensureDoctrine, tickDoctrine, moveHunter, spottedAmbush, escortBonus, nextSpawnGap, FIRST_SPAWN, FIRST_SPAWN_MIN, FIRST_NEAR } from './doctrine.js';
 import { makeRng } from './rng.js';
@@ -224,6 +225,7 @@ export function stepDay(state, order, rng) {
   feed(state, events);
   if (checkRuin(state)) events.push({ type: 'derrota' });
   state.day += 1;
+  events.push(...closeDay(state, state.day - 1));   // fim de estação: colheita; de setembro em diante, a fome das aldeias
   const blocked = state.cooldown > 0;
   if (blocked) state.cooldown -= 1;
   let encounter = res.encounter;

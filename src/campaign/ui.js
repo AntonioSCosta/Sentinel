@@ -126,6 +126,9 @@ export function eventText(ev, state, dayEvents = []) {
     case 'posto-atacado': return `${name(ev.id)}: este posto já foi atacado, e só se ataca uma vez. ${KEEP_DAY}`;
     case 'ajuda': return `${name(ev.id)} dá-te ${ev.food} de comida${ev.men ? ` e ${ev.men} homens` : ''}.`;
     case 'ajuda-recusada': return `${name(ev.id)}: ainda não podem dar mais ajuda${ev.days ? `; volta daqui a ${days(ev.days)}` : ''}. ${KEEP_DAY}`;
+    case 'colheita': return `Fim da ${ev.season}: a colheita enche as reservas do vale (+${ev.total}).`;
+    case 'aldeia-fome': return `${name(ev.id)}: as reservas não chegam ao inverno. Com fome, ${ev.to === ev.from ? `continua ${ev.to}` : `passa a ${ev.to}`}: quem lhe der de comer ganha-a.`;
+    case 'aldeia-fome-fim': return `${name(ev.id)}: já tem comida para o inverno e volta a sentir-se ${ev.to}.`;
     case 'fome': return `Fome no bando: morrem ${ev.mortos}.`;
     case 'derrota': return ev.lost !== undefined ? `Derrota: perdes ${ev.lost} homens.` : 'O bando está arruinado.';
     case 'vitoria': return `Vitória: perdes ${ev.lost}, ganhas ${ev.food} de comida, ${ev.arms} armas e ${ev.fame} de fama.`;

@@ -15,6 +15,11 @@
 //             recrutar (simulation.js); desce com as baixas, atribuídas à aldeia de origem (`loseMen`, usada por `spend`, a fome
 //             e os acontecimentos). Os homens do bando sem aldeia (o bando inicial, voluntários dos castros) contam como `sem`
 //             em `bandOrigins`. `youth` e `production` descontam-no.
+//   food      reservas da aldeia, na mesma unidade da comida do bando (número ≥ 0). Sobem com a colheita no fim de cada estação
+//             (harvest.js); descem por tributo, pedidos ao bando e castigos (PR 4 e 5). Os aldeões não gastam reservas por dia:
+//             a produção é já o que sobra. A reserva de inverno é uma unidade por família (`winterReserve`).
+//   hungry    (opcional) a aldeia passa fome: de setembro em diante, reservas abaixo da reserva de inverno. Soma −15 à margem
+//             (`margin`). Só harvest.js o põe e tira; ausente = false (gravações antigas).
 //   situation o que Roma lhe fez e dura enquanto durar o estado: um de SITUATIONS. 'livre' é o normal. Quem a muda é Roma
 //             (PR 4); a postura (confiança/medo) não a altera nem depende só dela.
 //   until     dia (número) em que a `situation` atual acaba por si; null se não tem fim marcado (ou está 'livre'). Só tem
@@ -93,8 +98,10 @@ const idx = id => POSTURES.findIndex(p => p.id === id);
 /** Ponto de observação para `npm run balance`: se `diag.loss` for um array, cada perda de homens é lá registada. */
 export const diag = { loss: null };
 
-/** confiança − medo */
-export const margin = c => c.trust - c.fear;
+export const HUNGER_MARGIN = 15;     // uma aldeia com fome soma −15 à margem (harvest.js): passa para o lado de quem lhe der de comer
+
+/** confiança − medo, e −HUNGER_MARGIN enquanto a aldeia passa fome (`hungry`, posto por harvest.js). */
+export const margin = c => c.trust - c.fear - (c.hungry ? HUNGER_MARGIN : 0);
 
 /** Postura de uma margem; com a postura anterior, só muda de degrau passada a histerese. */
 export function postureFor(m, prev = null) {
@@ -193,8 +200,14 @@ export function loseMen(state, n, { grieve = false } = {}) {
 /** Uma comunidade no seu estado inicial, ligada ao lugar `settlement` do mundo. */
 export function makeCommunity(id, settlement) {
   const I = IDENTITY[id];
-  return { id, settlement, families: I.families, away: 0, food: Math.round(I.families * START_FOOD),
+  return { id, settlement, families: I.families, away: 0, food: Math.round(I.families * START_FOOD), hungry: false,
     trust: I.trust, fear: I.fear, motives: [], situation: 'livre', until: null, due: null, posture: postureFor(I.trust - I.fear) };
+}
+
+/** Regista um motivo (os últimos MAX_MOTIVES ficam). */
+export function addMotive(c, key, text, v, day) {
+  c.motives.push({ key, text, v, day });
+  if (c.motives.length > MAX_MOTIVES) c.motives.splice(0, c.motives.length - MAX_MOTIVES);
 }
 
 /**
@@ -207,10 +220,7 @@ export function shift(c, { trust = 0, fear = 0 }, motive, day) {
   const t0 = c.trust, f0 = c.fear;
   c.trust = clamp(Math.round(c.trust + dT)); c.fear = clamp(Math.round(c.fear + dF));
   const v = (c.trust - t0) - (c.fear - f0);
-  if (Math.abs(v) >= MOTIVE_MIN) {
-    c.motives.push({ key: motive.key, text: motive.text, v, day });
-    if (c.motives.length > MAX_MOTIVES) c.motives.splice(0, c.motives.length - MAX_MOTIVES);
-  }
+  if (Math.abs(v) >= MOTIVE_MIN) addMotive(c, motive.key, motive.text, v, day);
   const from = c.posture, to = postureFor(margin(c), from);
   c.posture = to;
   return from === to ? null : { from, to };
@@ -281,7 +291,7 @@ export function validCommunities(o, world) {
     return int0(c.families) && int0(c.away) && c.away <= c.families && num(c.food) && c.food >= 0
       && num(c.trust) && c.trust >= 0 && c.trust <= 100 && num(c.fear) && c.fear >= 0 && c.fear <= 100
       && Array.isArray(c.motives) && c.motives.length <= MAX_MOTIVES && c.motives.every(validMotive)
-      && SITUATIONS.includes(c.situation) && (c.until === null || num(c.until))
+      && (c.hungry === undefined || typeof c.hungry === 'boolean') && SITUATIONS.includes(c.situation) && (c.until === null || num(c.until))
       && (c.due === null || (isObj(c.due) && num(c.due.food) && c.due.food >= 0 && num(c.due.day)))
       && idx(c.posture) >= 0;
   });
