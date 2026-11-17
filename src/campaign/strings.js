@@ -53,6 +53,9 @@ export function communityLine(c) {
   return POSTURE_HINT[c.posture] ?? '';
 }
 
+/** Cartela do mapa. */
+export const MAP_TITLE = 'Montes Hermínios', MAP_SUBTITLE = 'Lusitânia, 147 a.C.';
+
 export const daysText = n => `${n} ${n === 1 ? 'dia' : 'dias'}`;
 
 /** Textos dos assuntos (issues.js). */

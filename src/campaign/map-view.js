@@ -1,7 +1,9 @@
 // Vista do mapa estratégico: enquadramento, conversão de coordenadas, seleção e desenho.
 // Módulo puro: sem DOM nem Three.js; o desenho só usa a API mínima de um contexto Canvas 2D.
-import { dateLabel, season } from './clock.js';
 import { intelView } from './intel.js';   // as forças romanas vêm sempre daqui (o que o jogador sabe), nunca do estado real
+import { COMMUNITY_IDS } from './communities.js';
+import { placeName, MAP_TITLE, MAP_SUBTITLE } from './strings.js';
+import { SECTORS } from './doctrine.js';
 
 const MARGIN = 12;
 const TAU = Math.PI * 2;
@@ -31,7 +33,8 @@ export function hitTest(view, state, sx, sy, r = 14) {
     const q = toScreen(view, p), d = Math.hypot(q.x - sx, q.y - sy);
     if (d <= rad && d < bestD) { bestD = d; best = hit; }
   };
-  for (const s of view.world.settlements) consider(s, { type: 'settlement', id: s.id }, r + (s.kind === 'serra' ? 4 : 8));
+  const valley = valleyIds(state);
+  for (const s of view.world.settlements) consider(s, { type: 'settlement', id: s.id }, r + (valley.has(s.id) ? 16 : s.kind === 'serra' ? 4 : 8));
   for (const f of intelView(state).forces) consider(f, { type: f.kind === 'pretor' ? 'praetor' : 'patrol', id: f.id }, f.kind === 'pretor' ? r + 3 : r);
   return best;
 }
@@ -207,6 +210,188 @@ function icon(ctx, kind, x, y, burnt) {
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(x - 10, y + 8); ctx.lineTo(x + 10, y - 8); ctx.stroke();
   }
+}
+
+// --- o vale (PR 5): as cinco comunidades, as suas bandeiras e o que Roma lhes fez ---
+// Cada comunidade tem a figura do seu ofício (IDENTITY.office) por cima do símbolo do tipo de lugar: a forma diz quem é,
+// a bandeira diz a postura (forma E cor), a marca à esquerda diz a situação romana. Só caminhos, arcos e texto: o
+// contexto falso dos testes não tem translate nem curvas.
+
+/** Tamanho das figuras das comunidades em relação às outras povoações. */
+export const COMMUNITY_SCALE = 1.35;
+/**
+ * Desenha `fn(x, y)` à escala `k` à volta de (x, y). Num canvas a sério usa translate/scale; num contexto sem eles (os
+ * testes) desenha à escala 1, com as mesmas chamadas de caminho.
+ */
+function scaled(ctx, x, y, k, fn) {
+  if (typeof ctx.translate !== 'function' || typeof ctx.scale !== 'function') { fn(x, y); return; }
+  ctx.save(); ctx.translate(x, y); ctx.scale(k, k); fn(0, 0); ctx.restore();
+}
+
+/** Hachuras de monte à volta de uma serra, à maneira dos mapas antigos. */
+function drawHachures(ctx, x, y) {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(90,70,40,.32)'; ctx.lineWidth = 1;
+  for (let k = 0; k < 14; k++) {
+    const a = Math.PI * (1.05 + k / 13 * 0.9) , r0 = 17, r1 = 23 + (k % 2) * 3;
+    path(ctx, [[x + Math.cos(a) * r0, y + 4 - Math.sin(a) * r0 * 0.55], [x + Math.cos(a) * r1, y + 4 - Math.sin(a) * r1 * 0.55]]); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** Rosa-dos-ventos pequena, num canto. */
+function drawCompass(ctx, x, y) {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(47,34,19,.6)'; ctx.fillStyle = 'rgba(47,34,19,.55)'; ctx.lineWidth = 1;
+  path(ctx, [[x, y - 16], [x + 3.5, y - 3.5], [x, y], [x - 3.5, y - 3.5]], true); ctx.fill(); ctx.stroke();
+  path(ctx, [[x, y + 16], [x + 3.5, y + 3.5], [x, y], [x - 3.5, y + 3.5]], true); ctx.stroke();
+  path(ctx, [[x - 16, y], [x - 3.5, y - 3.5], [x, y], [x - 3.5, y + 3.5]], true); ctx.stroke();
+  path(ctx, [[x + 16, y], [x + 3.5, y - 3.5], [x, y], [x + 3.5, y + 3.5]], true); ctx.stroke();
+  ctx.font = 'bold 10px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('N', x, y - 19);
+  ctx.restore();
+}
+
+/** Lugares (ids do mundo) das comunidades do vale. */
+export const valleyIds = state => new Set(COMMUNITY_IDS.map(id => state.communities?.[id]?.settlement).filter(Boolean));
+const communityAtPlace = (state, sid) => COMMUNITY_IDS.map(id => state.communities?.[id]).find(c => c && c.settlement === sid) ?? null;
+
+/** Bandeira de postura num mastro à direita da figura. Formas diferentes para não depender só da cor. */
+export const POSTURE_FLAG = {
+  comprometida: { color: '#d9a62a', shape: 'rabo' },      // flâmula de duas pontas, dourada
+  amiga: { color: '#4f7a3a', shape: 'flamula' },          // flâmula triangular, verde
+  neutra: { color: '#b6ab92', shape: 'quadrado' },        // pano quadrado, pardo
+  receosa: { color: '#7d8796', shape: 'meia-haste' },     // flâmula a meia haste, cinzenta
+  colabora: { color: ROMAN, shape: 'romano' },            // pano romano com franja, vermelho
+};
+function drawFlag(ctx, x, y, posture) {
+  const f = POSTURE_FLAG[posture];
+  if (!f) return;
+  const px = x + 15, top = y - 17;
+  ctx.save();
+  ctx.lineWidth = 1.4; ctx.strokeStyle = INK;
+  path(ctx, [[px, y + 7], [px, top]]); ctx.stroke();
+  ctx.fillStyle = f.color; ctx.lineWidth = 1;
+  if (f.shape === 'rabo') path(ctx, [[px, top], [px + 11, top + 1], [px + 7, top + 4], [px + 11, top + 7], [px, top + 8]], true);
+  else if (f.shape === 'flamula') path(ctx, [[px, top], [px + 11, top + 4], [px, top + 8]], true);
+  else if (f.shape === 'quadrado') path(ctx, [[px, top], [px + 9, top], [px + 9, top + 7], [px, top + 7]], true);
+  else if (f.shape === 'meia-haste') path(ctx, [[px, top + 8], [px + 8, top + 12], [px, top + 15]], true);
+  else path(ctx, [[px, top + 1], [px + 9, top + 1], [px + 9, top + 9], [px, top + 9]], true);
+  ctx.fill(); ctx.stroke();
+  if (f.shape === 'romano') { ctx.strokeStyle = GOLD; path(ctx, [[px, top + 8], [px + 9, top + 8]]); ctx.stroke(); }
+  ctx.restore();
+}
+
+/** Marca da situação romana, num disco de pergaminho à esquerda e por baixo da figura. */
+function drawSituation(ctx, x, y, situation) {
+  if (!situation || situation === 'livre') return;
+  const cx = x - 16, cy = y + 9;
+  ctx.save();
+  ctx.lineWidth = 1.2;
+  ctx.fillStyle = '#f1e6c4'; ctx.strokeStyle = ROMAN_DARK;
+  ctx.beginPath(); ctx.arc(cx, cy, 6.6, 0, TAU); ctx.fill(); ctx.stroke();
+  if (situation === 'tributada') {   // denário: moeda com o rebordo
+    ctx.fillStyle = GOLD; ctx.strokeStyle = GOLD_DARK;
+    ctx.beginPath(); ctx.arc(cx, cy, 4, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, 2, 0, TAU); ctx.stroke();
+  } else if (situation === 'castigada') {   // varas cruzadas
+    ctx.strokeStyle = ROMAN; ctx.lineWidth = 1.8;
+    path(ctx, [[cx - 3.6, cy - 3.6], [cx + 3.6, cy + 3.6]]); ctx.stroke();
+    path(ctx, [[cx + 3.6, cy - 3.6], [cx - 3.6, cy + 3.6]]); ctx.stroke();
+  } else if (situation === 'ocupada') {   // estandarte romano
+    ctx.strokeStyle = ROMAN_DARK; path(ctx, [[cx, cy + 4.5], [cx, cy - 4.5]]); ctx.stroke();
+    ctx.fillStyle = ROMAN; path(ctx, [[cx - 3, cy - 4], [cx + 3, cy - 4], [cx + 3, cy + 0.5], [cx - 3, cy + 0.5]], true); ctx.fill(); ctx.stroke();
+  } else if (situation === 'queimada') {   // chama
+    ctx.fillStyle = '#d0601e'; ctx.strokeStyle = '#5a1e08';
+    path(ctx, [[cx, cy - 5], [cx + 3.4, cy + 1], [cx + 1.6, cy + 4], [cx - 1.6, cy + 4], [cx - 3.4, cy + 1]], true); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = GOLD; path(ctx, [[cx, cy - 1], [cx + 1.4, cy + 2.6], [cx - 1.4, cy + 2.6]], true); ctx.fill();
+  } else {   // abandonada: círculo vazio cortado
+    ctx.strokeStyle = INK; ctx.beginPath(); ctx.arc(cx, cy, 3.6, 0, TAU); ctx.stroke();
+    path(ctx, [[cx - 4, cy + 4], [cx + 4, cy - 4]]); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** Assunto pendente: «!» num balão por cima da figura (cheio = decisão; contorno = acontecimento a ver). */
+function drawIssueMark(ctx, x, y, kind) {
+  const cy = y - 22;
+  ctx.save();
+  ctx.lineWidth = 1.4;
+  ctx.fillStyle = kind === 'decisao' ? ROMAN : '#f1e6c4'; ctx.strokeStyle = ROMAN_DARK;
+  path(ctx, [[x - 6, cy - 6], [x + 6, cy - 6], [x + 6, cy + 4], [x + 2, cy + 4], [x, cy + 7.5], [x - 2, cy + 4], [x - 6, cy + 4]], true);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = kind === 'decisao' ? '#fff3d6' : ROMAN_DARK;
+  ctx.font = 'bold 10px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('!', x, cy - 0.6);
+  ctx.restore();
+}
+
+/** O ofício de cada comunidade, por cima da figura do lugar (aldeia ou castro). */
+function drawOffice(ctx, id, x, y, dead) {
+  ctx.save();
+  ctx.lineWidth = 1.1; ctx.strokeStyle = dead ? INK_DARK : INK;
+  if (id === 'ribeira') {   // lavradores: leiras e um molho de trigo
+    ctx.strokeStyle = dead ? '#4a3f30' : '#8b6b2e';
+    for (let i = 0; i < 4; i++) { path(ctx, [[x - 22 + i * 3, y + 11], [x - 15 + i * 3, y + 3]]); ctx.stroke(); }
+    ctx.strokeStyle = dead ? INK_DARK : '#a87e22';
+    path(ctx, [[x - 10, y + 10], [x - 12, y + 3]]); ctx.stroke(); path(ctx, [[x - 10, y + 10], [x - 10, y + 2]]); ctx.stroke(); path(ctx, [[x - 10, y + 10], [x - 8, y + 3]]); ctx.stroke();
+  } else if (id === 'penedo') {   // castro em altura: monte e segunda muralha
+    ctx.fillStyle = dead ? '#3a332c' : '#b39668';
+    path(ctx, [[x - 19, y + 12], [x - 9, y - 1], [x + 9, y - 1], [x + 19, y + 12]], true); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = dead ? INK_DARK : '#5b4a33';
+    path(ctx, [[x - 15, y + 7], [x + 15, y + 7]]); ctx.stroke();
+  } else if (id === 'souto') {   // serra: dois castanheiros
+    for (const [ox, r] of [[-15, 4.6], [-10, 3.6]]) {
+      ctx.strokeStyle = dead ? INK_DARK : '#4a2f18'; path(ctx, [[x + ox, y + 9], [x + ox, y + 2]]); ctx.stroke();
+      ctx.fillStyle = dead ? '#3a332c' : '#4c6b2c'; ctx.strokeStyle = dead ? INK_DARK : '#25381a';
+      ctx.beginPath(); ctx.arc(x + ox, y - 1, r, 0, TAU); ctx.fill(); ctx.stroke();
+    }
+  } else if (id === 'vau') {   // vau: água corrente por baixo e um barco
+    ctx.strokeStyle = dead ? '#4a463f' : '#3f6d8c'; ctx.lineWidth = 1.3;
+    for (const oy of [12, 15]) { path(ctx, [[x - 18, y + oy], [x - 12, y + oy - 2], [x - 6, y + oy], [x, y + oy - 2], [x + 6, y + oy], [x + 12, y + oy - 2]]); ctx.stroke(); }
+    ctx.fillStyle = dead ? '#3a332c' : '#7a5530'; ctx.strokeStyle = INK; ctx.lineWidth = 1;
+    path(ctx, [[x - 21, y + 6], [x - 11, y + 6], [x - 13, y + 9], [x - 19, y + 9]], true); ctx.fill(); ctx.stroke();
+  } else if (id === 'fonte') {   // ferreiros: bigorna e faúlha
+    ctx.fillStyle = dead ? '#3a332c' : '#4a4640';
+    path(ctx, [[x - 21, y + 4], [x - 9, y + 4], [x - 11, y + 7], [x - 13, y + 7], [x - 13, y + 10], [x - 17, y + 10], [x - 17, y + 7], [x - 21, y + 6]], true); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = dead ? INK_DARK : '#e07a1e'; path(ctx, [[x - 15, y + 2], [x - 17, y - 2]]); ctx.stroke(); path(ctx, [[x - 13, y + 2], [x - 12, y - 3]]); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** O vale: a mancha de terra das cinco comunidades (o casco delas, alargado), por baixo de tudo. */
+function drawValley(ctx, view, state) {
+  const pts = [...valleyIds(state)].map(id => view.world.settlements.find(s => s.id === id)).filter(Boolean).map(s => toScreen(view, s));
+  if (pts.length < 2) return;
+  const hull = convexHull(pts), r = Math.max(18, 60 * view.scale);
+  ctx.save();
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.strokeStyle = '#c6b584'; ctx.lineWidth = 2 * r + 3;   // borda
+  path(ctx, hull.map(q => [q.x, q.y]), true); ctx.stroke();
+  ctx.strokeStyle = '#dcd6a6'; ctx.fillStyle = '#dcd6a6'; ctx.lineWidth = 2 * r;   // chão do vale
+  path(ctx, hull.map(q => [q.x, q.y]), true); ctx.stroke(); ctx.fill();
+  ctx.restore();
+}
+function convexHull(pts) {
+  const p = [...pts].sort((a, b) => a.x - b.x || a.y - b.y);
+  if (p.length < 3) return p;
+  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lo = [], up = [];
+  for (const q of p) { while (lo.length >= 2 && cross(lo.at(-2), lo.at(-1), q) <= 0) lo.pop(); lo.push(q); }
+  for (const q of [...p].reverse()) { while (up.length >= 2 && cross(up.at(-2), up.at(-1), q) <= 0) up.pop(); up.push(q); }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
+
+/** Troço da estrada guarnecido por Roma (doctrine.garrison), anunciado ao jogador por um relato. */
+function drawGarrison(ctx, view, state) {
+  const g = state.doctrine?.active?.guarnicao ? state.doctrine.garrison : null, road = view.world.road;
+  if (g === null || g === undefined || !road || road.length < 2) return;
+  const seg = road.map((p, i) => ({ p, s: Math.min(SECTORS - 1, Math.floor(i * SECTORS / road.length)) })).filter(o => o.s === g).map(o => toScreen(view, o.p));
+  if (seg.length < 2) return;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(160,33,26,.55)'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+  path(ctx, seg.map(q => [q.x, q.y])); ctx.stroke();
+  ctx.restore();
 }
 
 function drawPatrol(ctx, p, q) {
@@ -449,9 +634,11 @@ const ZONE_NAMES = { patrulha: 'patrulha', comboio: 'comboio', cacadores: 'caça
 /** Caixas que uma etiqueta não pode cobrir: ícones, unidades, placas e a data. */
 function labelObstacles(view, state) {
   const obs = [];
+  const valley = valleyIds(state);
   for (const s of view.world.settlements) {
     const q = toScreen(view, s);
-    obs.push({ x: q.x - 14, y: q.y - 12, w: 28, h: 22 });
+    if (valley.has(s.id)) obs.push({ x: q.x - 32, y: q.y - 38, w: 68, h: 60 });   // figura, ofício, bandeira, marca e «!» (à escala COMMUNITY_SCALE)
+    else obs.push({ x: q.x - 14, y: q.y - 12, w: 28, h: 22 });
   }
   const intel = intelView(state), place = noteLayer();
   for (const z of intel.zones) { const q = toScreen(view, z); obs.push({ x: q.x - 46, y: q.y - (z.place ? 34 : 16), w: 92, h: z.place ? 52 : 34 }); }   // «?» e a nota do relato
@@ -466,7 +653,8 @@ function labelObstacles(view, state) {
   const pq = toScreen(view, state.party);
   obs.push({ x: pq.x - 9, y: pq.y - 16, w: 18, h: 26 });           // Viriato
   obs.push({ x: pq.x - 26, y: pq.y - 32, w: 52, h: 14 });          // placa «Viriato»
-  obs.push({ x: 6, y: 4, w: 80, h: 32 });                          // data e estação
+  obs.push({ x: 6, y: 4, w: 150, h: 34 });                         // cartela do mapa
+  if (view.width > 260 && view.height > 200) obs.push({ x: view.width - 52, y: view.height - 66, w: 44, h: 52 });   // rosa-dos-ventos
   return obs;
 }
 
@@ -477,11 +665,13 @@ function labelObstacles(view, state) {
  */
 export function layoutMapLabels(view, state, measure = null) {
   const bounds = { w: view.width, h: view.height };
+  const valley = valleyIds(state);
   const items = view.world.settlements.map(s => {
-    const q = toScreen(view, s);
-    const measured = measure ? measure(s.name) : fallbackWidth(s.name);
-    return { id: s.id, name: s.name, ax: q.x, ay: q.y,
-      w: Math.ceil(Number.isFinite(measured) && measured > 0 ? measured : fallbackWidth(s.name)), h: LABEL_H,
+    const q = toScreen(view, s), name = placeName(state, s.id) ?? s.name, inValley = valley.has(s.id);
+    const measured = measure ? measure(name) : fallbackWidth(name);
+    // as comunidades escrevem-se a negrito: reserva-se 10% a mais do que a medida do texto normal
+    return { id: s.id, name, valley: inValley, ax: q.x, ay: q.y,
+      w: Math.ceil((Number.isFinite(measured) && measured > 0 ? measured : fallbackWidth(name)) * (inValley ? 1.1 : 1)), h: LABEL_H,
       burnt: !!(state.villages && state.villages[s.id] && state.villages[s.id].burnt) || !!state.posts?.[s.id]?.taken };
   });
   const rects = labelObstacles(view, state);
@@ -534,7 +724,8 @@ export function layoutMapLabels(view, state, measure = null) {
 
 /**
  * Desenha o mapa completo.
- * `fx` (opcional) anima o desenho sem mexer no estado: { party, facing, step, hover, trail, selected, reach }.
+ * `fx` (opcional) anima o desenho sem mexer no estado: { party, facing, step, hover, trail, selected, reach, focus, recon,
+ * issues: { <lugar>: 'decisao' | 'atencao' }, flash: { <lugar>: 0..1 } (destaque que se apaga), route: { to, label } }.
  */
 export function drawMap(ctx, view, state, fx = {}) {
   const { world } = view;
@@ -547,6 +738,8 @@ export function drawMap(ctx, view, state, fx = {}) {
   ctx.fillStyle = PAPER;
   ctx.fillRect(0, 0, view.width, view.height);
   ctx.restore();
+
+  drawValley(ctx, view, state);
 
   // estrada romana: leito largo e eixo tracejado
   if (world.road && world.road.length > 1) {
@@ -566,6 +759,7 @@ export function drawMap(ctx, view, state, fx = {}) {
     ctx.setLineDash([]);
     ctx.restore();
   }
+  drawGarrison(ctx, view, state);
 
   // rasto das últimas marchas
   if (trail.length > 1) {
@@ -600,27 +794,63 @@ export function drawMap(ctx, view, state, fx = {}) {
     ctx.restore();
   }
 
+  // rota prevista: do bando ao destino, com os dias e a comida
+  if (fx.route?.to && Number.isFinite(fx.route.to.x) && Number.isFinite(fx.route.to.y)) {
+    const rq = toScreen(view, fx.route.to);
+    ctx.save();
+    ctx.strokeStyle = GOLD_DARK; ctx.lineWidth = 2;
+    ctx.setLineDash([7, 5]);
+    ctx.beginPath(); ctx.moveTo(pq.x, pq.y); ctx.lineTo(rq.x, rq.y); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(rq.x, rq.y, 6, 0, TAU); ctx.stroke();
+    ctx.beginPath(); ctx.arc(rq.x, rq.y, 2, 0, TAU); ctx.stroke();
+    ctx.restore();
+  }
+
   // etiquetas: dispõem-se antes do desenho para fugirem aos ícones, às unidades e às placas
   ctx.save();
   ctx.font = LABEL_FONT;
   const { placed: labels } = layoutMapLabels(view, state, text => labelWidth(ctx, text));
   ctx.restore();
 
-  // povoações
+  // povoações: as de fora do vale esbatidas, as cinco comunidades com figura, bandeira e marcas
+  const valley = valleyIds(state);
   for (const s of world.settlements) {
-    const q = toScreen(view, s);
+    const q = toScreen(view, s), c = valley.has(s.id) ? communityAtPlace(state, s.id) : null;
     const burnt = !!(state.villages && state.villages[s.id] && state.villages[s.id].burnt) || !!state.posts?.[s.id]?.taken;
     const isSel = fx.selected === s.id, isHover = !!hover && hover.id === s.id;
     if (isSel || isHover) {
       ctx.save();
       ctx.strokeStyle = isSel ? GOLD : 'rgba(240,180,50,.6)';
-      ctx.lineWidth = isSel ? 2 : 1.4;
-      ctx.beginPath(); ctx.arc(q.x, q.y + 2, 17, 0, TAU); ctx.stroke();
+      ctx.lineWidth = isSel ? 2.4 : 1.4;
+      ctx.beginPath(); ctx.arc(q.x, q.y + 2, c ? 34 : 17, 0, TAU); ctx.stroke();
       ctx.restore();
     }
+    if (c && c.situation === 'ocupada') {   // a guarnição cerca a aldeia
+      ctx.save(); ctx.strokeStyle = 'rgba(160,33,26,.75)'; ctx.lineWidth = 2; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.arc(q.x, q.y + 2, 30, 0, TAU); ctx.stroke(); ctx.setLineDash([]); ctx.restore();
+    }
     ctx.save();
-    icon(ctx, s.kind, q.x, q.y, burnt);
+    const faded = !c && (s.kind === 'aldeia' || s.kind === 'castro');
+    if (faded) ctx.globalAlpha = 0.5;   // fora do vale: existe, mas não compete com as cinco
+    const dead = !!c && (c.situation === 'queimada' || c.situation === 'abandonada');
+    if (s.kind === 'serra') drawHachures(ctx, q.x, q.y);
+    if (c) scaled(ctx, q.x, q.y, COMMUNITY_SCALE, (x, y) => { drawOffice(ctx, c.id, x, y, burnt || dead); icon(ctx, s.kind, x, y, burnt); });
+    else icon(ctx, s.kind, q.x, q.y, burnt);
+    ctx.globalAlpha = 1;
     ctx.restore();
+    if (!c) continue;
+    const issue = fx.issues?.[s.id];
+    scaled(ctx, q.x, q.y, COMMUNITY_SCALE, (x, y) => {
+      if (!dead) drawFlag(ctx, x, y, c.posture);
+      drawSituation(ctx, x, y, c.situation);
+      if (issue) drawIssueMark(ctx, x, y, issue);
+    });
+    const fl = fx.flash?.[s.id];
+    if (Number.isFinite(fl) && fl > 0) {   // destaque breve de uma mudança (postura, castigo)
+      ctx.save(); ctx.strokeStyle = GOLD; ctx.globalAlpha = Math.min(1, fl); ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(q.x, q.y + 2, 34 + (1 - fl) * 16, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1; ctx.restore();
+    }
   }
 
   // o que o jogador sabe dos romanos (intel.js): relatos como zonas, avistamentos como figuras
@@ -683,8 +913,8 @@ export function drawMap(ctx, view, state, fx = {}) {
     ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(bx, by); ctx.stroke();
   }
   for (const l of labels) {
-    ctx.fillStyle = l.burnt ? '#5a4a3a' : INK;
-    ctx.font = LABEL_FONT;
+    ctx.fillStyle = l.burnt ? '#5a4a3a' : l.valley ? INK_DARK : '#6e5f48';
+    ctx.font = l.valley ? `bold ${LABEL_FONT}` : `italic ${LABEL_FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     ctx.fillText(l.name, l.x, l.baseline);
@@ -742,13 +972,27 @@ export function drawMap(ctx, view, state, fx = {}) {
     ctx.restore();
   }
 
-  // data e estação
+  // legenda da rota prevista
+  if (fx.route?.to && fx.route.label && Number.isFinite(fx.route.to.x)) {
+    const rq = toScreen(view, fx.route.to), w = Math.max(42, fx.route.label.length * 5.9 + 10), ly = Math.min(view.height - 4, rq.y + 22);
+    ctx.save();
+    ctx.fillStyle = 'rgba(227,211,168,.92)'; ctx.fillRect(rq.x - w / 2, ly - 11, w, 15);
+    ctx.fillStyle = GOLD_DARK; ctx.font = 'bold 11px serif'; ctx.textAlign = 'center';
+    ctx.fillText(fx.route.label, rq.x, ly);
+    ctx.restore();
+  }
+
+  if (view.width > 260 && view.height > 200) drawCompass(ctx, view.width - 30, view.height - 34);
+
+  // cartela: o nome da terra e o ano (a data do dia está na barra de cima)
   ctx.save();
   ctx.fillStyle = INK;
-  ctx.font = '11px serif';
+  ctx.font = 'italic 13px serif';
   ctx.textAlign = 'left';
-  ctx.fillText(dateLabel(state.day), 10, 18);
-  ctx.fillText(season(state.day), 10, 32);
+  ctx.fillText(MAP_TITLE, 12, 20);
+  ctx.font = '11px serif';
+  ctx.fillStyle = '#6e5f48';
+  ctx.fillText(MAP_SUBTITLE, 12, 34);
   ctx.restore();
 
   ctx.setLineDash([]);   // invariante: o último dash é sempre vazio

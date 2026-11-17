@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeView, toScreen, toWorld, hitTest, drawMap, layoutMapLabels } from '../src/campaign/map-view.js';
 import { newCampaign } from '../src/campaign/state.js';
-import { dateLabel } from '../src/campaign/clock.js';
+import { placeName, MAP_TITLE } from '../src/campaign/strings.js';
 
 /** Põe à vista do jogador as forças do estado (como se o bando as visse hoje): a vista só desenha o que ele sabe. */
 function sighted(s) {
@@ -69,14 +69,14 @@ test('hitTest finds settlement, patrol, praetor; nearest wins; null outside', ()
   assert.equal(hitTest(v, s, far.x, far.y), null);
 });
 
-test('drawMap writes names and date, balances save/restore, resets dash', () => {
+test('drawMap writes names (as comunidades com o seu nome) and the map title, balances save/restore, resets dash', () => {
   const s = newCampaign(3);
   s.day = 40;
   const v = makeView(s.world, 800, 600), c = fakeCtx();
   drawMap(c, v, s);
   const texts = c.calls.filter(x => x[0] === 'fillText').map(x => x[1]);
-  for (const st of s.world.settlements) assert.ok(texts.includes(st.name), st.name);
-  assert.ok(texts.includes(dateLabel(40)));
+  for (const st of s.world.settlements) assert.ok(texts.includes(placeName(s, st.id)), st.name);
+  assert.ok(texts.includes(MAP_TITLE), 'a data saiu do mapa: está na barra de cima');
   assert.ok(texts.includes('Viriato'));
   assert.ok(count(c, 'save') > 0);
   assert.equal(count(c, 'save'), count(c, 'restore'));
@@ -167,7 +167,7 @@ test('layoutMapLabels: nomes reais ficam no canvas, não se sobrepõem e evitam 
       // todos os nomes, inteiros e uma só vez
       assert.equal(placed.length, s.world.settlements.length, tag);
       assert.deepEqual(placed.map(p => p.id).sort(), s.world.settlements.map(x => x.id).sort(), tag);
-      for (const p of placed) assert.ok(s.world.settlements.some(x => x.id === p.id && x.name === p.name), tag);
+      for (const p of placed) assert.ok(s.world.settlements.some(x => x.id === p.id && placeName(s, x.id) === p.name), tag);   // as comunidades com o seu nome (PR 5)
       // nenhum nome sai do canvas
       for (const p of placed) {
         const r = rectOf(p);
@@ -249,5 +249,43 @@ test('grelha de último recurso: ecrãs de proporção extrema ficam sem sobrepo
         assert.ok(!boxesHit(rectOf(placed[i]), rectOf(placed[j])), `${tag}: ${placed[i].name} <> ${placed[j].name}`);
       assert.equal(placed.filter(p => p.fallback).length, 0, `${tag}: houve recurso ao último sítio`);
     }
+  }
+});
+
+// --- PR 5: o vale ---
+import { POSTURE_FLAG, valleyIds } from '../src/campaign/map-view.js';
+import { COMMUNITY_IDS } from '../src/campaign/communities.js';
+
+test('vale: cada postura tem uma bandeira de forma e cor próprias (não só a cor)', () => {
+  const shapes = Object.values(POSTURE_FLAG).map(f => f.shape), colors = Object.values(POSTURE_FLAG).map(f => f.color);
+  assert.deepEqual(Object.keys(POSTURE_FLAG), ['comprometida', 'amiga', 'neutra', 'receosa', 'colabora']);
+  assert.equal(new Set(shapes).size, 5); assert.equal(new Set(colors).size, 5);
+});
+
+test('vale: desenha todas as posturas e situações sem rebentar, com o «!» dos assuntos e o destaque', () => {
+  const s = newCampaign(3), v = makeView(s.world, 900, 600);
+  const postures = Object.keys(POSTURE_FLAG), sits = ['livre', 'tributada', 'castigada', 'ocupada', 'queimada', 'abandonada'];
+  for (let i = 0; i < sits.length; i++) {
+    COMMUNITY_IDS.forEach((id, k) => { s.communities[id].posture = postures[(i + k) % 5]; s.communities[id].situation = sits[(i + k) % sits.length]; });
+    const issues = { [s.communities.souto.settlement]: 'decisao', [s.communities.vau.settlement]: 'atencao' };
+    const c = fakeCtx();
+    assert.doesNotThrow(() => drawMap(c, v, s, { issues, flash: { [s.communities.ribeira.settlement]: 0.5 }, route: { to: { x: 500, y: 300 }, label: '2 dias' } }));
+    assert.equal(count(c, 'save'), count(c, 'restore'));
+    assert.equal(c.calls.filter(x => x[0] === 'fillText' && x[1] === '!').length, 2);
+    assert.ok(c.calls.some(x => x[0] === 'fillText' && x[1] === '2 dias'));
+  }
+});
+
+test('vale: a figura de cada comunidade está no seu lugar funcional (o clique nela seleciona esse lugar)', () => {
+  for (const seed of [1, 3, 42]) {
+    const s = newCampaign(seed);
+    for (const [w, h] of [[1066, 664], [980, 696], [724, 484], [844, 274]]) {
+      const v = makeView(s.world, w, h);
+      for (const id of COMMUNITY_IDS) {
+        const p = s.world.settlements.find(x => x.id === s.communities[id].settlement), q = toScreen(v, p);
+        assert.deepEqual(hitTest(v, s, q.x, q.y), { type: 'settlement', id: p.id }, `${seed} ${w}x${h} ${id}`);
+      }
+    }
+    assert.equal(valleyIds(s).size, 5);
   }
 });
