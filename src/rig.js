@@ -100,34 +100,68 @@ export function paintBody(THREE, body, { dress = 0x6b4a2e, skin = 0xc99a78, long
     o.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, name: 'painted' });
   });
 }
+/** Colour of the borrowed face's skin in the outfit textures (the same on all of them); a character's own skin is this times a tint. */
+export const FACE_SKIN = 0x9a6749;
+/** Proportions of a child on the adult rig: a bigger head and shorter legs (the clips carry no scale tracks, so bone scales stay). */
+export const CHILD = { head: 1.22, leg: .78 };
+/** Component `k` (0-3) of vertex `v` of an attribute; skin attributes are interleaved, so `.array[v * 4 + k]` reads garbage. */
+const G4 = (a, v, k) => k === 0 ? a.getX(v) : k === 1 ? a.getY(v) : k === 2 ? a.getZ(v) : a.getW(v);
+/** A geometry with only the vertices the triangle list `tri` uses (attributes copied through their accessors), indexed from 0. */
+function compact(g, tri) {
+  const map = new Map(), order = [], index = [];
+  for (const i of tri) { if (!map.has(i)) { map.set(i, order.length); order.push(i); } index.push(map.get(i)); }
+  const out = new g.constructor(), BA = (g.index || Object.values(g.attributes).find(a => !a.isInterleavedBufferAttribute)).constructor;
+  for (const [name, a] of Object.entries(g.attributes)) {
+    const arr = new (name === 'skinIndex' ? Uint16Array : Float32Array)(order.length * a.itemSize);
+    order.forEach((v, n) => { for (let k = 0; k < a.itemSize; k++) arr[n * a.itemSize + k] = G4(a, v, k); });
+    out.setAttribute(name, new BA(arr, a.itemSize, a.normalized));
+  }
+  out.setIndex(index); return out;
+}
 /**
- * The face of the detailed (male) body: its head and neck triangles, eyes and brows, kept skinned to the Head and neck bones
- * so they can be bound onto the slender mannequin's skeleton (same bone names).
+ * The face of the detailed (male) body: its head triangles, eyes and brows, kept skinned to the Head and neck bones
+ * so they can be bound onto the slender mannequin's skeleton (same bone names). The skin part is cut at the jaw line:
+ * below it the texture holds garment colours (a dark patch at the neck), and the mannequin's own neck is painted there.
  */
 export function headParts(maleBody) {
   const parts = [];
   maleBody.traverse(o => {
     if (!o.isSkinnedMesh) return;
-    const names = o.skeleton.bones.map(b => b.name), g = o.geometry, si = g.attributes.skinIndex.array, sw = g.attributes.skinWeight.array, P = g.attributes.position;
+    const names = o.skeleton.bones.map(b => b.name), g = o.geometry, SI = g.attributes.skinIndex, SW = g.attributes.skinWeight, P = g.attributes.position;
     const keep = new Set(names.map((n, i) => n === 'Head' || n === 'neck_01' ? i : -1).filter(i => i >= 0)), all = /eye|brow/i.test(o.name);
-    const dom = v => { let b = 0, w = -1; for (let k = 0; k < 4; k++) if (sw[v * 4 + k] > w) { w = sw[v * 4 + k]; b = si[v * 4 + k]; } return b; };
-    const ok = v => keep.has(dom(v)) && P.getY(v) > 1.47;
+    const dom = v => { let b = 0, w = -1; for (let k = 0; k < 4; k++) if (G4(SW, v, k) > w) { w = G4(SW, v, k); b = G4(SI, v, k); } return b; };
+    const ok = v => keep.has(dom(v)) && P.getY(v) >= 1.585;
     const idx = g.index ? g.index.array : Array.from({ length: P.count }, (_, i) => i), tri = [];
     for (let t = 0; t < idx.length; t += 3) if (all || (ok(idx[t]) && ok(idx[t + 1]) && ok(idx[t + 2]))) tri.push(idx[t], idx[t + 1], idx[t + 2]);
-    if (tri.length) { const sub = g.clone(); sub.setIndex(tri); parts.push({ geo: sub, mat: o.material, names, name: o.name }); }
+    if (tri.length) { const sub = compact(g, tri); parts.push({ geo: sub, mat: o.material, names, name: o.name, kind: /brow/i.test(o.name) ? 'brow' : /eye/i.test(o.name) ? 'eye' : 'skin' }); }
   });
   return parts;
 }
-/** Bind the borrowed face onto a slender body, moved to where its head sits. */
-function addFace(THREE, assets, body) {
-  let fsm = null; body.traverse(o => { if (o.isSkinnedMesh && !fsm) fsm = o; }); if (!fsm || !assets.body) return;
-  const parts = assets.headParts || (assets.headParts = headParts(assets.body));
-  const fnames = fsm.skeleton.bones.map(b => b.name), head = fnames.indexOf('Head');
-  for (const p of parts) {
+/** The face parts re-keyed to the mannequin's skeleton and moved to where its head sits; built once per asset set and shared. */
+function faceGeometries(THREE, assets, fnames) {
+  if (assets.faceGeos) return assets.faceGeos;
+  const head = fnames.indexOf('Head');
+  return assets.faceGeos = (assets.headParts || (assets.headParts = headParts(assets.body))).map(p => {
     const geo = p.geo.clone(), si = geo.attributes.skinIndex.clone();
     for (let i = 0; i < si.array.length; i++) { const j = fnames.indexOf(p.names[si.array[i]]); si.array[i] = j >= 0 ? j : head; }
-    geo.setAttribute('skinIndex', si); geo.translate(0, -.031, .022);
-    const m = new THREE.SkinnedMesh(geo, p.mat); m.name = 'face-' + p.name; m.frustumCulled = false; m.castShadow = true;
+    geo.setAttribute('skinIndex', si);
+    if (p.kind === 'brow') {   // a man's heavy brows read as a frown on a woman or a child: thin them about their own centre
+      geo.computeBoundingBox(); const c = (geo.boundingBox.min.y + geo.boundingBox.max.y) / 2, P = geo.attributes.position;
+      for (let i = 0; i < P.count; i++) P.setY(i, c + (P.getY(i) - c) * .55);
+    }
+    geo.translate(0, -.031, .022); geo.computeBoundingBox();
+    return { geo, mat: p.mat, name: p.name, kind: p.kind };
+  });
+}
+/** Bind the borrowed face onto a slender body: shared geometry, the skin tinted to the body's own skin colour. */
+function addFace(THREE, assets, body, { outfit, skin, tint, hairColor, mats }) {
+  let fsm = null; body.traverse(o => { if (o.isSkinnedMesh && !fsm) fsm = o; }); if (!fsm || !assets.body) return;
+  const ref = new THREE.Color(FACE_SKIN), want = new THREE.Color(skin);
+  for (const p of faceGeometries(THREE, assets, fsm.skeleton.bones.map(b => b.name))) {
+    const mat = p.mat.clone(); mat.metalness = 0;
+    if (p.kind === 'skin') { if (assets.textures?.[outfit]) mat.map = assets.textures[outfit]; mat.color.setRGB(want.r / ref.r * tint, want.g / ref.g * tint, want.b / ref.b * tint); mat.roughness = 1; mat.roughnessMap = null; }
+    else if (/Hair/.test(mat.name)) mat.color.setHex(hairColor);
+    const m = new THREE.SkinnedMesh(p.geo, mat); m.name = 'face-' + p.name; m.frustumCulled = false; m.castShadow = true; mats.push(mat);
     fsm.parent.add(m); m.bind(fsm.skeleton, fsm.bindMatrix);
   }
 }
@@ -188,6 +222,23 @@ export function slimBody(bones) {
   set('spine_01', .92, .9); set('neck_01', 1 / .92, 1 / .9);
   set('upperarm_l', .86, .86); set('upperarm_r', .86, .86);
 }
+/** Height of the lowest foot or toe bone above the character's origin (world units). */
+export function lowestFoot(THREE, root, bones) {
+  root.updateMatrixWorld(true); const v = new THREE.Vector3(), r = root.getWorldPosition(new THREE.Vector3()).y;
+  return Math.min(...['foot_l', 'foot_r', 'ball_l', 'ball_r'].map(n => bones[n] ? bones[n].getWorldPosition(v).y : 1e9)) - r;
+}
+/**
+ * A child on the adult rig: a bigger head and shorter legs (thigh squashed along its length; the foot scaled back so it keeps its size).
+ * Bones run along +y, so the squash leaves the limb's width alone. Returns nothing; the caller drops the body by how far the feet rose.
+ */
+export function childBody(bones) {
+  const { head, leg } = CHILD;
+  if (bones.Head) bones.Head.scale.setScalar(head);
+  for (const s of ['l', 'r']) {
+    if (bones['thigh_' + s]) bones['thigh_' + s].scale.set(1, leg, 1);
+    if (bones['foot_' + s]) bones['foot_' + s].scale.set(1, 1 / leg, 1);
+  }
+}
 /** A small tiling weave (warp and weft threads with a little unevenness) to give plain cloth some grain. */
 export function weaveTexture(THREE) {
   const n = 64, d = new Uint8Array(n * n * 4); let s = 7; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
@@ -198,11 +249,11 @@ export function weaveTexture(THREE) {
   const t = new THREE.DataTexture(d, n, n); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(14, 14); t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.needsUpdate = true;
   return t;
 }
-export function makeRig(THREE, cloneSkinned, assets, { outfit = 'roman_red', hair = [], shielded = false, tint = 1, hairColor = 0x3b2a1e, female = false, palette = null, cloth = null, slim = false } = {}) {
+export function makeRig(THREE, cloneSkinned, assets, { outfit = 'roman_red', hair = [], shielded = false, tint = 1, hairColor = 0x3b2a1e, female = false, palette = null, cloth = null, slim = false, child = false } = {}) {
   const root = new THREE.Group(); root.rotation.order = 'YXZ';
   female = female && !!assets.bodyF;
   const body = cloneSkinned(female ? assets.bodyF : assets.body); root.add(body);
-  if (female) { paintBody(THREE, body, palette || {}); addFace(THREE, assets, body); }
+  if (female) paintBody(THREE, body, palette || {});
   const bones = {}, mats = [];
   body.traverse(o => {
     if (o.isBone || o.type === 'Object3D' || o.isGroup) bones[o.name] = bones[o.name] || o;
@@ -214,6 +265,7 @@ export function makeRig(THREE, cloneSkinned, assets, { outfit = 'roman_red', hai
       if (/Hair/.test(o.material.name)) o.material.color.setHex(hairColor); mats.push(o.material);
     }
   });
+  if (female) addFace(THREE, assets, body, { outfit, skin: (palette || {}).skin ?? 0xc99a78, tint, hairColor, mats });
   root.updateMatrixWorld(true);
   if (!female) {   // a tunic shell over torso, shoulders and upper arms: smooth cloth that moves with the body, no painted muscles
     let bm = null; body.traverse(o => { if (o.isSkinnedMesh && o.material.name === 'MI_Superhero_Male') bm = o; });
@@ -234,6 +286,10 @@ export function makeRig(THREE, cloneSkinned, assets, { outfit = 'roman_red', hai
     g.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.setHex(hairColor); o.castShadow = true; mats.push(o.material); } });
     bones.Head.attach(g);
   }
+  let childGround = null;
+  if (child) {   // after the hair is attached, so it grows with the head; then drop the body by how far the shorter legs lifted the feet
+    childGround = lowestFoot(THREE, root, bones); childBody(bones); body.position.y -= lowestFoot(THREE, root, bones) - childGround; root.updateMatrixWorld(true);
+  }
   const mixer = new THREE.AnimationMixer(body);
   const clips = assets.split?.[shielded ? 1 : 0] || splitClips(THREE, assets.clips, shielded);
   if (assets.split) assets.split[shielded ? 1 : 0] = clips;
@@ -249,7 +305,7 @@ export function makeRig(THREE, cloneSkinned, assets, { outfit = 'roman_red', hai
   // shadow budget: eyes, brows, crests and cheek-guards are too small to show in the shadow map, and each one costs a draw call
   const cast = [];
   root.traverse(o => { if (o.isMesh) { if (!bigEnoughForShadow(o.name) || !bigEnoughForShadow(o.material && o.material.name)) o.castShadow = false; else if (o.castShadow) cast.push(o); } });
-  const rig = { root, body, mixer, bones, mats, shielded, action, actions, cast, w: { lo: {}, up: {}, sh: {} }, hitSeen: 0, oneShot: null, side: 0 };
+  const rig = { childGround, root, body, mixer, bones, mats, shielded, action, actions, cast, w: { lo: {}, up: {}, sh: {} }, hitSeen: 0, oneShot: null, side: 0 };
   /** Attach `obj`, currently placed in bind-pose model space, to a bone keeping that placement. */
   rig.attach = (boneName, obj) => { root.updateMatrixWorld(true); root.add(obj); obj.updateMatrixWorld(true); bones[boneName].attach(obj); return obj; };
   /** Put the whole body in a clip's pose at time t (matrices updated); used to measure where hands are. */
@@ -456,6 +512,8 @@ export function driveRig(THREE, rig, s, dt) {
   } else rig.body.rotation.y = 0;
   if (pose) applyPose(THREE, rig, pose);
   if (rig.dyn) for (const f of rig.dyn) f();   // cloth that reacts to the pose (skirts)
+  // a child's shorter legs reach less far down whatever the clip: keep the lowest foot where the adult's would be, on the ground
+  if (rig.childGround != null) { rig.body.position.y += (rig.childGround - lowestFoot(THREE, rig.root, rig.bones)) / (rig.root.scale.y || 1); rig.root.updateMatrixWorld(true); }
 }
 
 let _tmp = null;
