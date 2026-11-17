@@ -12,14 +12,15 @@ const fresh = () => newCampaign(3);
 const find = (s, kind) => s.world.settlements.find(x => x.kind === kind);
 const at = (s, p) => { s.party.x = p.x; s.party.y = p.y; };
 const snap = s => JSON.stringify(s);
+const souto = s => s.world.settlements.find(x => x.id === s.communities.souto.settlement);
 
 /** Cada caso devolve [estado preparado, ordem recusada, tipo de evento, motivo]. */
 const CASES = {
   'recrutar longe': () => { const s = fresh(), v = find(s, 'aldeia'); return [s, { kind: 'recrutar', id: v.id }, 'ordem-invalida', 'longe']; },
   'recrutar numa aldeia queimada': () => { const s = fresh(), v = find(s, 'aldeia'); at(s, v); s.villages[v.id].burnt = true; return [s, { kind: 'recrutar', id: v.id }, 'ordem-invalida', 'queimada']; },
   'recrutar numa povoação desconhecida': () => [fresh(), { kind: 'recrutar', id: 'nada' }, 'ordem-invalida', 'desconhecido'],
-  'recrutar cedo de mais': () => { const s = fresh(), v = find(s, 'aldeia'); at(s, v); s.day = 5; s.villages[v.id].recruitedDay = 2; return [s, { kind: 'recrutar', id: v.id }, 'recrutar-cedo', undefined]; },
-  'recrutar sem armas': () => { const s = fresh(), v = find(s, 'aldeia'); at(s, v); s.arms = 0; return [s, { kind: 'recrutar', id: v.id }, 'sem-armas', undefined]; },
+  'recrutar numa aldeia receosa': () => { const s = fresh(), v = s.world.settlements.find(x => x.id === s.communities.ribeira.settlement); at(s, v); return [s, { kind: 'recrutar', id: v.id }, 'recrutar-recusado', 'postura']; },
+  'recrutar sem armas': () => { const s = fresh(), v = souto(s); at(s, v); s.arms = 0; return [s, { kind: 'recrutar', id: v.id }, 'sem-armas', undefined]; },
   'pedir ajuda longe': () => { const s = fresh(), c = find(s, 'castro'); return [s, { kind: 'pedir-ajuda', id: c.id }, 'ordem-invalida', 'longe']; },
   'pedir ajuda cedo de mais': () => { const s = fresh(), c = find(s, 'castro'); at(s, c); s.day = 10; s.help = { [c.id]: 5 }; return [s, { kind: 'pedir-ajuda', id: c.id }, 'ajuda-recusada', undefined]; },
   'atacar longe': () => { const s = fresh(), p = find(s, 'posto'); return [s, { kind: 'atacar', id: p.id }, 'ordem-invalida', 'longe']; },
@@ -43,7 +44,7 @@ for (const [name, make] of Object.entries(CASES)) {
 }
 
 test('ordem válida continua a passar o dia e a gastar comida', () => {
-  const s = fresh(), v = find(s, 'aldeia'); at(s, v);
+  const s = fresh(), v = souto(s); at(s, v);
   const day = s.day, food = s.food, men = s.men;
   const r = stepDay(s, { kind: 'recrutar', id: v.id }, rng());
   assert.notEqual(r.refused, true);
@@ -77,16 +78,14 @@ test('mensagens das recusas dizem o que falta', () => {
   assert.match(t({ type: 'ordem-invalida', order: 'recrutar', id: v.id, why: 'longe' }), new RegExp(`${v.name}.*marcha até lá`));
   assert.match(t({ type: 'ordem-invalida', order: 'recrutar', id: v.id, why: 'queimada' }), /queimada/);
   assert.match(t({ type: 'ordem-invalida', order: 'marchar', why: 'destino' }), /destino/);
-  assert.match(t({ type: 'recrutar-cedo', id: v.id, days: 3 }), /3 dias/);
-  assert.match(t({ type: 'recrutar-cedo', id: v.id, days: 1 }), /1 dia\b/);
+  assert.match(t({ type: 'recrutar-recusado', id: v.id, why: 'postura' }), /não confiam em ti/);
   assert.match(t({ type: 'ajuda-recusada', id: v.id, days: 7 }), /7 dias/);
-  for (const ev of [{ type: 'ordem-invalida', why: 'longe', id: v.id }, { type: 'recrutar-cedo', id: v.id, days: 2 }, { type: 'sem-armas', id: v.id }, { type: 'ajuda-recusada', id: v.id, days: 2 }, { type: 'posto-atacado', id: v.id }])
+  for (const ev of [{ type: 'ordem-invalida', why: 'longe', id: v.id }, { type: 'recrutar-recusado', id: v.id, why: 'jovens' }, { type: 'sem-armas', id: v.id }, { type: 'ajuda-recusada', id: v.id, days: 2 }, { type: 'posto-atacado', id: v.id }])
     assert.match(t(ev), /O dia não passa\./, ev.type);
 });
 
-test('recrutar-cedo e ajuda-recusada dizem quantos dias faltam', () => {
-  const s = fresh(), v = find(s, 'aldeia'); at(s, v); s.day = 5; s.villages[v.id].recruitedDay = 2;
-  assert.equal(stepDay(s, { kind: 'recrutar', id: v.id }, rng()).events.find(e => e.type === 'recrutar-cedo').days, 7);
+test('ajuda-recusada diz quantos dias faltam', () => {
+  const s = fresh();
   const c = find(s, 'castro'); at(s, c); s.day = 10; s.help = { [c.id]: 5 };
   assert.equal(stepDay(s, { kind: 'pedir-ajuda', id: c.id }, rng()).events.find(e => e.type === 'ajuda-recusada').days, 20);
 });

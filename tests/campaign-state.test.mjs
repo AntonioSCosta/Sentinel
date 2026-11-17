@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { newCampaign, START, foodPerDay, recruitsFrom, spend, checkRuin, serialize, deserialize } from '../src/campaign/state.js';
+import { newCampaign, START, foodPerDay, spend, checkRuin, serialize, deserialize } from '../src/campaign/state.js';
 
 test('newCampaign starts with START values, party at world.start, villages only for aldeias', () => {
   const s = newCampaign(5);
@@ -16,7 +16,6 @@ test('newCampaign starts with START values, party at world.start, villages only 
 test('formulas', () => {
   assert.equal(foodPerDay(14), 2); assert.equal(foodPerDay(24), 2); assert.equal(foodPerDay(25), 3);   // MEN_PER_FOOD 12 (Task 18)
   assert.equal(foodPerDay(1), 1); assert.equal(foodPerDay(0), 1);
-  assert.equal(recruitsFrom(20), 2);
 });
 test('spend saturates at 0 and ignores undefined fields', () => {
   const s = newCampaign(5);

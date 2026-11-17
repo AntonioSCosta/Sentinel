@@ -1,5 +1,6 @@
 // Acontecimentos da campanha: um capítulo agendado e um baralho de eventos verosímeis.
 // Módulo puro (sem DOM nem Three.js).
+import { loseMen } from './communities.js';
 
 export const CATIVOS_FROM = 10;
 export const CATIVOS_TO = 20;
@@ -25,7 +26,7 @@ export const DECK = [
   } },
   { id: 'traidor', kind: 'verosimil', apply(s) {
     s.arms -= Math.min(s.arms, 4);
-    if (s.men > 1) s.men -= 1;
+    if (s.men > 1) loseMen(s, 1);   // o traidor é de uma aldeia: sai da conta dela
     return 'Um traidor foge de noite e leva armas consigo.';
   } },
   { id: 'pastores', kind: 'verosimil', apply(s) {

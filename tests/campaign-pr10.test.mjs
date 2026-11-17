@@ -352,7 +352,7 @@ test('painel «Objetivo»: a comida vem dos castros e do saque, nunca «das alde
   assert.equal(help.length, 1, 'pedir ajuda num castro gera um evento «ajuda»');
   assert.equal(help[0].food, HELP_FOOD, 'o evento regista exatamente HELP_FOOD de comida');
   assert.equal(s.food, f0 + HELP_FOOD - need, 'o saldo sobe exatamente HELP_FOOD, menos o consumo do dia');
-  const t = newCampaign(11), a2 = t.world.settlements.find(x => x.kind === 'aldeia');
+  const t = newCampaign(11), a2 = t.world.settlements.find(x => x.id === t.communities.souto.settlement);
   at(t, a2); const m0 = t.men, g0 = t.food;
   const ev = stepDay(t, { kind: 'recrutar', id: a2.id }, makeRng(1)).events;
   assert.ok(ev.some(e => e.type === 'recrutou') && t.men > m0, 'a aldeia dá homens');
