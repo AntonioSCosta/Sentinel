@@ -1,6 +1,7 @@
 // Encontro -> especificação de batalha -> consequências na campanha. Módulo puro (sem DOM nem Three.js).
 import { spend, checkRuin } from './state.js';
 import { observe } from './doctrine.js';
+import { raiseAttention, syncBurnt } from './rome.js';
 
 export const ALLY_CAP = 25;
 export const ENEMY_CAP = 30;
@@ -104,7 +105,7 @@ export function withdrawFrom(state, spec) {
   if (spec.type === 'defesa-aldeia' && state.villages?.[spec.villageId]) {
     state.villages[spec.villageId].burnt = true;
     spend(state, { fame: VILLAGE_FAME });
-    events.push({ type: 'aldeia-queimada', id: spec.villageId });
+    events.push({ type: 'aldeia-queimada', id: spec.villageId }, ...syncBurnt(state));
   }
   state.cooldown = 2;
   if (checkRuin(state)) events.push({ type: 'ruina' });
@@ -134,7 +135,13 @@ export function applyResult(state, spec, result) {
     const loot = lootOf(spec, result);
     const fame = spec.type === 'decisiva' ? 15 : spec.type === 'defesa-aldeia' ? 5 + VILLAGE_FAME : 5;
     state.food += loot.food; state.arms += loot.arms; state.fame += fame;
-    if (spec.foeId !== undefined) state.patrols = state.patrols.filter(p => p.id !== spec.foeId);
+    if (spec.foeId !== undefined) {
+      if (state.patrols.some(p => p.id === spec.foeId)) {   // uma patrulha derrotada chama a atenção de Roma (rome.js)
+        const ch = raiseAttention(state, 'patrulha');
+        if (ch) events.push({ type: 'roma-atencao', ...ch });
+      }
+      state.patrols = state.patrols.filter(p => p.id !== spec.foeId);
+    }
     events.push({ type: 'vitoria', lost, food: loot.food, arms: loot.arms, fame });
     if (spec.type === 'decisiva') { state.over = 'vitoria'; state.decisivaWon = true; events.push({ type: 'ano-vencido' }); }
     if (spec.type === 'historica' && state.posts && spec.foeId in state.posts) state.posts[spec.foeId].taken = true;
@@ -151,7 +158,7 @@ export function applyResult(state, spec, result) {
   if (!result.won && spec.type === 'defesa-aldeia' && state.villages[spec.villageId]) {   // ninguém a defendeu: arde
     state.villages[spec.villageId].burnt = true;
     spend(state, { fame: VILLAGE_FAME });
-    events.push({ type: 'aldeia-queimada', id: spec.villageId });
+    events.push({ type: 'aldeia-queimada', id: spec.villageId }, ...syncBurnt(state));   // a comunidade fica queimada (rome.js)
   }
   state.cooldown = 2;
   if (checkRuin(state)) events.push({ type: 'ruina' });

@@ -1,14 +1,12 @@
 // Comida, reservas e estações das aldeias: colheita no fim de cada estação, reserva de inverno e fome (GDD v2, «Produção e
 // reservas» e «A postura»). Módulo puro (sem DOM nem Three.js); o bando e o seu consumo diário continuam em simulation.js.
 import { season, YEAR_DAYS } from './clock.js';
-import { COMMUNITY_IDS, production, margin, postureFor, addMotive, HUNGER_MARGIN } from './communities.js';
+import { COMMUNITY_IDS, production, margin, postureFor, addMotive, HUNGER_MARGIN, winterReserve } from './communities.js';
+import { romeDay } from './rome.js';
 
-export { HUNGER_MARGIN };
+export { HUNGER_MARGIN, winterReserve };
 /** A fome conta a partir desta estação (1 de setembro): antes disso as reservas ainda têm a colheita do verão por vir. */
 export const FIRST_HUNGER_SEASON = 'outono';
-
-/** Reserva de inverno: uma unidade de comida por família. */
-export const winterReserve = c => c.families;
 
 /**
  * Comida que a aldeia dá ao bando, pela postura: a comprometida dá o que tem, mesmo abaixo da reserva de inverno; a amiga só
@@ -54,12 +52,13 @@ export function updateHunger(state) {
 
 /**
  * Chamada por stepDay logo depois de o dia avançar (`prevDay` é o dia que acabou): se uma estação acabou (ou o ano),
- * faz a colheita; depois atualiza a fome. Sem comunidades (estado parcial) não faz nada.
+ * faz a colheita; depois Roma (rome.js: atenção, tributo, castigos); por fim atualiza a fome. Sem comunidades (estado parcial) não faz nada.
  */
 export function closeDay(state, prevDay) {
   if (!state.communities) return [];
   const events = [];
   if (season(prevDay) !== season(state.day) || (prevDay < YEAR_DAYS && state.day >= YEAR_DAYS)) events.push(harvest(state, season(prevDay)));
+  events.push(...romeDay(state, prevDay));   // Roma depois da colheita (o tributo conta as reservas já cheias) e antes da fome (uma aldeia queimada já não a tem)
   events.push(...updateHunger(state));
   return events;
 }

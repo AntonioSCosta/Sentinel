@@ -9,8 +9,8 @@
 // de distâncias, estrada, rio ou posto romano junto de uma comunidade.
 //
 // Estado de uma comunidade (state.communities[id]) — o que cada campo significa e quem lhe mexe:
-//   families  famílias que a aldeia tem agora (inteiro ≥ 0). Só desce por Roma (castigo, queima, abandono; PR 4) e sobe nunca
-//             no vale inicial. Base da produção e do limite de jovens.
+//   families  famílias que a aldeia tem agora (inteiro ≥ 0). Desce quando Roma a queima ou ela é abandonada (rome.js, que as
+//             passa para a aldeia mais amiga: é a única maneira de subirem). Base da produção e do limite de jovens.
 //   away      homens desta aldeia que estão no bando (inteiro, 0 ≤ away ≤ families, e a soma das cinco ≤ state.men). Sobe ao
 //             recrutar (simulation.js); desce com as baixas, atribuídas à aldeia de origem (`loseMen`, usada por `spend`, a fome
 //             e os acontecimentos). Os homens do bando sem aldeia (o bando inicial, voluntários dos castros) contam como `sem`
@@ -21,11 +21,12 @@
 //   hungry    (opcional) a aldeia passa fome: de setembro em diante, reservas abaixo da reserva de inverno. Soma −15 à margem
 //             (`margin`). Só harvest.js o põe e tira; ausente = false (gravações antigas).
 //   situation o que Roma lhe fez e dura enquanto durar o estado: um de SITUATIONS. 'livre' é o normal. Quem a muda é Roma
-//             (PR 4); a postura (confiança/medo) não a altera nem depende só dela.
+//             (rome.js); a postura (confiança/medo) não a altera nem depende só dela. O que cada uma muda: castigada, metade da
+//             produção (`production`); ocupada, não dá homens (`recruitLimit`); queimada e abandonada, nada (0 famílias).
 //   until     dia (número) em que a `situation` atual acaba por si; null se não tem fim marcado (ou está 'livre'). Só tem
 //             sentido com situation ≠ 'livre'; o fim da situação é decidido por quem a aplicou, não pelo relógio sozinho.
-//   due       pedido pendente de Roma à aldeia: { food, day } = comida a entregar até ao dia `day`; null se não há. É o que
-//             o PR 4 cria como tributo e o PR 5 mostra como «assunto pendente». Cumpri-lo ou recusá-lo limpa-o.
+//   due       pedido pendente de Roma à aldeia: { food, day } = comida a entregar até ao dia `day`; null se não há. É o tributo
+//             que rome.js exige (situation 'tributada') e que o PR 5 mostra como «assunto pendente». Pagá-lo ou recusá-lo limpa-o.
 
 export const COMMUNITY_IDS = ['ribeira', 'penedo', 'souto', 'vau', 'fonte'];
 
@@ -98,6 +99,21 @@ const idx = id => POSTURES.findIndex(p => p.id === id);
 /** Ponto de observação para `npm run balance`: se `diag.loss` for um array, cada perda de homens é lá registada. */
 export const diag = { loss: null };
 
+export const CASTIGO_PRODUCTION = 0.5;   // uma aldeia castigada por Roma produz metade (rome.js)
+
+/** Notícias que cada postura manda ao bando: `delay` dias de atraso (null = o do mensageiro) e a `chance` de dar notícia (GDD v2, «A postura»). Receosa e colabora não dão. */
+export const NEWS_RULE = { comprometida: { delay: 0, chance: 1 }, amiga: { delay: 1, chance: 1 }, neutra: { delay: null, chance: 0.5 }, receosa: null, colabora: null };
+
+/** Reserva de inverno: uma unidade de comida por família. */
+export const winterReserve = c => c.families;
+
+/** Como é que esta comunidade dá notícias ao bando: { delay, chance } ou null se não dá (ocupada, queimada, abandonada, ou postura que não dá). */
+export function newsFrom(c) {
+  if (c.situation === 'ocupada' || c.situation === 'queimada' || c.situation === 'abandonada') return null;
+  const r = NEWS_RULE[c.posture];
+  return r ? { ...r } : null;
+}
+
 export const HUNGER_MARGIN = 15;     // uma aldeia com fome soma −15 à margem (harvest.js): passa para o lado de quem lhe der de comer
 
 /** confiança − medo, e −HUNGER_MARGIN enquanto a aldeia passa fome (`hungry`, posto por harvest.js). */
@@ -128,15 +144,19 @@ export const youth = c => Math.max(0, youthCap(c) - c.away);
 export function production(c, season) {
   const o = OFFICES[IDENTITY[c.id].office], cap = youthCap(c);
   const hands = 1 - 0.5 * (cap > 0 ? Math.min(1, c.away / cap) : 0);
-  return { food: Math.round(c.families * (o.yield[season] ?? 0) * hands), arms: c.families > 0 ? Math.round(o.arms * hands) : 0 };
+  const punished = c.situation === 'castigada' ? CASTIGO_PRODUCTION : 1;
+  return { food: Math.round(c.families * (o.yield[season] ?? 0) * hands * punished), arms: c.families > 0 ? Math.round(o.arms * hands * punished) : 0 };
 }
 
 /**
  * O que a aldeia deixa levar agora: { limit, byPosture, avail, arms, why }. `limit` é o mínimo da regra da postura
  * (RECRUIT_RULE, sobre os jovens disponíveis), dos jovens e das armas. Se for 0, `why` diz porquê:
- * 'postura' (não dá homens), 'jovens' (não sobram jovens para a regra) ou 'sem-armas'. A fama não conta.
+ * 'postura' (não dá homens), 'jovens' (não sobram jovens para a regra), 'sem-armas', 'ocupada' (guarnição romana) ou
+ * 'destruida' (queimada ou abandonada). A fama não conta.
  */
 export function recruitLimit(c, arms) {
+  if (c.situation === 'queimada' || c.situation === 'abandonada') return { limit: 0, byPosture: 0, avail: 0, arms, why: 'destruida' };
+  if (c.situation === 'ocupada') return { limit: 0, byPosture: 0, avail: youth(c), arms, why: 'ocupada' };
   const avail = youth(c), r = RECRUIT_RULE[c.posture] ?? {};
   const byPosture = r.volunteers != null ? Math.min(r.volunteers, avail) : r.over ? (avail > 0 ? Math.max(1, Math.floor(avail / r.over)) : 0) : 0;
   const limit = Math.max(0, Math.min(byPosture, avail, arms));

@@ -41,7 +41,9 @@ test('a colheita entra nas reservas no fim de cada estação, e só então', () 
   assert.equal(season(s.day), 'verão');
   const [h] = harvests(d2.events);
   assert.equal(h.season, 'primavera'); assert.equal(h.total, 152);
-  for (const id of COMMUNITY_IDS) assert.equal(s.communities[id].food, before[id] + production(s.communities[id], 'primavera').food, id);
+  // a Ribeira (receosa) e a Fonte (devedora) pagam o tributo de Roma logo a seguir à colheita (PR 4): 30% do que passa da reserva
+  const tribute = { ribeira: Math.round(0.3 * (42 + 56 - 70)), fonte: 0 };
+  for (const id of COMMUNITY_IDS) assert.equal(s.communities[id].food, before[id] + production(s.communities[id], 'primavera').food - (tribute[id] ?? 0), id);
   assert.deepEqual(h.villages.map(v => v.id), COMMUNITY_IDS.map(id => s.communities[id].settlement));
 });
 
@@ -49,8 +51,8 @@ test('há exatamente três colheitas por ano: primavera, verão e outono (esta n
   const s = calm(), got = [];
   while (s.day < YEAR_DAYS) for (const h of harvests(step(s).events)) got.push([h.season, s.day]);
   assert.deepEqual(got, [['primavera', 92], ['verão', 184], ['outono', YEAR_DAYS]]);
-  const c = s.communities.ribeira;   // 42 + 56 + 140 + 70
-  assert.equal(c.food, 42 + 56 + 140 + 70);
+  const c = s.communities.ribeira;   // 42 + 56 (primavera) − tributo de 8; + 140 (verão) − tributo de 48; + 70 (outono, sem tributo: já é outono)
+  assert.equal(c.food, 42 + 56 - 8 + 140 - 48 + 70);
 });
 
 test('a colheita desce com os jovens fora, e uma aldeia queimada ou abandonada não colhe', () => {
@@ -62,7 +64,7 @@ test('a colheita desce com os jovens fora, e uma aldeia queimada ou abandonada n
   step(s);
   assert.equal(s.communities.souto.food, f.souto + Math.round(30 * 0.6 * 0.5));
   assert.equal(s.communities.vau.food, f.vau); assert.equal(s.communities.fonte.food, f.fonte);
-  assert.equal(s.communities.ribeira.food, f.ribeira + 56);
+  assert.equal(s.communities.ribeira.food, f.ribeira + 56 - Math.round(0.3 * (f.ribeira + 56 - 70)));   // menos o tributo de Roma (receosa, paga sozinha)
 });
 
 test('só a comprometida dá comida abaixo da reserva de inverno; a amiga só o que passa dela', () => {

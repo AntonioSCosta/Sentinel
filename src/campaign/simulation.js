@@ -5,6 +5,7 @@ import { praetorStep } from './praetor.js';
 import { foodPerDay, checkRuin } from './state.js';
 import { communityAt, recruitLimit, levy, loseMen } from './communities.js';
 import { closeDay } from './harvest.js';
+import { noteSupport } from './rome.js';
 import { updateIntel, SCOUTS, RECON_RANGE } from './intel.js';
 import { ensureDoctrine, tickDoctrine, moveHunter, spottedAmbush, escortBonus, nextSpawnGap, FIRST_SPAWN, FIRST_SPAWN_MIN, FIRST_NEAR } from './doctrine.js';
 import { makeRng } from './rng.js';
@@ -78,7 +79,7 @@ function applyOrder(state, order) {
       levy(c, n, state.day);   // os jovens saem da aldeia (e, acima de um sexto, custam confiança)
       state.men += n; state.arms -= n;
       if (v) v.recruitedDay = state.day;   // só registo: já não há espera entre recrutamentos
-      return { events: [{ type: 'recrutou', id: s.id, men: n }], encounter: null };
+      return { events: [{ type: 'recrutou', id: s.id, men: n }, ...noteSupport(state, c.id, 'homens')], encounter: null };   // Roma repara (rome.js)
     }
     case 'pedir-ajuda': {
       const { s, no } = reach('castro');
@@ -89,7 +90,8 @@ function applyOrder(state, order) {
       state.food += HELP_FOOD;
       const men = state.fame >= HELP_FAME ? HELP_MEN : 0;
       state.men += men;
-      return { events: [{ type: 'ajuda', id: s.id, food: HELP_FOOD, men }], encounter: null };
+      const c = communityAt(state, s.id);   // o castro do Penedo é uma comunidade: Roma repara que o ajudam (rome.js)
+      return { events: [{ type: 'ajuda', id: s.id, food: HELP_FOOD, men }, ...(c ? noteSupport(state, c.id, 'comida') : [])], encounter: null };
     }
     case 'atacar': {
       const { s, no } = reach('posto');
