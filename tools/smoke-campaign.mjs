@@ -69,6 +69,68 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   check('clicking empty ground sets the destination and runs the time', !!G.campaign.dest && G.campaign.running);
   G.campaign.pause(); G.campaign.step();
   check('the next day marches towards it', s.party.x !== x0 || s.party.y !== y0);
+  // PR #17: o painel de uma aldeia não revela forças romanas que o jogador não conhece
+  { const panelText = () => { G.campaign.select(vill.id); const t = $('mctx').textContent; return t; };
+    const keep = { x: s.party.x, y: s.party.y, patrols: s.patrols, known: s.intel.known };
+    s.party = { x: vill.x, y: vill.y }; s.patrols = []; s.intel.known = {}; G.campaign.render();
+    const clean = panelText();
+    s.patrols = [{ id: 'oculta', kind: 'legio', x: vill.x + 6, y: vill.y, men: 6, i: 1 }]; G.campaign.render();
+    const hidden = panelText();
+    check('the village panel is identical with and without an undiscovered patrol next to it', clean === hidden && !/castiga|combate|romanos/i.test(hidden));
+    check('the panel always says there are risks not yet known (same words, whatever is hidden)', clean.includes('Há riscos que ainda não conheces.') && hidden.includes('Há riscos que ainda não conheces.'));
+    const co = s.communities.souto, so = s.world.settlements.find(x => x.id === co.settlement), kept = { t: co.trust, f: co.fear, p: co.posture };
+    co.trust = 50; co.fear = 30; co.posture = 'amiga'; s.party = { x: so.x, y: so.y };
+    s.patrols = [{ id: 'oculta', kind: 'legio', x: so.x + 6, y: so.y, men: 6, i: 1 }]; s.intel.known = {}; G.campaign.render();
+    const unseen = panelText();
+    s.intel.known = { oculta: { kind: 'legio', x: so.x + 6, y: so.y, men: 6, day: s.day } }; G.campaign.select(so.id); G.campaign.render();
+    const seen = $('mctx').textContent;
+    check('a patrol the player sees today does show up in the panel (and an unseen one does not)', /castiga/i.test(seen) && !/castiga/i.test(unseen));
+    co.trust = kept.t; co.fear = kept.f; co.posture = kept.p;
+    s.party = { x: keep.x, y: keep.y }; s.patrols = keep.patrols; s.intel.known = keep.known; G.campaign.select(null);
+  }
+  // PR #17: o relógio. Tempo virtual: uma ordem dada a meio de um dia reinicia-o, e o separador escondido pára-o
+  { const real = { st: win.setTimeout, ct: win.clearTimeout };
+    let now = 0, q = [], seq = 0;
+    win.setTimeout = (fn, ms) => { const id = ++seq; q.push({ id, at: now + ms, fn }); return id; };
+    win.clearTimeout = id => { q = q.filter(t => t.id !== id); };
+    const advance = ms => { const end = now + ms; for (;;) { q.sort((a, b) => a.at - b.at); const t = q[0]; if (!t || t.at > end) break; q.shift(); now = t.at; t.fn(); } now = end; };
+    const calm = () => { s.food = 1e6; s.men = 40; s.praetor = null; s.patrols = []; if (!s.done.includes('cativos')) s.done.push('cativos'); };   // sem Roma e sem o capítulo agendado a tomar a ordem
+    calm(); G.campaign.pause(); $('m-hide').click();   // esconder: sem destino, sem marcha, o tempo corre
+    check('the clock runs on its own: one day per 1400 ms at 1×', G.campaign.running && G.campaign.speed === 1);
+    const DAY = 1400;
+    for (const at of [0, 100, 700, 1300, 1399]) {   // a ordem do jogador cai em momentos diferentes do ciclo
+      G.campaign.pause(); calm(); G.campaign.play(1); advance(at);
+      const d0 = s.day; G.campaign.step();   // uma ação com o tempo a correr: gasta um dia
+      advance(DAY - 1);
+      check(`an action ${at} ms into the day restarts the clock: no extra day within a full day (1×)`, s.day === d0 + 1 && G.campaign.running);
+      advance(1);
+      check(`…and the next day comes a full day after the action (${at} ms)`, s.day === d0 + 2);
+    }
+    for (const sp of [2, 4]) {
+      G.campaign.pause(); calm(); G.campaign.play(sp); advance(DAY / sp / 2);
+      const d0 = s.day; G.campaign.step(); advance(DAY / sp - 1);
+      check(`${sp}× keeps its own pace after an action`, s.day === d0 + 1);
+      advance(1); check(`${sp}×: one day per ${DAY / sp} ms`, s.day === d0 + 2);
+    }
+    // o separador escondido pára o tempo; ao voltar não há salto e a velocidade fica
+    G.campaign.pause(); calm(); G.campaign.play(4); advance(100);
+    const dh = s.day, sp = G.campaign.speed;
+    Object.defineProperty(doc, 'hidden', { configurable: true, get: () => true });
+    doc.dispatchEvent(new win.Event('visibilitychange'));
+    check('hiding the tab pauses the clock', !G.campaign.running && $('m-pause').getAttribute('aria-pressed') === 'true');
+    advance(60000);
+    check('no days pass while the tab is hidden', s.day === dh);
+    Object.defineProperty(doc, 'hidden', { configurable: true, get: () => false });
+    doc.dispatchEvent(new win.Event('visibilitychange'));
+    advance(60000);
+    check('coming back does not jump days, and the speed is kept', s.day === dh && !G.campaign.running && G.campaign.speed === sp);
+    G.campaign.play(); calm(); advance(DAY / sp - 1); const dr = s.day; advance(1);
+    check('resuming runs one day per tick (no duplicated loops)', s.day === dr + 1);
+    advance(DAY / sp * 3); check('three more ticks, three more days', s.day === dr + 4);
+    G.campaign.pause(); delete doc.hidden;
+    win.setTimeout = real.st; win.clearTimeout = real.ct; q = [];
+    $('m-hide').getAttribute('aria-pressed') === 'true' && $('m-hide').click();
+  }
   // acampar até haver batalha (máx. 300)
   let n = 0; while (f.phase === 'mapa' && n < 300) { G.campaign.order({ kind: 'acampar' }); n++; }
   check(`camping leads to a battle or the end (${n} orders)`, f.phase !== 'mapa');

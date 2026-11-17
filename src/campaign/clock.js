@@ -15,14 +15,21 @@ const MONTHS = [
 /** Dias de 1 de março a 31 de outubro. */
 export const YEAR_DAYS = MONTHS.reduce((sum, m) => sum + m.days, 0);
 
+// O dia YEAR_DAYS (o dia em que o ano acaba) já é 1 de novembro: o calendário continua para lá do ano da campanha,
+// sem repetir «31 de outubro». Estes meses não entram no ano (YEAR_DAYS) nem no jogo; só dão data a esse dia final.
+const AFTER = [
+  { name: 'novembro', days: 30, season: 'outono' },
+  { name: 'dezembro', days: 31, season: 'inverno' },
+];
+
 /** Mês e dia do mês para um dia da campanha (inteiro, já sem parte fracionária). */
 function locate(day) {
-  let rest = Math.floor(day);
-  for (const m of MONTHS) {
+  let rest = Math.max(0, Math.floor(day) || 0);
+  for (const m of [...MONTHS, ...AFTER]) {
     if (rest < m.days) return { month: m, dayOfMonth: rest + 1 };
     rest -= m.days;
   }
-  const last = MONTHS[MONTHS.length - 1];
+  const last = AFTER[AFTER.length - 1];
   return { month: last, dayOfMonth: last.days };
 }
 

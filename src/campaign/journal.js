@@ -23,14 +23,29 @@ export function postureSnapshot(state) {
   return out;
 }
 
-/** Uma entrada { type: 'postura', id, community, from, to } por comunidade cuja postura mudou desde `before`. */
-export function postureChanges(before, state) {
+/** Uma entrada { type: 'postura', id, community, from, to } por comunidade cuja postura é diferente em `to` do que era em `from` (dois postureSnapshot). */
+export function postureDiff(from, to, state) {
   const out = [];
   for (const id of COMMUNITY_IDS) {
     const c = state.communities?.[id];
-    if (c && before?.[id] && before[id] !== c.posture) out.push({ type: 'postura', id: c.settlement, community: id, from: before[id], to: c.posture });
+    if (c && from?.[id] && to?.[id] && from[id] !== to[id]) out.push({ type: 'postura', id: c.settlement, community: id, from: from[id], to: to[id] });
   }
   return out;
+}
+
+/** As mudanças de postura desde `before` até ao estado atual. */
+export const postureChanges = (before, state) => postureDiff(before, postureSnapshot(state), state);
+
+/**
+ * Os eventos do fim do dia que são a mesma ocorrência de algo que já se passou durante o dia: a comunidade que arde porque
+ * o pretor queimou a aldeia nesse dia (a simulação só a regista ao fechar o dia) e a postura que isso muda. Pertencem ao
+ * dia da queima, não ao seguinte. Devolve { back, stay }.
+ */
+export function splitSameOccurrence(lateEvents) {
+  const burnt = new Set(lateEvents.filter(e => e.type === 'comunidade-queimada' && e.by === 'pretor').map(e => e.id));
+  const back = [], stay = [];
+  for (const e of lateEvents) (burnt.has(e.id) && (e.type === 'comunidade-queimada' || e.type === 'postura') ? back : stay).push(e);
+  return { back, stay };
 }
 
 /**

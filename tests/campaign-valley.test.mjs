@@ -353,5 +353,6 @@ test('preview de uma ordem que leva a combate: prevê a mesma batalha que a exec
   const f = quietFlow(), s = f.state, posto = s.world.settlements.find(x => x.kind === 'posto');
   s.party = { x: posto.x, y: posto.y };
   const o = { kind: 'atacar', id: posto.id }, pv = f.preview(o), r = f.order(o);
-  assert.equal(pv.executes, true); assert.ok(pv.battle); assert.deepEqual(r.battle, pv.battle);
+  assert.equal(pv.executes, true); assert.ok(pv.battle);
+  assert.equal(r.battle.type, pv.battle.type); assert.deepEqual(r.battle.enemies, pv.battle.enemies);   // a semente não é da pré-visualização: sai do sorteio do dia
 });

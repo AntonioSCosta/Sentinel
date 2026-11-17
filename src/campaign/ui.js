@@ -6,7 +6,7 @@ import { dateLabel, season, daysLeft, YEAR_DAYS } from './clock.js';
 import { entryFor, CHRONICLE, SOURCE_LABELS, isUnlocked } from './chronicle.js';
 import { isBridged, isStory } from './bridge.js';
 import { START, foodPerDay } from './state.js';
-import { MARCH_SPEED } from './simulation.js';
+import { MARCH_SPEED, REACH, ARRIVAL, marchDays as marchDaysTo, inReach, nearRoad } from './simulation.js';
 import { TRIBUTE, PUNISH } from './rome.js';
 import { placeName, communityOf, POSTURE_LABEL, SITUATION_LABEL, POSTURE_HINT, SITUATION_HINT, communityLine, chiefLine, officeLine, daysText, ISSUE, INTERRUPT, UI, ACTION_NO, EFFECT, DIARY, ROME_BAND, refuseEffect } from './strings.js';
 import { buildIssues, detectInterruptions, foodDays, LOW_FOOD_DAYS } from './issues.js';
@@ -49,7 +49,6 @@ export const EPISODES = {
   cativos: ['Os Cativos', 'Cena inspirada nas consequências da traição de Galba (ver a Crónica): uma coluna romana leva cativos para serem vendidos e parou numa clareira. Viriato vai com dois homens.'],
   acampamento: ['O acampamento', 'Invenção do jogo: o posto guarda os mantimentos da guarnição. Entra sem dar o alarme: agacha-te (C) e avança pelo mato, porque à vista a guarnição descobre-te depressa. Queima os três depósitos e derruba o centurião.'],
 };
-const REACH = 20;   // a esta distância (no mapa) já se está no lugar
 /** Estado de um lugar, para o painel e a lista: «queimada», «tomado», «já atacado» ou nada. */
 function placeState(s, state) {
   if (s.kind === 'aldeia' && state.villages?.[s.id]?.burnt) return 'queimada';
@@ -58,7 +57,7 @@ function placeState(s, state) {
 }
 /** «Aldeia do Vale — aldeia, 3 dias»: dias de marcha do bando até lá. */
 export function placeLabel(s, state) {
-  const d = Math.hypot(s.x - state.party.x, s.y - state.party.y), days = d <= REACH ? 0 : Math.ceil((d - REACH) / MARCH_SPEED) || 1;
+  const days = inReach(state.party, s) ? 0 : marchDaysTo(state.world, state.party, s);
   const st = placeState(s, state);
   return `${placeName(state, s.id)} — ${s.kind}${st ? ' ' + st : ''}, ${days ? `${days} ${days === 1 ? 'dia' : 'dias'}` : 'aqui'}`;
 }
@@ -250,7 +249,8 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   const name = id => placeName(flow.state, id) ?? '';
   const settlement = id => flow.state.world.settlements.find(x => x.id === id);
   const communityAt = id => { const k = communityOf(flow.state, id); return k ? flow.state.communities[k] : null; };
-  const marchDays = p => { const d = Math.hypot(p.x - flow.state.party.x, p.y - flow.state.party.y); return d <= REACH ? 0 : Math.max(1, Math.ceil((d - REACH) / MARCH_SPEED)); };
+  /** Dias até estar no lugar: 0 se já se pode agir nele (REACH); senão os dias reais da marcha (simulation.marchDays). */
+  const marchDays = p => (inReach(flow.state.party, p) ? 0 : marchDaysTo(flow.state.world, flow.state.party, p));
   const narrow = () => (win.innerWidth || 1200) <= 900 || (win.innerHeight || 800) <= 480;
 
   function resize() {
@@ -360,8 +360,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     $('m-status').textContent = t;
   }
   const destName = () => { const s = flow.state.world.settlements.find(x => Math.hypot(x.x - dest.x, x.y - dest.y) < 1); return s ? name(s.id) : 'o ponto marcado'; };
-  const nearRoadNow = () => flow.state.world.road.some((p, i, r) => i && segD(flow.state.party, r[i - 1], p) <= 25);
-  function segD(p, a, b) { const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy, t = l2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0; return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy); }
+  const nearRoadNow = () => nearRoad(flow.state.world, flow.state.party);
 
   function setDest(p) { dest = p ? { x: p.x, y: p.y } : null; if (dest) stance = null; mode = null; if (dest) play(); else render(); }
   function setStance(st) { stance = stance === st ? null : st; if (stance) dest = null; mode = null; if (stance) play(); else render(); }
@@ -373,6 +372,9 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (n) { speed = n; saveSpeed(storage, n); }
     interrupt = []; running = true; schedule(); render();
   }
+  // O tempo não corre com o separador escondido (ninguém está a ver): pára, e fica parado ao voltar (a velocidade guarda-se).
+  // Um só ouvinte, registado quando a interface é criada.
+  doc.addEventListener('visibilitychange', () => { if (doc.hidden && running) pause(); });
   function pause() { running = false; if (timer) win.clearTimeout?.(timer); timer = 0; if (active && flow) render(); }
   function schedule() { if (timer) win.clearTimeout?.(timer); timer = running ? win.setTimeout?.(tick, DAY_MS / speed) ?? 0 : 0; }
   /** Um dia com o tempo a correr: a ordem permanente do bando, e pára se houver motivo (issues.detectInterruptions). */
@@ -386,10 +388,11 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   function step(o) {
     const r = order(o);
     if (!r) return r;
-    if (dest && !r.refused && Math.hypot(flow.state.party.x - dest.x, flow.state.party.y - dest.y) < 1) { say([]); log.push(UI.arrived(destName())); logDirty = true; dest = null; }
+    if (dest && !r.refused && Math.hypot(flow.state.party.x - dest.x, flow.state.party.y - dest.y) < ARRIVAL) { say([]); log.push(UI.arrived(destName())); logDirty = true; dest = null; }
     if (r.refused && o.kind === 'marchar') dest = null;
     const reasons = r.refused ? [] : detectInterruptions({ state: flow.state, events: r.events, memory, battle: r.battle });
     if (reasons.length || flow.phase !== 'mapa') { interrupt = reasons.filter(x => x.type !== 'batalha'); running = false; if (timer) win.clearTimeout?.(timer); timer = 0; }
+    else if (running) schedule();   // uma ordem dada a meio de um dia reinicia o relógio: o dia seguinte vem um dia inteiro depois, não o que faltava
     render();
     if (interrupt.length) $('m-int-go')?.focus?.();
     return r;
@@ -570,6 +573,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const acts = el('div', 'actions'); box.append(acts);
     for (const a of actionsFor(s, c)) acts.append(actionRow(a));
     if (c) { box.append(el('p', 'later', UI.panel.later)); }
+    if (flow.phase === 'mapa') box.append(el('p', 'risk dim', UI.panel.risk));   // sempre o mesmo texto: não diz se há ou não algo escondido
     if (had) box.querySelector(`[data-act="${CSS_ESC(had)}"]`)?.focus?.();
   }
   /** As ações que existem para este lugar, cada uma com o que daria (pré-visualização) ou porque não se pode. */
@@ -594,6 +598,8 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
       if (cid) { const d = r.state.communities[cid].trust - flow.state.communities[cid].trust; if (d) lines.push(EFFECT.trust(d)); }
       if (r.events.some(e => e.type === 'castigo' && e.id === s.id)) lines.push(EFFECT.punished);
       if (r.encounter) lines.push(EFFECT.battle);
+      if (cid) { const to = r.state.communities[cid].posture; if (to !== flow.state.communities[cid].posture) lines.push(EFFECT.posture(POSTURE_LABEL[to].toLowerCase())); }
+      if (r.upkeep) lines.push(EFFECT.upkeep(r.upkeep));
       lines.push(EFFECT.day);
       return lines.join(' · ');
     };
@@ -765,8 +771,8 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   }
   $('mapcv').addEventListener('click', mapClick);
   function hoverLabel(hit, at) {
-    const s = flow.state, d = Math.hypot(at.x - s.party.x, at.y - s.party.y);
-    const days = d <= REACH ? 0 : Math.max(1, Math.ceil((d - REACH) / MARCH_SPEED));
+    const s = flow.state;
+    const days = inReach(s.party, at) ? 0 : marchDaysTo(s.world, s.party, at);
     if (mode === 'reconhecer') return inRecon(at) ? `Reconhecer · ${SCOUTS} batedores, 1 dia` : 'Longe de mais para os batedores';
     const when = days ? `${daysText(days)} · −${days * foodPerDay(s.men)} comida` : 'aqui';
     if (hit?.type === 'settlement') return `${name(hit.id)} · ${when}`;

@@ -13,7 +13,9 @@ import { makeRng } from './rng.js';
 export const MARCH_SPEED = 45;
 export const PATROL_SPEED = 35;
 export const ENCOUNTER_RADIUS = 30;
-const REACH = 20, ROAD_NEAR = 25, VILLAGE_NEAR = 25;
+export const REACH = 20;   // a esta distância (no mapa) já se está no lugar: dá para agir nele
+export const ARRIVAL = 1;  // uma marcha chegou ao ponto quando falta menos do que isto
+const ROAD_NEAR = 25, VILLAGE_NEAR = 25;
 export const HELP_GAP = 25, HELP_FOOD = 40;   // afinados na Task 18 (npm run balance)
 export const CONVOY_CHANCE = 0.45;   // cada destacamento que sai de um posto é uma coluna de abastecimento com esta probabilidade
 const HELP_FAME = 30, HELP_MEN = 2;
@@ -40,6 +42,23 @@ function moveToward(p, to, step) {
   if (d <= step) { p.x = to.x; p.y = to.y; } else { p.x += (to.x - p.x) / d * step; p.y += (to.y - p.y) / d * step; }
 }
 
+/** O destino de uma marcha, cortado ao mapa (como a ordem 'marchar' o corta). */
+const clampTo = (world, to) => ({ x: Math.min(world.w, Math.max(0, to.x)), y: Math.min(world.h, Math.max(0, to.y)) });
+
+/** O ponto `to` está ao alcance de `from` para agir no lugar (REACH)? */
+export const inReach = (from, to) => dist(from, to) <= REACH;
+
+/**
+ * Quantos dias leva marchar de `from` até chegar a `to`: o mesmo passo (MARCH_SPEED), o mesmo corte ao mapa e o mesmo
+ * critério de chegada (falta menos de ARRIVAL) da ordem 'marchar'. Pura: não mexe em nada. 0 se já lá está.
+ */
+export function marchDays(world, from, to) {
+  const goal = clampTo(world, to), p = { x: from.x, y: from.y };
+  let days = 0;
+  while (dist(p, goal) >= ARRIVAL && days < 1000) { moveToward(p, goal, MARCH_SPEED); days++; }
+  return days;
+}
+
 const findSettlement = (state, id, kind) => state.world.settlements.find(x => x.id === id && x.kind === kind);
 
 /**
@@ -62,7 +81,7 @@ function applyOrder(state, order) {
     case 'marchar': {
       const to = order.to;
       if (!to || !Number.isFinite(to.x) || !Number.isFinite(to.y)) return invalid('destino');
-      moveToward(party, { x: Math.min(world.w, Math.max(0, to.x)), y: Math.min(world.h, Math.max(0, to.y)) }, MARCH_SPEED);
+      moveToward(party, clampTo(world, to), MARCH_SPEED);
       return none;
     }
     case 'recrutar': {   // só as comunidades do vale dão homens; cada um sai dos jovens da sua aldeia (communities.js)
@@ -210,10 +229,16 @@ function detect(state, order, hidden, events) {
 }
 
 /**
- * Um dia. Devolve os eventos e o eventual encontro, e `dayBreak`: o índice do primeiro evento que já é do dia seguinte. Uma ordem recusada não gasta o dia: devolve
+ * O efeito próprio de uma ordem, sem passar o dia (nem patrulhas, pretor, Roma, colheita ou sorteios): { events, encounter,
+ * refused }. É exatamente a primeira fase de stepDay. Muda `state`: chamar numa cópia (a pré-visualização da interface).
+ */
+export function ownEffect(state, order) { return applyOrder(state, order); }
+
+/**
+ * Um dia. `atBreak(state)`, se vier, é chamada na viragem do dia (só leitura). Devolve os eventos e o eventual encontro, e `dayBreak`: o índice do primeiro evento que já é do dia seguinte. Uma ordem recusada não gasta o dia: devolve
  * { refused: true, events } sem mexer no estado (nem dia, nem comida, nem patrulhas, nem pretor).
  */
-export function stepDay(state, order, rng) {
+export function stepDay(state, order, rng, atBreak) {
   if (state.over) return { events: [], encounter: null };
   const res = applyOrder(state, order);
   if (res.refused) return res;
@@ -227,6 +252,7 @@ export function stepDay(state, order, rng) {
   feed(state, events);
   if (checkRuin(state)) events.push({ type: 'derrota' });
   state.day += 1;
+  atBreak?.(state);   // só para ler (o Diário fotografa as posturas aqui, entre a ordem e o fim do dia); não mexe em nada
   const dayBreak = events.length;   // daqui em diante os eventos já são do dia novo (colheita, Roma, relatos): o Diário regista-os nesse dia
   events.push(...closeDay(state, state.day - 1));   // fim de estação: colheita; de setembro em diante, a fome das aldeias
   const blocked = state.cooldown > 0;

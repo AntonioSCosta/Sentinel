@@ -2,15 +2,15 @@
 // Módulo puro (sem DOM nem Three.js); `storage` é qualquer objeto com getItem/setItem/removeItem.
 import { makeRng } from './rng.js';
 import { YEAR_DAYS } from './clock.js';
-import { newCampaign, serialize, deserialize } from './state.js';
+import { newCampaign, serialize, deserialize, foodPerDay } from './state.js';
 import { makePraetor } from './praetor.js';
-import { stepDay } from './simulation.js';
+import { stepDay, ownEffect } from './simulation.js';
 import { battleSpec, BATTLE_TYPES, applyResult, withdrawFrom, ALLY_CAP } from './battles.js';
 import { dueScheduled, rollEvent } from './events.js';
-import { ensureIntel, forgetForce, rememberForce } from './intel.js';
+import { ensureIntel, forgetForce, rememberForce, intelView } from './intel.js';
 import { ensureCommunities } from './communities.js';
 import { payTribute, refuseTribute } from './rome.js';
-import { postureSnapshot, postureChanges, record, validJournal } from './journal.js';
+import { postureSnapshot, postureChanges, postureDiff, splitSameOccurrence, record, validJournal } from './journal.js';
 
 export const STORAGE_KEY = 'viriato.campaign';
 const PHASES = ['mapa', 'batalha', 'fim'];
@@ -24,6 +24,18 @@ function scheduledSpec(entry, state, rng) {
     allies: Math.min(state.men, ALLY_CAP), enemies: { legio: 6, velites: 2, centurion: false },
     bonus: { allies: 0, enemies: 0 }, realMen: state.men, foeId: null,
   };
+}
+
+/**
+ * Uma cópia do estado como o jogador o conhece: das forças romanas ficam só as que ele vê hoje (posição certa); as outras
+ * — patrulhas por descobrir, o pretor fora de vista, avistamentos de dias atrás — não existem na cópia.
+ */
+function asSeen(state) {
+  const copy = structuredClone(state);
+  const seen = new Set(intelView(state).forces.filter(f => f.status === 'confirmada').map(f => f.id));
+  copy.patrols = (copy.patrols || []).filter(p => seen.has(String(p.id)));
+  if (copy.praetor && !seen.has(String(copy.praetor.id ?? 'pretor'))) copy.praetor = null;
+  return copy;
 }
 
 function build(state, storage, phase, battle, journal = []) {
@@ -57,13 +69,16 @@ function build(state, storage, phase, battle, journal = []) {
         return { events: [], battle: flow.battle };
       }
       const before = postureSnapshot(state);
-      const { events, encounter, refused, dayBreak = events.length } = stepDay(state, o ?? {}, rng);
+      let mid = null;   // as posturas na viragem do dia: o que mudou até aqui foi a ordem; o que muda depois, o fim do dia
+      const { events, encounter, refused, dayBreak = events.length } = stepDay(state, o ?? {}, rng, s => { mid = postureSnapshot(s); });
       if (refused) return { events, battle: null, refused: true };   // nada mudou: nem dia, nem acontecimentos, nem save
       const ev = rollEvent(state, rng);
       if (ev) events.push({ type: 'acontecimento', ...ev });
-      events.push(...postureChanges(before, state));
-      record(flow.journal, state.day - 1, events.slice(0, dayBreak));   // a ordem, a marcha, o pretor: o dia que acabou
-      record(flow.journal, state.day, events.slice(dayBreak));          // a colheita, Roma, os relatos, o acontecimento: o dia novo
+      const end = postureSnapshot(state), ordered = postureDiff(before, mid ?? end, state), closing = mid ? postureDiff(mid, end, state) : [];
+      const late = events.slice(dayBreak).concat(closing), { back, stay } = splitSameOccurrence(late);
+      record(flow.journal, state.day - 1, events.slice(0, dayBreak).concat(ordered, back));   // a ordem, a marcha, o pretor, a postura que a ordem mudou: o dia que acabou
+      record(flow.journal, state.day, stay);                                                  // a colheita, Roma, os relatos, o acontecimento: o dia novo
+      events.push(...ordered, ...closing);
       if (encounter && !state.over) { flow.battle = battleSpec(encounter, state, rng); flow.phase = 'batalha'; }
       else yearEnd();
       if (state.over && flow.phase !== 'batalha') flow.phase = 'fim';
@@ -117,23 +132,27 @@ function build(state, storage, phase, battle, journal = []) {
   flow.payTribute = id => tribute('pagar', id);
   flow.refuseTribute = id => tribute('recusar', id);
   /**
-   * O que uma ordem daria hoje, sem mexer em nada, pela mesma ordem de prioridade de flow.order: fora do mapa nada se
-   * cumpre; com um capítulo agendado devido (dueScheduled) a ordem não se cumpre e começa esse capítulo; só então stepDay.
-   * { executes, refused, events, state, encounter, scheduled, battle }: `state` é uma cópia; `events` vazio quando a
-   * ordem não se cumpre (nada de ganhos ou custos de uma ação que não acontece); `battle` é a batalha que começaria.
+   * O que uma ordem daria hoje, só com o que o jogador sabe, sem mexer em nada. Pela mesma ordem de prioridade de
+   * flow.order: fora do mapa nada se cumpre; com um capítulo agendado devido (dueScheduled) a ordem não se cumpre e
+   * começa esse capítulo; só então o efeito da própria ordem.
+   *
+   * Três coisas, e só estas: (1) o efeito da própria ordem, que é certo (homens, armas, comida, confiança, a batalha de
+   * um ataque); (2) as consequências de forças romanas que o jogador vê hoje (asSeen: castigo à aldeia que ajuda); (3) o
+   * resto — patrulhas por descobrir, o pretor fora de vista, encontros, sorteios, o fim do dia de Roma — fica de fora: a
+   * interface diz apenas que há riscos que ainda não se conhecem. Nunca corre a simulação do dia (stepDay).
+   * { executes, refused, events, state, encounter, scheduled, battle, upkeep }: `state` é uma cópia «como o jogador a
+   * conhece»; `events` vazio quando a ordem não se cumpre; `upkeep` é a comida que o bando come no dia.
    */
   flow.preview = o => {
-    const copy = structuredClone(state), rng = dayRng(copy);
-    const none = { executes: false, refused: false, events: [], state: copy, encounter: null, scheduled: null, battle: null };
+    const copy = asSeen(state), rng = dayRng(copy);
+    const none = { executes: false, refused: false, events: [], state: copy, encounter: null, scheduled: null, battle: null, upkeep: 0 };
     if (flow.phase !== 'mapa') return { ...none, refused: true };
     const due = dueScheduled(copy);
     if (due) return { ...none, scheduled: { id: due.id, chapter: due.chapter }, battle: scheduledSpec(due, copy, rng) };
-    const r = stepDay(copy, o ?? {}, rng);
+    const r = ownEffect(copy, o ?? {});
     if (r.refused) return { ...none, refused: true, events: r.events };
-    const ev = rollEvent(copy, rng);   // o mesmo sorteio, pela mesma ordem que flow.order
-    if (ev) r.events.push({ type: 'acontecimento', ...ev });
     const battle = r.encounter && !copy.over ? battleSpec(r.encounter, copy, rng) : null;
-    return { ...none, executes: true, events: r.events, encounter: r.encounter ?? null, battle };
+    return { ...none, executes: true, events: r.events, encounter: r.encounter ?? null, battle, upkeep: foodPerDay(copy.men) };
   };
   /** O que pagar ou recusar o tributo daria, sem mexer em nada: { events, state }. */
   flow.previewTribute = (kind, id) => {
