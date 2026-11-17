@@ -7,6 +7,7 @@ import { entryFor, CHRONICLE, SOURCE_LABELS, isUnlocked } from './chronicle.js';
 import { isBridged, isStory } from './bridge.js';
 import { START, foodPerDay } from './state.js';
 import { MARCH_SPEED } from './simulation.js';
+import { TRIBUTE, PUNISH } from './rome.js';
 
 /** Relatos de Roma (doctrine.js): o que muda quando uma contramedida entra e quando sai. */
 const DOCTRINE_TEXT = {
@@ -114,7 +115,12 @@ const RECRUIT_NO = {
   postura: 'não confiam em ti o bastante para te darem homens',
   jovens: 'já não há jovens para dar ao bando',
   'sem-comunidade': 'é uma aldeia pequena, fora do vale: não tem quem dar ao bando',
+  ocupada: 'tem guarnição romana e não pode dar homens às claras',
+  destruida: 'já não tem quem dar ao bando',
 };
+
+const CASTIGO_WHY = { tributo: 'não pagou o tributo', apoio: 'viu-a ajudar-te', suspeita: 'desconfia dela' };
+const ATENCAO_TEXT = { rotina: 'volta à rotina', vigilancia: 'passa a vigiar o vale: mais patrulhas e escoltas maiores', castigo: 'vai castigar quem te ajuda', pretor: 'o pretor vai entrar no vale com a coluna' };
 
 /** Uma frase curta (pt-PT) por evento devolvido por flow.order()/finishBattle(); `dayEvents` são os outros eventos do mesmo dia. */
 export function eventText(ev, state, dayEvents = []) {
@@ -143,6 +149,17 @@ export function eventText(ev, state, dayEvents = []) {
     case 'ano-vencido': return 'O exército do pretor foi desfeito.';
     case 'ruina': return 'O bando desfez-se.';
     case 'aldeia-queimada': return `${name(ev.id)} foi queimada pelos romanos.`;
+    case 'tributo-exigido': return `Roma exige tributo a ${name(ev.id)}: ${ev.food} de comida em ${TRIBUTE.days} dias.`;
+    case 'tributo-sem-comida': return `${name(ev.id)}: não há comida para pagar o tributo (${ev.food} devidos, ${ev.have} nas reservas). Não se paga em parte e o prazo continua. ${KEEP_DAY}`;
+    case 'tributo-pago': return ev.auto ? `${name(ev.id)} paga o tributo a Roma (${ev.food} de comida).` : `${name(ev.id)} entrega o tributo a Roma por tua ordem (−${ev.food} de comida).`;
+    case 'castigo': return `Roma castigou ${name(ev.id)}: ${CASTIGO_WHY[ev.why] ?? 'desconfia dela'}. Mais medo e metade da produção durante ${PUNISH.days} dias.`;
+    case 'castigo-fim': return `${name(ev.id)} refez-se do castigo de Roma.`;
+    case 'ocupada': return `Roma pôs guarnição em ${name(ev.id)}: não dá homens e o medo cresce todos os dias.`;
+    case 'ocupada-fim': return `A guarnição de ${name(ev.id)} foi expulsa.`;
+    case 'comunidade-queimada': return `${name(ev.id)} foi queimada: ${ev.lost} famílias perdem-se${ev.to ? `; as outras refugiam-se em ${name(ev.to)}` : ''}.`;
+    case 'comunidade-abandonada': return `${name(ev.id)} ficou deserta${ev.to ? `: as famílias foram para ${name(ev.to)}` : ''}.`;
+    case 'denuncia': return `${name(ev.id)} denunciou o teu bando a Roma, que sabe agora onde estás.`;
+    case 'roma-atencao': return `Roma presta-te mais atenção: ${ATENCAO_TEXT[ev.to] ?? ''}.`;
     case 'acontecimento': return ev.text;
     case 'doutrina': return DOCTRINE_TEXT[ev.id]?.[ev.on ? 0 : 1] || '';
     case 'emboscada-descoberta': return ev.why === 'guarnicao' ? 'A guarnição da estrada descobriu a emboscada: a luta é em campo aberto.' : 'Os batedores romanos descobriram a emboscada: a luta é em campo aberto.';

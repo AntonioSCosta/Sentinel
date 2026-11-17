@@ -2,6 +2,7 @@
 // Módulo puro (sem DOM nem Three.js). A simulação continua a usar as posições reais (state.patrols,
 // state.praetor); a interface só recebe intelView(state), que é feito apenas de state.intel.
 import { makeRng } from './rng.js';
+import { communityAt, newsFrom } from './communities.js';
 
 export const SIGHT = 150;            // o bando vê uma força a esta distância (o pretor vê o bando a 140)
 export const FORGET = 8;             // dias: um avistamento mais velho do que isto sai do mapa
@@ -169,7 +170,9 @@ export function updateIntel(state, { recon = null, dayEvents = [] } = {}) {
   }
   // 5. relatos de aldeias e castros, e rumores (sorteio próprio, determinista por semente e dia)
   const rng = makeRng(intelSeed(state));
-  const eyes = state.world.settlements.filter(s => s.kind === 'castro' || (s.kind === 'aldeia' && !state.villages?.[s.id]?.burnt));
+  // Só dão relatos os lugares de pé e, nas comunidades do vale, as que a postura deixa (communities.newsFrom).
+  const news = s => { const c = communityAt(state, s.id); return c ? newsFrom(c) : { delay: null, chance: 1 }; };
+  const eyes = state.world.settlements.filter(s => (s.kind === 'castro' || (s.kind === 'aldeia' && !state.villages?.[s.id]?.burnt)) && news(s));
   for (const f of real) {
     if (it.known[f.id]?.day === day) continue;   // já a vês
     if (it.reports.some(r => r.fid === f.id && day - r.seen < REPORT_GAP)) continue;
@@ -178,7 +181,10 @@ export function updateIntel(state, { recon = null, dayEvents = [] } = {}) {
     for (const s of eyes) { const d = dist(s, f); if (d <= sight && d < nd) { nd = d; near = s; } }
     if (near) {
       if (!rng.chance(REPORT_CHANCE)) continue;
-      const delay = Math.min(3, Math.floor(dist(near, state.party) / MESSENGER));
+      const rule = news(near);
+      if (rule.chance < 1 && !rng.chance(rule.chance)) continue;   // a neutra só às vezes
+      const base = Math.min(3, Math.floor(dist(near, state.party) / MESSENGER));
+      const delay = rule.delay === null ? base : rule.delay === 0 ? 0 : Math.max(rule.delay, base);   // a comprometida no próprio dia; a amiga com pelo menos um dia
       // A zona tem de conter qualquer posição em que a aldeia podia ter visto a força: o raio é o
       // próprio alcance da deteção (50; 90 para o exército do pretor). Um raio menor faria o relato mentir.
       const r = { kind: f.kind, x: near.x, y: near.y, r: sight, seen: day, got: day + delay, rel: 'boa', src: 'aldeia', place: near.id, fid: f.id };
