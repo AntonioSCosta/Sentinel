@@ -419,3 +419,117 @@ test('romeDay sem comunidades (estado parcial) não faz nada nem rebenta', () =>
   const s = calm(); delete s.communities;
   assert.deepEqual(romeDay(s, 0), []);
 });
+
+// ——— revisão do PR 4: casos-limite do tributo e da queima ———
+
+const owing = (s, id = 'souto', food = 42, day = 102) => { const c = be(s.communities[id], 'amiga'); c.situation = 'tributada'; c.due = { food, day }; return c; };
+
+test('tributo: sem comida para pagar tudo a ordem falha, nada muda, o pedido fica e o prazo continua a contar (não há pagamento parcial)', () => {
+  const s = calm(), c = owing(s); c.food = 41; s.day = 98; ensureRome(s);
+  const trust0 = c.trust;
+  const ev = payTribute(s, 'souto');
+  assert.deepEqual(ev, [{ type: 'tributo-sem-comida', id: c.settlement, food: 42, have: 41 }]);
+  assert.deepEqual([c.food, c.trust, c.situation, c.due], [41, trust0, 'tributada', { food: 42, day: 102 }]);
+  assert.equal(s.rome.attention, 0);
+  days(s, 4);   // chega ao dia 102 sem pagar: castigo normal
+  assert.equal(c.situation, 'castigada'); assert.equal(s.rome.attention, 10);
+});
+
+test('tributo: com exatamente a comida devida paga-se tudo e a reserva fica a zero; pagar zero nunca limpa a dívida', () => {
+  const s = calm(), c = owing(s); c.food = 42;
+  const ev = payTribute(s, 'souto');
+  assert.deepEqual([c.food, c.due, c.situation, ev[0].food], [0, null, 'livre', 42]);
+  const t = calm(), d = owing(t); d.food = 0;
+  assert.equal(payTribute(t, 'souto')[0].type, 'tributo-sem-comida');
+  assert.deepEqual([d.due, d.situation], [{ food: 42, day: 102 }, 'tributada']);
+});
+
+test('tributo: só se paga ou recusa uma aldeia tributada com pedido pendente', () => {
+  const s = calm(), c = be(s.communities.souto, 'amiga'); c.food = 200;
+  assert.deepEqual([payTribute(s, 'souto'), refuseTribute(s, 'souto'), payTribute(s, 'inventada')], [[], [], []]);
+  c.due = { food: 42, day: 102 };   // pedido sem estar tributada (estado incoerente): ignora-se
+  assert.deepEqual([payTribute(s, 'souto'), refuseTribute(s, 'souto')], [[], []]);
+  assert.deepEqual([c.food, c.due], [200, { food: 42, day: 102 }]);
+});
+
+test('tributo: pagar antes do prazo evita o castigo e a atenção; passado o dia antigo nada acontece', () => {
+  const s = calm(), c = owing(s, 'souto', 42, 102); c.food = 200; s.day = 100; ensureRome(s);
+  step(s); assert.equal(s.day, 101);
+  payTribute(s, 'souto');   // último dia para dar a ordem: state.day < due.day
+  days(s, 5);
+  assert.deepEqual([c.situation, s.rome.attention, c.food], ['livre', 0, 158]);
+});
+
+test('tributo: recusar antes do prazo castiga logo e o prazo antigo não castiga nem sobe a atenção uma segunda vez', () => {
+  const s = calm(), c = owing(s, 'souto', 42, 102); s.day = 95; ensureRome(s);
+  const ev = refuseTribute(s, 'souto');
+  assert.deepEqual([c.situation, c.due, s.rome.attention], ['castigada', null, 10]);
+  assert.deepEqual(evs(ev, 'roma-atencao'), [], 'continua na faixa de rotina');
+  days(s, 12);   // passa o dia 102
+  assert.equal(s.rome.attention, 4, 'subiu 10 uma só vez (não 20) e desceu 6 em 12 dias');
+  assert.equal(c.situation, 'castigada', 'o castigo de 20 dias (desde o dia 95) ainda não acabou');
+});
+
+test('tributo: no dia do prazo já é tarde (a aldeia foi castigada ao virar o dia) e ordens a seguir não fazem nada', () => {
+  const s = calm(), c = owing(s, 'souto', 42, 100); c.food = 200; s.day = 99;
+  step(s); assert.equal(s.day, 100);
+  assert.deepEqual(payTribute(s, 'souto'), []); assert.deepEqual([c.food, c.situation], [200, 'castigada']);
+});
+
+test('tributo: se Roma castiga por apoio uma aldeia tributada, o pedido cai e já não há prazo a cumprir', () => {
+  const s = calm(), c = owing(s, 'souto'), p = places(s).souto; patrolAt(s, p);
+  noteSupport(s, 'souto', 'homens');
+  assert.deepEqual([c.situation, c.due], ['castigada', null]);
+  days(s, 15); assert.equal(s.rome.attention, 0, 'sem prazo, sem segunda punição pelo mesmo tributo');
+});
+
+test('tributo: a aldeia queimada ou abandonada com pedido pendente perde o pedido', () => {
+  const s = calm(); owing(s, 'souto'); burn(s, 'souto', 'pretor');
+  assert.equal(s.communities.souto.due, null);
+  const t = calm(); owing(t, 'vau'); abandon(t, 'vau'); assert.equal(t.communities.vau.due, null);
+});
+
+test('queima: os homens do bando que vinham da aldeia não desaparecem, mesmo que haja menos sobreviventes do que homens', () => {
+  const s = calm(); s.men = 100;
+  const vau = s.communities.vau; vau.away = 20;   // 25 famílias: arde, 15 sobrevivem, mas 20 homens são dela
+  burn(s, 'vau', 'castigo');
+  assert.equal(s.communities.souto.away, 20); assert.equal(vau.away, 0);
+  assert.deepEqual(bandOrigins(s), { souto: 20, sem: 80 });
+  assert.equal(s.men, 100);
+});
+
+test('queima: sem espaço na acolhedora (away ≤ famílias) o resto fica no bando sem origem; os homens contam todos', () => {
+  const s = calm(); s.men = 100;
+  const { vau, souto } = s.communities; vau.away = 20; souto.away = 30;   // o Souto já tem os 30 jovens… de 30 famílias: com os 15 que chegam, tem 45
+  burn(s, 'vau', 'castigo');
+  assert.equal(souto.families, 45); assert.equal(souto.away, 45, 'só cabem 15: 30 + 15');
+  assert.equal(bandOrigins(s).sem, 100 - 45); assert.equal(s.men, 100);
+  assert.ok(COMMUNITY_IDS.every(id => s.communities[id].away <= s.communities[id].families));
+  assert.ok(COMMUNITY_IDS.reduce((n, id) => n + s.communities[id].away, 0) <= s.men);
+  assert.ok(deserialize(serialize(s)));
+});
+
+test('queima: sem aldeia que acolha, os homens ficam no bando como «sem origem»', () => {
+  const s = calm(); s.men = 40;
+  for (const id of ['ribeira', 'penedo', 'souto', 'fonte']) { s.communities[id].situation = 'abandonada'; s.communities[id].families = 0; }
+  s.communities.vau.away = 6;
+  burn(s, 'vau', 'pretor');
+  assert.deepEqual(bandOrigins(s), { sem: 40 }); assert.equal(s.men, 40);
+});
+
+test('abandono: os homens do bando e as famílias passam para a acolhedora, respeitando o espaço', () => {
+  const s = calm(); s.men = 100;
+  const { vau, souto } = s.communities; vau.families = 9; vau.away = 4; souto.away = 28;   // 30 famílias + 9 = 39: sobram 11 lugares
+  abandon(s, 'vau');
+  assert.equal(souto.families, 39); assert.equal(souto.away, 32);
+  assert.deepEqual(bandOrigins(s), { souto: 32, sem: 68 });
+  const t = calm(); t.men = 100; t.communities.vau.families = 9; t.communities.vau.away = 4; t.communities.souto.away = 30;
+  abandon(t, 'vau');
+  assert.equal(t.communities.souto.away, 34, 'cabem: 39 famílias');
+});
+
+test('texto: a ordem de pagar que falha por falta de comida diz quanto falta e nomeia a aldeia', () => {
+  const s = calm(), id = s.communities.vau.settlement, name = s.world.settlements.find(x => x.id === id).name;
+  const t = eventText({ type: 'tributo-sem-comida', id, food: 42, have: 30 }, s);
+  assert.ok(t.includes(name) && t.includes('42') && t.includes('30'), t);
+});

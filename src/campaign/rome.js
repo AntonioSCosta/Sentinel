@@ -12,6 +12,25 @@
 // população (+5%/−10%) e a entrada do pretor e a pressão das contramedidas a lerem a atenção. Deixam-se assim para não
 // mexer no equilíbrio da campanha; o pretor continua a entrar como em praetor.js.
 //
+// CONTRATO DO TRIBUTO PARA O PR 5 (ordens e «assuntos pendentes»). A interface liga-se só a `payTribute` e `refuseTribute`;
+// não repete regras. Tudo o que decide o tributo está aqui.
+//   Estado     uma aldeia deve tributo quando situation === 'tributada' e `due = { food, day }` (comida devida; `day` é o
+//              primeiro dia em que já é tarde). Fora disso as duas funções devolvem [] e não mexem em nada.
+//   Prazo      `levyTribute` marca day = hoje + TRIBUTE.days (10). A ordem pode ser dada com state.day < due.day, ou seja,
+//              nos 10 dias em que a aldeia está tributada. Quando o dia avança para due.day (romeDay) e o pedido continua,
+//              fez-se `refuseTribute`: castigo e atenção +10. Dar a ordem nesse dia já é tarde: devolve [].
+//   Pagar      `payTribute(state, id)` → [{ type: 'tributo-pago', id, food, auto: false }]: tira EXATAMENTE `due.food` às
+//              reservas, −5 de confiança, a aldeia fica livre e `due` null. Roma não repara. Sem comida para tudo não há
+//              pagamento parcial: devolve [{ type: 'tributo-sem-comida', id, food, have }], não muda nada e o prazo
+//              continua. É uma ordem recusada: não gasta o dia (como `sem-armas`).
+//   Recusar    `refuseTribute(state, id)` → [roma-atencao?, castigo { why: 'tributo' }]: atenção +10, castigo (medo +25,
+//              metade da produção, 20 dias) e `due` null já hoje. O prazo antigo deixa de contar (sem segunda punição).
+//   Pagam sozinhas a Fonte (chefe devedor) e as aldeias receosas ou colaboradoras: `tributo-pago` com auto: true, já
+//   na entrada da estação; nunca ficam tributadas, logo não há ordem a dar.
+//   Outras saídas que limpam `due`: castigo por apoio (`punish`), ocupação, queima e abandono. A aldeia deixa de dever.
+//   Eventos que a interface pode mostrar: tributo-exigido { id, food, day }, tributo-pago, tributo-sem-comida, castigo,
+//   roma-atencao { from, to }, castigo-fim.
+//
 // «À vista de Roma» é uma medida do mundo gerado: há uma força romana (patrulha, caçadores ou pretor) a menos de SEEN_RANGE
 // do lugar da aldeia. Não supõe nada do terreno à volta (ver a ligação provisória em communities.js).
 import {
@@ -110,21 +129,28 @@ export function levyTribute(state) {
   return events;
 }
 
-/** O bando manda pagar o tributo: custa a comida (o que houver, até ao devido) e TRIBUTE.trust de confiança. Roma não repara. */
+/** A aldeia está tributada e com o pedido pendente? (as duas ordens do jogador só valem então) */
+const owes = c => !!c && c.situation === 'tributada' && !!c.due;
+
+/**
+ * O bando manda pagar o tributo: custa EXATAMENTE a comida devida e TRIBUTE.trust de confiança; Roma não repara. Não há
+ * pagamento parcial: com menos reservas do que o devido não se paga nada, o estado não muda, o pedido e o prazo ficam, e
+ * devolve-se `tributo-sem-comida` ({ food: devido, have: reservas }). Sem pedido pendente devolve [].
+ */
 export function payTribute(state, id) {
   const c = state.communities?.[id];
-  if (!c?.due) return [];
-  const food = Math.min(c.food, c.due.food);
-  c.food -= food; c.due = null;
-  if (c.situation === 'tributada') c.situation = 'livre';
+  if (!owes(c)) return [];
+  const { food } = c.due;
+  if (c.food < food) return [{ type: 'tributo-sem-comida', id: c.settlement, food, have: c.food }];
+  c.food -= food; c.due = null; c.situation = 'livre';
   shift(c, { trust: TRIBUTE.trust }, { key: 'tributo', text: 'Pagaram o tributo por tua ordem' }, state.day);
   return [{ type: 'tributo-pago', id: c.settlement, food, auto: false }];
 }
 
-/** Não se paga (o jogador recusa, ou o prazo acabou): a atenção sobe 10 e a aldeia é castigada. */
+/** Não se paga (o jogador recusa, ou o prazo acabou): a atenção sobe 10 e a aldeia é castigada. Sem pedido pendente devolve []. */
 export function refuseTribute(state, id) {
   const c = state.communities?.[id];
-  if (!c?.due) return [];
+  if (!owes(c)) return [];
   c.due = null;
   const events = [];
   gain(state, 'tributo', events);
@@ -174,16 +200,24 @@ export function liberate(state, id) {
 }
 
 /**
- * A aldeia arde (`by`: 'pretor' ou 'castigo'): perde BURN_LOSS das famílias e as reservas; os sobreviventes (e os homens do
- * bando que vinham dela, até ao número deles) vão para a vizinha mais amiga; se não houver nenhuma, perdem-se. Fica sem
+ * Quantos de `n` homens do bando cabem como «de» `c`: o que falta para away = famílias (invariante away ≤ families). Chamar
+ * DEPOIS de somar as famílias que chegam. O que não cabe fica no bando sem origem (`bandOrigins().sem`): os homens
+ * (state.men) nunca se perdem por isto, só deixam de ter aldeia a quem custar o luto.
+ */
+const room = (c, n) => Math.max(0, Math.min(n, c.families - c.away));
+
+/**
+ * A aldeia arde (`by`: 'pretor' ou 'castigo'): perde BURN_LOSS das famílias e as reservas; os sobreviventes e os homens do
+ * bando que vinham dela (todos os que couberem, ver `room`) vão para a vizinha mais amiga; se não houver nenhuma, os
+ * sobreviventes perdem-se e os homens ficam no bando sem origem. Fica sem
  * famílias e marca o lugar como queimado no mapa (state.villages), de onde o pretor e a informação a tiram.
  */
 export function burn(state, id, by) {
   const c = state.communities?.[id];
   if (!c || c.situation === 'queimada') return [];
   const lost = Math.round(c.families * BURN_LOSS), survivors = c.families - lost;
-  const to = survivors > 0 ? friendliest(state, id) : null;
-  if (to) { to.families += survivors; to.away += Math.min(c.away, survivors); }
+  const to = c.families > 0 ? friendliest(state, id) : null;
+  if (to) { to.families += survivors; to.away += room(to, c.away); }
   Object.assign(c, { families: 0, away: 0, food: 0, hungry: false, situation: 'queimada', until: null, due: null });
   addMotive(c, 'queimada', 'A aldeia foi queimada', 0, state.day);
   if (state.villages?.[c.settlement]) state.villages[c.settlement].burnt = true;
@@ -195,7 +229,7 @@ export function abandon(state, id) {
   const c = state.communities?.[id];
   if (!c || isDead(c)) return [];
   const to = c.families > 0 ? friendliest(state, id) : null;
-  if (to) { to.families += c.families; to.away += Math.min(c.away, c.families); to.food += c.food; }
+  if (to) { to.families += c.families; to.away += room(to, c.away); to.food += c.food; }
   Object.assign(c, { families: 0, away: 0, food: 0, hungry: false, situation: 'abandonada', until: null, due: null });
   addMotive(c, 'abandonada', 'A aldeia ficou deserta', 0, state.day);
   return [{ type: 'comunidade-abandonada', id: c.settlement, to: to ? to.settlement : null }];
@@ -260,7 +294,7 @@ export function romeDay(state, prevDay) {
     if (c.situation === 'ocupada') shift(c, { fear: OCCUPATION_FEAR }, { key: 'ocupada', text: 'A guarnição romana pesa na aldeia' }, day);
   }
   if (season(prevDay) !== season(day)) events.push(...levyTribute(state));
-  for (const c of communities(state)) if (c.due && day >= c.due.day) events.push(...refuseTribute(state, c.id));
+  for (const c of communities(state)) if (owes(c) && day >= c.due.day) events.push(...refuseTribute(state, c.id));
   for (const c of communities(state)) {
     if (c.posture !== 'colabora' || isDead(c)) continue;
     const p = placeOf(state, c);

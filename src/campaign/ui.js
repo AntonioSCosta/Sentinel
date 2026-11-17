@@ -150,6 +150,7 @@ export function eventText(ev, state, dayEvents = []) {
     case 'ruina': return 'O bando desfez-se.';
     case 'aldeia-queimada': return `${name(ev.id)} foi queimada pelos romanos.`;
     case 'tributo-exigido': return `Roma exige tributo a ${name(ev.id)}: ${ev.food} de comida em ${TRIBUTE.days} dias.`;
+    case 'tributo-sem-comida': return `${name(ev.id)}: não há comida para pagar o tributo (${ev.food} devidos, ${ev.have} nas reservas). Não se paga em parte e o prazo continua. ${KEEP_DAY}`;
     case 'tributo-pago': return ev.auto ? `${name(ev.id)} paga o tributo a Roma (${ev.food} de comida).` : `${name(ev.id)} entrega o tributo a Roma por tua ordem (−${ev.food} de comida).`;
     case 'castigo': return `Roma castigou ${name(ev.id)}: ${CASTIGO_WHY[ev.why] ?? 'desconfia dela'}. Mais medo e metade da produção durante ${PUNISH.days} dias.`;
     case 'castigo-fim': return `${name(ev.id)} refez-se do castigo de Roma.`;
