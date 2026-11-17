@@ -109,7 +109,7 @@ export const UI = {
   go: 'Ir', ambush: 'Emboscar', hide: 'Esconder', recon: 'Reconhecer', diary: 'Diário',
   idle: 'Acampado: o bando espera ordens.',
   goPick: 'Clica no mapa para onde ir (ou numa povoação) · ESC desiste',
-  goingTo: (name, days, food) => `A caminho de ${name}: ${daysText(days)}, cerca de ${food} de comida.`,
+  goingTo: (name, days, food) => `Destino: ${name} — ${daysText(days)}, cerca de ${food} de comida.`,
   waiting: 'Emboscada montada: o bando espera na estrada.',
   waitingFar: 'À espera, mas longe da estrada: daqui não se embosca ninguém.',
   hiding: 'O bando está escondido.',

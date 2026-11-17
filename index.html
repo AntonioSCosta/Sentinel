@@ -16,6 +16,7 @@
      Em ecrãs estreitos ou baixos a coluna passa a gaveta por cima do mapa, aberta com «Assuntos». */
   #mtop,#mbot{position:absolute;left:0;right:0;display:flex;align-items:center;gap:16px;padding:0 14px;background:rgba(16,13,10,.97);border:0 solid #4a3a2a}
   #mtop,#mbot,#mside,#mdiary .card{box-sizing:border-box}
+  #mdiary,#mbattle,#mend,#mcron{z-index:4}   /* as janelas ficam sempre por cima da gaveta de assuntos */
   #mtop{top:0;height:48px;border-bottom-width:1px;font-size:16px}
   #mbot{bottom:0;height:56px;border-top-width:1px;gap:8px}
   #mtop .when{display:flex;align-items:baseline;gap:8px;white-space:nowrap;min-width:0}
@@ -35,7 +36,7 @@
   #mside h2{font-family:'Cinzel',serif;font-size:13px;letter-spacing:.2em;color:var(--dim);text-transform:uppercase;margin:14px 16px 8px;font-weight:400}
   #missues-list{list-style:none;margin:0;padding:0 10px 12px}
   #missues-list li.none{color:var(--dim);font-style:italic;padding:8px 6px;font-size:16px}
-  .issue{margin:0 0 8px;padding:8px 10px 10px;background:#1d1711;border:1px solid #3e3022;border-left:4px solid #6b5438}
+  .issue{position:relative;margin:0 0 8px;padding:8px 10px 10px;background:#1d1711;border:1px solid #3e3022;border-left:4px solid #6b5438}
   .issue.decisao{border-left-color:var(--red)}.issue.t-comida{border-left-color:#d99a3a}.issue.t-ameaca,.issue.t-patrulha{border-left-color:#a3302a}
   .issue .head{display:block;width:100%;min-height:0;padding:0;border:0;background:none;text-align:left;font-family:'EB Garamond',serif;letter-spacing:0;font-size:17px;line-height:1.25;color:var(--ink)}
   .issue .head:hover .title{text-decoration:underline}
@@ -44,7 +45,8 @@
   .issue p{margin:4px 0 0;font-size:15px;line-height:1.3}.issue .meta{color:var(--dim);font-size:14px}.issue .cons{color:#e6c9a8}.issue .note{color:var(--dim);font-size:13px}
   .issue .acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
   .issue .acts button{min-height:36px;padding:4px 10px;font-family:'EB Garamond',serif;font-size:15px;letter-spacing:0}
-  .issue .acts .dismiss{margin-left:auto;min-width:36px}
+  .issue .acts .dismiss{position:absolute;top:4px;right:4px;min-width:32px;min-height:32px;padding:0;border-color:transparent;background:none;color:var(--dim);font-size:18px}
+  .issue .acts:has(> .dismiss:only-child){margin:0;height:0}.issue:has(.dismiss) .head{padding-right:30px}
   #m-int{margin:10px;padding:10px 12px;border:1px solid var(--gold);background:#2a1e12}
   #m-int h2{margin:0 0 6px;color:var(--gold)}#m-int ul{margin:0 0 10px;padding-left:18px;font-size:16px;line-height:1.3}
   #m-int .link,#mctx .link,#mdiary .link{min-height:0;padding:0;border:0;background:none;color:var(--ink);font:inherit;letter-spacing:0;text-align:left;text-decoration:underline;text-decoration-color:#6b5438}
@@ -70,7 +72,7 @@
   #mctx .act.off button{opacity:.55;cursor:not-allowed}#mctx .act.off small{color:#d9b48a}
   #mctx .later{color:#8d7f6c;font-size:13px;font-style:italic;margin:10px 0 0}
   #mtip{position:absolute;max-width:260px;padding:6px 10px;background:rgba(16,13,10,.95);border:1px solid #6b5438;pointer-events:none;font-size:15px;line-height:1.3}
-  #mtip b{display:block;font-family:'Cinzel',serif;font-weight:400;color:var(--gold)}#mtip span{display:block}#mtip em{display:block;color:var(--dim)}
+  #mtip b{display:block;font-family:'Cinzel',serif;font-weight:400;color:var(--gold)}#mtip span{display:block}#mtip em{display:block;color:var(--dim)}#mtip small{display:block;color:var(--gold);font-size:13px;margin-top:2px}
   #mlog{position:absolute;left:12px;bottom:68px;max-width:min(460px,calc(100% - 360px));margin:0;padding:4px 10px;list-style:none;background:rgba(16,13,10,.78);border:1px solid #4a3a2a;font-size:15px;line-height:1.3;pointer-events:none}
   #mlog:empty{display:none}#mlog{transition:opacity .8s}#mlog.faded{opacity:0}
   #mbot button{white-space:nowrap;padding:8px 16px;min-height:42px}

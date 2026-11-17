@@ -359,7 +359,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     else if (stance === 'esconder') t = UI.hiding;
     $('m-status').textContent = t;
   }
-  const destName = () => { const s = flow.state.world.settlements.find(x => Math.hypot(x.x - dest.x, x.y - dest.y) < 1); return s ? name(s.id) : 'esse ponto'; };
+  const destName = () => { const s = flow.state.world.settlements.find(x => Math.hypot(x.x - dest.x, x.y - dest.y) < 1); return s ? name(s.id) : 'o ponto marcado'; };
   const nearRoadNow = () => flow.state.world.road.some((p, i, r) => i && segD(flow.state.party, r[i - 1], p) <= 25);
   function segD(p, a, b) { const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy, t = l2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0; return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy); }
 
@@ -630,10 +630,11 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   // --- dica ao passar o rato numa comunidade ---
   function renderTip() {
     const tip = $('mtip'), c = hover?.id ? communityAt(hover.id) : null;
+    const dd = c ? marchDays(settlement(hover.id)) : 0;
     if (!c || mode || !view) { tip.classList.add('hidden'); return; }
     const q = toScreen(view, settlement(hover.id)), cv = $('mapcv').getBoundingClientRect(), mr = $('map').getBoundingClientRect();
     tip.textContent = '';
-    tip.append(el('b', null, name(c.settlement)), el('span', null, `${chiefLine(c.id)} · ${POSTURE_LABEL[c.posture]}${c.situation !== 'livre' ? ` · ${SITUATION_LABEL[c.situation]}` : ''}`), el('em', null, communityLine(c)));
+    tip.append(el('b', null, name(c.settlement)), el('span', null, `${chiefLine(c.id)} · ${POSTURE_LABEL[c.posture]}${c.situation !== 'livre' ? ` · ${SITUATION_LABEL[c.situation]}` : ''}`), el('em', null, communityLine(c)), el('small', null, dd ? `${daysText(dd)} de marcha · −${dd * foodPerDay(flow.state.men)} comida` : 'O bando está aqui.'));
     tip.classList.remove('hidden');
     const x = Math.min(cv.left - mr.left + q.x + 30, cv.right - mr.left - 250), y = Math.max(cv.top - mr.top + 4, cv.top - mr.top + q.y - 30);
     tip.style.left = `${Math.max(4, x)}px`; tip.style.top = `${y}px`;
@@ -780,7 +781,8 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (!active || !flow || flow.phase !== 'mapa' || !view) return;
     const { sx, sy } = mapPoint(e), s = flow.state, hit = hitTest(view, s, sx, sy);
     const at = hit && hit.type === 'settlement' ? settlement(hit.id) || toWorld(view, { x: sx, y: sy }) : toWorld(view, { x: sx, y: sy });
-    hover = { x: at.x, y: at.y, id: hit?.type === 'settlement' ? hit.id : null, label: hoverLabel(hit, at) };
+    const tipShown = hit?.type === 'settlement' && !mode && !!communityAt(hit.id);   // a dica HTML já diz o nome: no mapa fica só a linha e os dias
+    hover = { x: at.x, y: at.y, id: hit?.type === 'settlement' ? hit.id : null, label: tipShown ? null : hoverLabel(hit, at) };
     $('mapcv').style.cursor = hit ? 'pointer' : 'crosshair';
     renderTip(); schedulePaint();
   }

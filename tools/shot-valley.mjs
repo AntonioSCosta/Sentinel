@@ -36,6 +36,17 @@ for (const vp of [{ width: 1366, height: 768 }, { width: 1280, height: 800 }, { 
     await page.evaluate(() => window.__game.campaign.openDiary('comunidades'));
     await page.waitForTimeout(300); await shot('diario');
     await page.evaluate(() => window.__game.campaign.closeDiary());
+    // uma interrupção a sério: o último dia da primavera (colheita e tributo no mesmo dia, numa só janela)
+    await page.evaluate(() => { const c = window.__game.campaign, s = c.flow.state; s.communities.ribeira.situation = 'livre'; s.communities.ribeira.due = null; s.day = 91; s.food = 400; c.step(); });
+    await page.waitForTimeout(400); await shot('interrupcao');
+    // a rota prevista e a dica do rato numa comunidade
+    await page.evaluate(() => window.__game.campaign.play());
+    const pt = await page.evaluate(() => { const c = window.__game.campaign, s = c.flow.state, v = c.view(), r = document.getElementById('mapcv').getBoundingClientRect();
+      const to = s.world.settlements.find(x => x.id === s.communities.fonte.settlement), q = s.world.settlements.find(x => x.id === s.communities.vau.settlement);
+      return { go: { x: r.left + v.ox + (to.x + 60) * v.scale, y: r.top + v.oy + (to.y + 40) * v.scale }, over: { x: r.left + v.ox + q.x * v.scale, y: r.top + v.oy + q.y * v.scale } }; });
+    if (await page.locator('#mside').isVisible() && (await page.evaluate(() => innerWidth <= 900))) await page.keyboard.press('Escape');
+    await page.mouse.click(pt.go.x, pt.go.y); await page.evaluate(() => window.__game.campaign.pause());
+    await page.mouse.move(pt.over.x, pt.over.y); await page.waitForTimeout(300); await shot('rota');
   }
   check(`${tag}: sem erros de página`, errors.length === 0, errors.join(' | '));
   await page.close();
