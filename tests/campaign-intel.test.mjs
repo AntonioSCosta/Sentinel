@@ -16,7 +16,7 @@ const quiet = () => {
   const s = newCampaign(3);
   s.food = 1e6; s.praetor = null; s.patrols = []; s.party = { x: 500, y: 350 };
   for (const v of Object.values(s.villages)) v.burnt = true;   // sem aldeias a mandar relatos
-  s.world.settlements = s.world.settlements.filter(x => x.kind !== 'castro');
+  s.world.settlements = s.world.settlements.filter(x => x.kind !== 'castro' || x.id === s.communities.penedo.settlement);   // o castro do Penedo fica: a gravação tem de continuar coerente
   s.doctrine = { mem: { emboscada: 0, coluna: 0, campo: 0, defesa: 0 }, sectors: [0, 0, 0, 0], activity: 0, active: {}, garrison: null, lastSeen: null, nextSpawn: 1e9, hunterAt: -999, off: true };
   return s;
 };

@@ -2,6 +2,7 @@
 import { generateWorld } from './worldgen.js';
 import { validDoctrine, validHunter } from './doctrine.js';
 import { validIntel } from './intel.js';
+import { newCommunities, validCommunities } from './communities.js';
 
 /** Tabela de equilíbrio, afinada na Task 18 com `npm run balance` (ver a spec, secção 9). */
 export const START = { men: 14, food: 60, arms: 15, fame: 20 };
@@ -18,7 +19,7 @@ export function newCampaign(seed) {
   const villages = {};
   for (const s of world.settlements) if (s.kind === 'aldeia') villages[s.id] = { burnt: false, recruitedDay: -999 };
   return { v: 1, seed, day: 0, ...START, party: { x: world.start.x, y: world.start.y }, world,
-    villages, praetor: null, patrols: [], done: [], over: null, cooldown: 0 };
+    villages, communities: newCommunities(world), praetor: null, patrols: [], done: [], over: null, cooldown: 0 };
 }
 
 /** Subtrai cada campo dado, saturando em 0. */
@@ -59,5 +60,6 @@ export function deserialize(text) {
   if ('intel' in o && !validIntel(o.intel)) return null;   // o que o jogador sabe (opcional: gravações antigas não o têm)
   if (!isObj(o.world) || !isObj(o.world.start) || !Array.isArray(o.world.settlements)) return null;
   if (!o.world.settlements.every(s => isObj(s) && typeof s.id === 'string' && num(s.x) && num(s.y))) return null;
+  if ('communities' in o && !validCommunities(o.communities, o.world)) return null;   // as cinco comunidades do vale, ligadas ao mundo (opcional: gravações antigas não as têm)
   return o;
 }

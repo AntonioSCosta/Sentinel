@@ -8,6 +8,7 @@ import { stepDay } from './simulation.js';
 import { battleSpec, BATTLE_TYPES, applyResult, withdrawFrom, ALLY_CAP } from './battles.js';
 import { dueScheduled, rollEvent } from './events.js';
 import { ensureIntel, forgetForce, rememberForce } from './intel.js';
+import { ensureCommunities } from './communities.js';
 
 export const STORAGE_KEY = 'viriato.campaign';
 const PHASES = ['mapa', 'batalha', 'fim'];
@@ -25,6 +26,7 @@ function scheduledSpec(entry, state, rng) {
 
 function build(state, storage, phase, battle) {
   ensureIntel(state);   // campanha nova ou gravação antiga: o jogador começa a saber o que tem à vista
+  ensureCommunities(state);   // gravação v1 de antes das comunidades: ganha-as no estado inicial
   const flow = {
     state, phase, battle,
     save() {
