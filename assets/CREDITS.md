@@ -36,3 +36,7 @@ Todas as texturas abaixo são do Poly Haven e estão sob licença **CC0** (domí
 - **Rapier** (`@dimforge/rapier3d-compat`) 0.12.0 — Apache-2.0. https://rapier.rs
 - **Cinzel** e **EB Garamond** — SIL Open Font License 1.1, via `@fontsource`. https://fonts.google.com
 
+
+## Mapa 3D (peças do Blender)
+
+- **Casa redonda lusitana** (`assets/map/models/casa_redonda.glb`): modelada no Blender para o projeto; a cor da pedra cozida a partir da textura stone_wall_04 do Poly Haven (CC0). Fontes e licenças em `art/LICENSES.md`.

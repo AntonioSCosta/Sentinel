@@ -1,0 +1,21 @@
+{
+  "_": "Orçamentos e convenções das peças do mapa 3D (docs/mapa-3d/2026-11-17-proposta.md, secções 3.3 e 4). Verificados por tools/check-map-assets.mjs.",
+  "conventions": {
+    "units": "metro",
+    "up": "+Y (glTF)",
+    "front": "+Z (glTF) = -Y no Blender",
+    "pivot": "centro da base, no chão (y = 0)",
+    "maxTexture": 1024,
+    "maxMaterials": 2,
+    "extensionsAllowed": ["EXT_meshopt_compression", "KHR_mesh_quantization", "KHR_texture_transform"]
+  },
+  "pieces": {
+    "casa_redonda": {
+      "file": "casa_redonda.glb",
+      "lods": { "LOD0": 2000, "LOD1": 600 },
+      "height": [4.5, 7.0],
+      "footprint": [6.5, 8.0],
+      "maxKB": 1100
+    }
+  }
+}
