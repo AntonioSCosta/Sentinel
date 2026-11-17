@@ -57,9 +57,9 @@ export function deserialize(text) {
   if ('decisivaWon' in o && typeof o.decisivaWon !== 'boolean') return null;
   if ('doctrine' in o && !validDoctrine(o.doctrine)) return null;   // Roma aprende (opcional: gravações antigas não a têm)
   if (!o.patrols.every(validHunter)) return null;
-  if ('intel' in o && !validIntel(o.intel)) return null;
-  if ('communities' in o && !validCommunities(o.communities)) return null;   // as cinco comunidades do vale (opcional: gravações antigas não as têm)   // o que o jogador sabe (opcional: gravações antigas não o têm)
+  if ('intel' in o && !validIntel(o.intel)) return null;   // o que o jogador sabe (opcional: gravações antigas não o têm)
   if (!isObj(o.world) || !isObj(o.world.start) || !Array.isArray(o.world.settlements)) return null;
   if (!o.world.settlements.every(s => isObj(s) && typeof s.id === 'string' && num(s.x) && num(s.y))) return null;
+  if ('communities' in o && !validCommunities(o.communities, o.world)) return null;   // as cinco comunidades do vale, ligadas ao mundo (opcional: gravações antigas não as têm)
   return o;
 }

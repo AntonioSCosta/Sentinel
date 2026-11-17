@@ -1,6 +1,24 @@
 // As cinco comunidades do primeiro vale: identidade, estado, postura e motivos (GDD v2, «As cinco aldeias»).
 // Módulo puro (sem DOM nem Three.js). Os nomes são inventados; os números são propostas a afinar com `npm run balance`.
-// Cada comunidade está ligada a um lugar do mundo gerado (state.world), escolhido de forma determinística à volta do início.
+//
+// LIGAÇÃO PROVISÓRIA AO MUNDO: cada comunidade aponta (`settlement`) para um lugar do mundo gerado (state.world), escolhido
+// de forma determinística (`assignSettlements`). É só um suporte para ter um ponto no mapa até haver o vale desenhado à mão
+// (fase posterior). NÃO garante que o terreno real corresponda a `IDENTITY[id].place` («à beira da estrada», «à sombra do
+// posto»…): essas descrições são texto de ambiente. O que é garantido, e validado ao carregar, é só: o lugar existe,
+// ninguém o partilha, e o Penedo é um castro e as outras aldeias. Código dos PR seguintes só pode depender disso — nunca
+// de distâncias, estrada, rio ou posto romano junto de uma comunidade.
+//
+// Estado de uma comunidade (state.communities[id]) — o que cada campo significa e quem lhe mexe:
+//   families  famílias que a aldeia tem agora (inteiro ≥ 0). Só desce por Roma (castigo, queima, abandono; PR 4) e sobe nunca
+//             no vale inicial. Base da produção e do limite de jovens.
+//   away      homens desta aldeia que estão no bando (inteiro, 0 ≤ away ≤ families). Sobe ao recrutar (PR 2); desce quando
+//             morrem (baixas atribuídas à aldeia de origem) ou regressam. `youth` e `production` descontam-no.
+//   situation o que Roma lhe fez e dura enquanto durar o estado: um de SITUATIONS. 'livre' é o normal. Quem a muda é Roma
+//             (PR 4); a postura (confiança/medo) não a altera nem depende só dela.
+//   until     dia (número) em que a `situation` atual acaba por si; null se não tem fim marcado (ou está 'livre'). Só tem
+//             sentido com situation ≠ 'livre'; o fim da situação é decidido por quem a aplicou, não pelo relógio sozinho.
+//   due       pedido pendente de Roma à aldeia: { food, day } = comida a entregar até ao dia `day`; null se não há. É o que
+//             o PR 4 cria como tributo e o PR 5 mostra como «assunto pendente». Cumpri-lo ou recusá-lo limpa-o.
 
 export const COMMUNITY_IDS = ['ribeira', 'penedo', 'souto', 'vau', 'fonte'];
 
@@ -123,6 +141,7 @@ function segDist(p, a, b) {
 const roadDist = (world, p) => { let d = Infinity; for (let i = 1; i < (world.road?.length ?? 0); i++) d = Math.min(d, segDist(p, world.road[i - 1], world.road[i])); return d; };
 
 /**
+ * LIGAÇÃO PROVISÓRIA (ver o cabeçalho): a descrição abaixo é a regra de escolha, não uma garantia sobre o terreno.
  * Escolhe os lugares do vale: o castro mais perto do início é o Penedo; das quatro aldeias mais perto do início,
  * a mais perto de um posto romano é a Fonte, a mais perto da estrada é a Ribeira, a mais perto do início é o Souto
  * (está na serra de onde o bando parte) e a que sobra é o Vau. Determinístico: só depende do mundo.
@@ -152,16 +171,27 @@ export function ensureCommunities(state) {
 }
 
 const num = x => typeof x === 'number' && Number.isFinite(x);
+const int0 = x => Number.isInteger(x) && x >= 0;
 const isObj = x => !!x && typeof x === 'object' && !Array.isArray(x);
 const validMotive = m => isObj(m) && typeof m.key === 'string' && typeof m.text === 'string' && num(m.v) && num(m.day);
 
-/** As comunidades gravadas são utilizáveis? (deserialize recusa a gravação se não forem.) */
-export function validCommunities(o) {
+/**
+ * As comunidades gravadas são utilizáveis? (deserialize recusa a gravação se não forem.)
+ * Com `world` (state.world) confere também a ligação ao mundo: o lugar existe, é usado por uma só comunidade e o tipo bate
+ * com a identidade (castro para o Penedo, aldeia para as outras). Sem `world` só valida a forma de cada comunidade.
+ */
+export function validCommunities(o, world) {
   if (!isObj(o)) return false;
+  const kinds = world ? new Map(world.settlements.map(s => [s.id, s.kind])) : null;
+  const used = new Set();
   return COMMUNITY_IDS.every(id => {
     const c = o[id];
-    return isObj(c) && c.id === id && typeof c.settlement === 'string'
-      && num(c.families) && c.families >= 0 && num(c.away) && c.away >= 0 && num(c.food) && c.food >= 0
+    if (!(isObj(c) && c.id === id && typeof c.settlement === 'string')) return false;
+    if (kinds) {
+      if (!kinds.has(c.settlement) || used.has(c.settlement) || kinds.get(c.settlement) !== IDENTITY[id].kind) return false;
+      used.add(c.settlement);
+    }
+    return int0(c.families) && int0(c.away) && c.away <= c.families && num(c.food) && c.food >= 0
       && num(c.trust) && c.trust >= 0 && c.trust <= 100 && num(c.fear) && c.fear >= 0 && c.fear <= 100
       && Array.isArray(c.motives) && c.motives.length <= MAX_MOTIVES && c.motives.every(validMotive)
       && SITUATIONS.includes(c.situation) && (c.until === null || num(c.until))

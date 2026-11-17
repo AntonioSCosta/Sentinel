@@ -148,3 +148,50 @@ test('gravação v1 antiga, sem comunidades, continua a carregar e ganha as cinc
   const again = {}; ensureCommunities(again.state = back.state);
   assert.equal(again.state.communities, back.state.communities, 'ensureCommunities não refaz o que já existe');
 });
+
+// --- Validação contra o mundo gravado (referências, duplicados, tipos) e coerência de families/away ---
+const mutate = (s, f) => { const o = JSON.parse(serialize(s)); f(o); return deserialize(JSON.stringify(o)); };
+const aSettlement = (o, kind, not = []) => o.world.settlements.find(x => x.kind === kind && !not.includes(x.id));
+
+test('gravação: a comunidade tem de apontar para um lugar que existe no mundo', () => {
+  const s = newCampaign(11);
+  assert.equal(mutate(s, o => { o.communities.souto.settlement = 'lugar-que-nao-existe'; }), null);
+  assert.equal(mutate(s, o => { o.communities.penedo.settlement = ''; }), null);
+  assert.ok(mutate(s, () => {}), 'a gravação intacta carrega');
+  assert.equal(validCommunities(s.communities, s.world), true);
+  const w = { settlements: [] };
+  assert.equal(validCommunities(s.communities, w), false);
+});
+
+test('gravação: cada lugar serve uma só comunidade', () => {
+  const s = newCampaign(11);
+  assert.equal(mutate(s, o => { o.communities.vau.settlement = o.communities.souto.settlement; }), null);
+  assert.equal(mutate(s, o => { o.communities.fonte.settlement = o.communities.ribeira.settlement; }), null);
+});
+
+test('gravação: o Penedo é um castro e as outras são aldeias', () => {
+  const s = newCampaign(11);
+  const used = COMMUNITY_IDS.map(id => s.communities[id].settlement);
+  assert.equal(mutate(s, o => { o.communities.penedo.settlement = aSettlement(o, 'aldeia', used).id; }), null, 'Penedo numa aldeia');
+  assert.equal(mutate(s, o => { o.communities.ribeira.settlement = aSettlement(o, 'castro', used)?.id ?? aSettlement(o, 'posto').id; }), null, 'Ribeira num castro/posto');
+  assert.equal(mutate(s, o => { o.communities.vau.settlement = aSettlement(o, 'posto').id; }), null, 'Vau num posto');
+});
+
+test('gravação: families e away têm de ser inteiros coerentes', () => {
+  const s = newCampaign(11);
+  const bad = [
+    o => { o.communities.ribeira.families = 12.5; },
+    o => { o.communities.ribeira.families = -1; },
+    o => { o.communities.souto.away = 1.5; },
+    o => { o.communities.souto.away = o.communities.souto.families + 1; },   // mais homens fora do que famílias
+    o => { o.communities.penedo.families = 0; o.communities.penedo.away = 1; },
+  ];
+  for (const f of bad) assert.equal(mutate(s, f), null, String(f));
+  assert.ok(mutate(s, o => { o.communities.souto.away = 3; }), 'away dentro das famílias é válido');
+  assert.ok(mutate(s, o => { o.communities.souto.families = 0; }), 'aldeia sem famílias (abandonada) é válida');
+});
+
+test('gravação antiga sem comunidades continua a passar na validação do mundo', () => {
+  const s = newCampaign(11); delete s.communities;
+  assert.ok(deserialize(serialize(s)));
+});
