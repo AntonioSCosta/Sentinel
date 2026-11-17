@@ -15,7 +15,8 @@
 // CONTRATO DO TRIBUTO PARA O PR 5 (ordens e «assuntos pendentes»). A interface liga-se só a `payTribute` e `refuseTribute`;
 // não repete regras. Tudo o que decide o tributo está aqui.
 //   Estado     uma aldeia deve tributo quando situation === 'tributada' e `due = { food, day }` (comida devida; `day` é o
-//              primeiro dia em que já é tarde). Fora disso as duas funções devolvem [] e não mexem em nada.
+//              primeiro dia em que já é tarde). Fora disso, ou com state.day >= due.day, as duas funções devolvem [] e não
+//              mexem em nada; o vencimento em due.day é só de romeDay (`lapseTribute`, interna).
 //   Prazo      `levyTribute` marca day = hoje + TRIBUTE.days (10). A ordem pode ser dada com state.day < due.day, ou seja,
 //              nos 10 dias em que a aldeia está tributada. Quando o dia avança para due.day (romeDay) e o pedido continua,
 //              fez-se `refuseTribute`: castigo e atenção +10. Dar a ordem nesse dia já é tarde: devolve [].
@@ -139,7 +140,7 @@ const owes = c => !!c && c.situation === 'tributada' && !!c.due;
  */
 export function payTribute(state, id) {
   const c = state.communities?.[id];
-  if (!owes(c)) return [];
+  if (!inTime(state, c)) return [];
   const { food } = c.due;
   if (c.food < food) return [{ type: 'tributo-sem-comida', id: c.settlement, food, have: c.food }];
   c.food -= food; c.due = null; c.situation = 'livre';
@@ -147,15 +148,25 @@ export function payTribute(state, id) {
   return [{ type: 'tributo-pago', id: c.settlement, food, auto: false }];
 }
 
-/** Não se paga (o jogador recusa, ou o prazo acabou): a atenção sobe 10 e a aldeia é castigada. Sem pedido pendente devolve []. */
-export function refuseTribute(state, id) {
-  const c = state.communities?.[id];
-  if (!owes(c)) return [];
+/** A ordem do jogador ainda vale: só com state.day < due.day (em due.day o prazo já acabou: ver `lapseTribute`). */
+const inTime = (state, c) => owes(c) && state.day < c.due.day;
+
+/**
+ * O prazo acabou sem pagar (chamada só por romeDay, em due.day): `due` limpa, atenção +10 e castigo. É a única resolução
+ * do vencimento; a ordem voluntária `refuseTribute` passa pelo mesmo caminho, mas só dentro do prazo.
+ */
+function lapseTribute(state, c) {
   c.due = null;
   const events = [];
   gain(state, 'tributo', events);
-  events.push(...punish(state, id, 'tributo'));
+  events.push(...punish(state, c.id, 'tributo'));
   return events;
+}
+
+/** O jogador recusa pagar, antes do prazo: o mesmo que deixá-lo passar, já hoje. Fora do prazo ou sem pedido devolve [] e não mexe em nada. */
+export function refuseTribute(state, id) {
+  const c = state.communities?.[id];
+  return inTime(state, c) ? lapseTribute(state, c) : [];
 }
 
 // ——— castigo, ocupação, queima, abandono ———
@@ -294,7 +305,7 @@ export function romeDay(state, prevDay) {
     if (c.situation === 'ocupada') shift(c, { fear: OCCUPATION_FEAR }, { key: 'ocupada', text: 'A guarnição romana pesa na aldeia' }, day);
   }
   if (season(prevDay) !== season(day)) events.push(...levyTribute(state));
-  for (const c of communities(state)) if (owes(c) && day >= c.due.day) events.push(...refuseTribute(state, c.id));
+  for (const c of communities(state)) if (owes(c) && day >= c.due.day) events.push(...lapseTribute(state, c));
   for (const c of communities(state)) {
     if (c.posture !== 'colabora' || isDead(c)) continue;
     const p = placeOf(state, c);

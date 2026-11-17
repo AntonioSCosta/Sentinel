@@ -533,3 +533,42 @@ test('texto: a ordem de pagar que falha por falta de comida diz quanto falta e n
   const t = eventText({ type: 'tributo-sem-comida', id, food: 42, have: 30 }, s);
   assert.ok(t.includes(name) && t.includes('42') && t.includes('30'), t);
 });
+
+// ——— revisão final: as ordens só valem com state.day < due.day ———
+
+test('prazo: payTribute e refuseTribute funcionam no dia anterior ao prazo', () => {
+  const s = calm(), c = owing(s, 'souto', 42, 102); c.food = 200; s.day = 101;
+  assert.equal(payTribute(s, 'souto')[0].type, 'tributo-pago'); assert.deepEqual([c.food, c.due, c.situation], [158, null, 'livre']);
+  const t = calm(), d = owing(t, 'souto', 42, 102); t.day = 101;
+  assert.equal(evs(refuseTribute(t, 'souto'), 'castigo').length, 1); assert.deepEqual([d.due, d.situation, t.rome.attention], [null, 'castigada', 10]);
+});
+
+test('prazo: no próprio dia do prazo, antes de romeDay, as duas ordens devolvem [] e não mudam nada', () => {
+  for (const order of [payTribute, refuseTribute]) for (const day of [102, 103]) {
+    const s = calm(), c = owing(s, 'souto', 42, 102); c.food = 200; s.day = day; ensureRome(s);
+    const before = JSON.stringify(s);
+    assert.deepEqual(order(s, 'souto'), [], `${order.name} no dia ${day}`);
+    assert.equal(JSON.stringify(s), before, `${order.name} no dia ${day}: estado intacto`);
+  }
+});
+
+test('prazo: romeDay castiga sozinho no dia do prazo, uma só vez, com a atenção a subir 10 uma só vez', () => {
+  const s = calm(), c = owing(s, 'souto', 42, 102); s.day = 102; ensureRome(s);
+  const ev = romeDay(s, 101);
+  assert.equal(evs(ev, 'castigo').length, 1); assert.equal(evs(ev, 'castigo')[0].why, 'tributo');
+  assert.deepEqual([c.situation, c.due, s.rome.attention], ['castigada', null, 10]);
+  s.day = 103;   // o dia seguinte (ímpar: a atenção não desce): já não há pedido, nada de dupla punição
+  assert.deepEqual(romeDay(s, 102), []);
+  assert.equal(s.rome.attention, 10); assert.equal(c.until, 122);
+  assert.equal(c.fear, Math.min(100, 30 + 25));
+});
+
+test('prazo: pelo stepDay, a ordem no último dia vale e a do dia do prazo já não', () => {
+  const s = calm(), c = owing(s, 'souto', 42, 102); c.food = 200; s.day = 100;
+  step(s); assert.equal(s.day, 101);
+  assert.equal(payTribute(s, 'souto').length, 1);
+  const t = calm(), d = owing(t, 'souto', 42, 102); d.food = 200; t.day = 101;
+  step(t); assert.equal(t.day, 102);
+  assert.deepEqual([payTribute(t, 'souto'), refuseTribute(t, 'souto')], [[], []]);
+  assert.deepEqual([d.situation, t.rome.attention, d.food], ['castigada', 10, 200]);
+});
