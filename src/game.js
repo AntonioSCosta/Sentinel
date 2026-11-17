@@ -3204,6 +3204,7 @@ function showCampaignMap() {
   releaseAll(); state = 'map'; endT = 0; endArgs = null; nextChapter = null; resumePending = false;
   for (const id of ['menu', 'end', 'pause', 'hud']) $(id).classList.add('hidden');
   $('hud').classList.remove('intro'); $('msg').style.opacity = 0; missionMsgT = 0; CLOG.length = 0; drawClog();   // nada do prólogo fica no ecrã do mapa
+  if (introVeil) introVeil.style.display = 'none';   // nem o véu escuro da abertura (ficava por cima do mapa se a abertura não chegasse ao fim)
   campUI.open(campUI.flow);
 }
 /** Campanha nova: cria+grava já o fluxo (para que «Continuar» leve ao mapa, não repita o prólogo) e corre o prólogo do massacre como primeira cena. */

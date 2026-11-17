@@ -3,6 +3,7 @@ import { rollEvent } from '../src/campaign/events.js';
 import { CHRONICLE } from '../src/campaign/chronicle.js';
 import { WIN_MEN, WIN_FAME } from '../src/campaign/flow.js';
 import { YEAR_DAYS } from '../src/campaign/clock.js';
+import { placeName } from '../src/campaign/strings.js';
 export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   const $ = id => doc.getElementById(id), shown = id => !!$(id) && !$(id).classList.contains('hidden');
   // espião do contexto 2D (o jsdom não traz canvas): conta as chamadas de desenho
@@ -43,23 +44,93 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
     check('resize leaves the log DOM untouched', first && $('mlog').firstChild === first); }
   check('the map canvas has a size and was drawn', $('mapcv').width > 0 && $('mapcv').height > 0 && fills > 0);
   const num = id => +$(id).textContent.replace(/\D/g, '');
-  check('HUD shows men/food/arms/fame', num('m-men') === s.men && num('m-food') === s.food && num('m-arms') === s.arms && num('m-fame') === s.fame);
+  check('HUD shows men, food as days of autonomy, arms; fame left the bar (PR 5)', num('m-men') === s.men && /\d+ dias/.test($('m-food').textContent) && $('m-food-raw').textContent.includes(String(s.food)) && num('m-arms') === s.arms && !$('m-fame'));
   check('HUD shows date and season', $('m-date').textContent.length > 3 && $('m-season').textContent.length > 2);
   check('log is a live status region', $('mlog').getAttribute('role') === 'status');
-  check('action buttons are real buttons with text', ['m-acampar', 'm-esperar', 'm-esconder'].every(id => $(id).tagName === 'BUTTON' && $(id).textContent.trim()));
-  // clicar no botão Acampar avança um dia
-  const d0 = s.day; $('m-acampar').click();
-  check('Acampar button advances one day', s.day === d0 + 1 && num('m-day') === s.day);
+  check('the bottom bar has only Ir, Emboscar, Esconder, Reconhecer and Diário (no Acampar)', ['m-go', 'm-ambush', 'm-hide', 'm-recon', 'm-diary'].every(id => $(id)?.tagName === 'BUTTON' && $(id).textContent.trim())
+    && $('mbot').querySelectorAll('button').length === 5 && !$('m-acampar'));
+  check('the time starts paused, with pause, 1×, 2× and 4×', !G.campaign.running && $('m-pause').getAttribute('aria-pressed') === 'true' && [...$('m-time').querySelectorAll('[data-speed]')].map(b => b.dataset.speed).join() === '1,2,4');
+  // um dia sem ordem: o bando acampa (parar é não dar ordem)
+  const d0 = s.day, date0 = $('m-date').textContent; G.campaign.step();
+  check('a day with no order camps and the date moves on', s.day === d0 + 1 && $('m-date').textContent !== date0);
+  win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'Space', key: ' ' }));
+  check('Space resumes the time', G.campaign.running && $('m-pause').getAttribute('aria-pressed') === 'false');
+  win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'Space', key: ' ' }));
+  check('Space pauses it again', !G.campaign.running);
   // clicar numa aldeia mostra o painel contextual
   const vill = s.world.settlements.find(x => x.kind === 'aldeia'), view = G.campaign.view();
   const cv = $('mapcv'); cv.getBoundingClientRect = () => ({ left: 0, top: 0, width: view.width, height: view.height });
   const sx = view.ox + vill.x * view.scale, sy = view.oy + vill.y * view.scale;
   cv.dispatchEvent(new win.MouseEvent('click', { clientX: sx, clientY: sy, bubbles: true }));
-  check('clicking a village shows its panel with Recrutar', shown('mctx') && $('mctx').textContent.includes(vill.name) && !!$('mctx').querySelector('[data-act="recrutar"]'));
-  // clicar em terreno vazio marcha
+  check('clicking a village shows its panel with Recrutar', shown('mctx') && $('mctx').querySelector('h3').textContent === placeName(s, vill.id) && !!$('mctx').querySelector('[data-act="recrutar"]'));
+  // clicar em terreno vazio: o bando parte para lá e o tempo corre
   const x0 = s.party.x, y0 = s.party.y;
   cv.dispatchEvent(new win.MouseEvent('click', { clientX: view.ox + 2, clientY: view.oy + 2, bubbles: true }));
-  check('clicking empty ground marches', s.party.x !== x0 || s.party.y !== y0);
+  check('clicking empty ground sets the destination and runs the time', !!G.campaign.dest && G.campaign.running);
+  G.campaign.pause(); G.campaign.step();
+  check('the next day marches towards it', s.party.x !== x0 || s.party.y !== y0);
+  // PR #17: o painel de uma aldeia não revela forças romanas que o jogador não conhece
+  { const panelText = () => { G.campaign.select(vill.id); const t = $('mctx').textContent; return t; };
+    const keep = { x: s.party.x, y: s.party.y, patrols: s.patrols, known: s.intel.known };
+    s.party = { x: vill.x, y: vill.y }; s.patrols = []; s.intel.known = {}; G.campaign.render();
+    const clean = panelText();
+    s.patrols = [{ id: 'oculta', kind: 'legio', x: vill.x + 6, y: vill.y, men: 6, i: 1 }]; G.campaign.render();
+    const hidden = panelText();
+    check('the village panel is identical with and without an undiscovered patrol next to it', clean === hidden && !/castiga|combate|romanos/i.test(hidden));
+    check('the panel always says there are risks not yet known (same words, whatever is hidden)', clean.includes('Há riscos que ainda não conheces.') && hidden.includes('Há riscos que ainda não conheces.'));
+    const co = s.communities.souto, so = s.world.settlements.find(x => x.id === co.settlement), kept = { t: co.trust, f: co.fear, p: co.posture };
+    co.trust = 50; co.fear = 30; co.posture = 'amiga'; s.party = { x: so.x, y: so.y };
+    s.patrols = [{ id: 'oculta', kind: 'legio', x: so.x + 6, y: so.y, men: 6, i: 1 }]; s.intel.known = {}; G.campaign.render();
+    const unseen = panelText();
+    s.intel.known = { oculta: { kind: 'legio', x: so.x + 6, y: so.y, men: 6, day: s.day } }; G.campaign.select(so.id); G.campaign.render();
+    const seen = $('mctx').textContent;
+    check('a patrol the player sees today does show up in the panel (and an unseen one does not)', /castiga/i.test(seen) && !/castiga/i.test(unseen));
+    co.trust = kept.t; co.fear = kept.f; co.posture = kept.p;
+    s.party = { x: keep.x, y: keep.y }; s.patrols = keep.patrols; s.intel.known = keep.known; G.campaign.select(null);
+  }
+  // PR #17: o relógio. Tempo virtual: uma ordem dada a meio de um dia reinicia-o, e o separador escondido pára-o
+  { const real = { st: win.setTimeout, ct: win.clearTimeout };
+    let now = 0, q = [], seq = 0;
+    win.setTimeout = (fn, ms) => { const id = ++seq; q.push({ id, at: now + ms, fn }); return id; };
+    win.clearTimeout = id => { q = q.filter(t => t.id !== id); };
+    const advance = ms => { const end = now + ms; for (;;) { q.sort((a, b) => a.at - b.at); const t = q[0]; if (!t || t.at > end) break; q.shift(); now = t.at; t.fn(); } now = end; };
+    const calm = () => { s.food = 1e6; s.men = 40; s.praetor = null; s.patrols = []; if (!s.done.includes('cativos')) s.done.push('cativos'); };   // sem Roma e sem o capítulo agendado a tomar a ordem
+    calm(); G.campaign.pause(); $('m-hide').click();   // esconder: sem destino, sem marcha, o tempo corre
+    check('the clock runs on its own: one day per 1400 ms at 1×', G.campaign.running && G.campaign.speed === 1);
+    const DAY = 1400;
+    for (const at of [0, 100, 700, 1300, 1399]) {   // a ordem do jogador cai em momentos diferentes do ciclo
+      G.campaign.pause(); calm(); G.campaign.play(1); advance(at);
+      const d0 = s.day; G.campaign.step();   // uma ação com o tempo a correr: gasta um dia
+      advance(DAY - 1);
+      check(`an action ${at} ms into the day restarts the clock: no extra day within a full day (1×)`, s.day === d0 + 1 && G.campaign.running);
+      advance(1);
+      check(`…and the next day comes a full day after the action (${at} ms)`, s.day === d0 + 2);
+    }
+    for (const sp of [2, 4]) {
+      G.campaign.pause(); calm(); G.campaign.play(sp); advance(DAY / sp / 2);
+      const d0 = s.day; G.campaign.step(); advance(DAY / sp - 1);
+      check(`${sp}× keeps its own pace after an action`, s.day === d0 + 1);
+      advance(1); check(`${sp}×: one day per ${DAY / sp} ms`, s.day === d0 + 2);
+    }
+    // o separador escondido pára o tempo; ao voltar não há salto e a velocidade fica
+    G.campaign.pause(); calm(); G.campaign.play(4); advance(100);
+    const dh = s.day, sp = G.campaign.speed;
+    Object.defineProperty(doc, 'hidden', { configurable: true, get: () => true });
+    doc.dispatchEvent(new win.Event('visibilitychange'));
+    check('hiding the tab pauses the clock', !G.campaign.running && $('m-pause').getAttribute('aria-pressed') === 'true');
+    advance(60000);
+    check('no days pass while the tab is hidden', s.day === dh);
+    Object.defineProperty(doc, 'hidden', { configurable: true, get: () => false });
+    doc.dispatchEvent(new win.Event('visibilitychange'));
+    advance(60000);
+    check('coming back does not jump days, and the speed is kept', s.day === dh && !G.campaign.running && G.campaign.speed === sp);
+    G.campaign.play(); calm(); advance(DAY / sp - 1); const dr = s.day; advance(1);
+    check('resuming runs one day per tick (no duplicated loops)', s.day === dr + 1);
+    advance(DAY / sp * 3); check('three more ticks, three more days', s.day === dr + 4);
+    G.campaign.pause(); delete doc.hidden;
+    win.setTimeout = real.st; win.clearTimeout = real.ct; q = [];
+    $('m-hide').getAttribute('aria-pressed') === 'true' && $('m-hide').click();
+  }
   // acampar até haver batalha (máx. 300)
   let n = 0; while (f.phase === 'mapa' && n < 300) { G.campaign.order({ kind: 'acampar' }); n++; }
   check(`camping leads to a battle or the end (${n} orders)`, f.phase !== 'mapa');
@@ -462,8 +533,8 @@ function decisive({ G, doc, win, check, st, setGod, $, shown }) {
 function chronicle({ G, doc, win, check, $, shown }) {
   G.campaignStorage.clear(); G.startCampaign(31); G.showCampaignMap();
   const f = G.campaign.flow, s = f.state;
-  check('map HUD has a «Crónica» button', $('m-cronica')?.tagName === 'BUTTON' && $('m-cronica').textContent.trim() === 'Crónica');
-  $('m-cronica').focus(); $('m-cronica').click();
+  check('the Diário has a «Crónica» button', $('m-cronica')?.tagName === 'BUTTON' && $('m-cronica').textContent.trim() === 'Crónica' && $('mdiary').contains($('m-cronica')));
+  $('m-diary').click(); $('m-cronica').focus(); $('m-cronica').click();
   const dlg = $('mcron');
   check('«Crónica» opens a labelled dialog', shown('mcron') && dlg.getAttribute('role') === 'dialog' && dlg.getAttribute('aria-modal') === 'true'
     && !!$(dlg.getAttribute('aria-labelledby')) && $(dlg.getAttribute('aria-labelledby')).textContent.trim() === 'Crónica');
@@ -497,6 +568,8 @@ function chronicle({ G, doc, win, check, $, shown }) {
   check('sober copy, no exclamation marks', !/!/.test(dlg.textContent));
   win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'Escape', key: 'Escape' }));
   check('Escape closes the Crónica, stays on the map, focus back on the button', !shown('mcron') && G.state === 'map' && shown('map') && doc.activeElement === $('m-cronica'));
+  win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'Escape', key: 'Escape' }));
+  check('a second Escape closes the Diário', !shown('mdiary') && G.state === 'map');
   // um acontecimento do baralho acontece: a entrada desbloqueia
   const ev = rollEvent(s, { chance: () => true, pick: a => a.find(e => e.id === 'seca') || a[0] });
   check('rollEvent produced the drought and recorded it', ev?.id === 'seca' && s.seen.includes('seca'));
@@ -598,34 +671,35 @@ function fixWave({ G, doc, win, check, st, setGod, $, shown }) {
   G.campaignStorage.clear(); G.startCampaign(41); G.showCampaignMap();
   f = G.campaign.flow; const vil = f.state.world.settlements.find(x => x.id === f.state.communities.souto.settlement);
   f.state.party = { x: vil.x, y: vil.y }; f.state.arms = 0;
-  const dayBefore = $('m-day').textContent, foodBefore = f.state.food;
+  const dayBefore = $('m-date').textContent, foodBefore = f.state.food;
   G.campaign.order({ kind: 'recrutar', id: vil.id });
-  check(`a refused order keeps the day and the food, and says so (${$('m-day').textContent})`, $('m-day').textContent === dayBefore && f.state.food === foodBefore && /O dia não passa\./.test([...$('mlog').children].at(-1)?.textContent || ''));
+  check(`a refused order keeps the day and the food, and says so (${$('m-date').textContent})`, $('m-date').textContent === dayBefore && f.state.food === foodBefore && /O dia não passa\./.test([...$('mlog').children].at(-1)?.textContent || ''));
   check(`recruiting with no arms says so and keeps the village's turn (${[...$('mlog').children].at(-1)?.textContent})`, /Não tens armas para equipar recrutas\./.test($('mlog').textContent) && f.state.villages[vil.id].recruitedDay === -999);
 
   // --- informação e reconhecimento ---
   G.campaignStorage.clear(); G.startCampaign(41); G.showCampaignMap(); f = G.campaign.flow;
   check('the day-0 report is in the log, not only in the panel', /junta o exército/.test($('mlog').textContent));
-  check('the map has «Reconhecer» and «Relatos» buttons', $('m-recon')?.tagName === 'BUTTON' && $('m-intel')?.tagName === 'BUTTON' && $('m-intel').getAttribute('aria-expanded') === 'false');
-  $('m-intel').click();
-  check(`«Relatos» opens with where the praetor gathers his army (${$('mintel').textContent.slice(0, 60)})`, shown('mintel') && /junta o exército/.test($('mintel').textContent) && $('mintel').querySelectorAll('button[data-report]').length >= 1);
+  const diaryTab = t => { if (!shown('mdiary')) $('m-diary').click(); $(`mdiary-tab-${t}`).click(); return $('mdiary-body'); };
+  check('the map has «Reconhecer» and the Diário has «Relatos»', $('m-recon')?.tagName === 'BUTTON' && $('mdiary-tab-relatos')?.getAttribute('role') === 'tab');
+  diaryTab('relatos');
+  check(`«Relatos» opens with where the praetor gathers his army (${$('mdiary-body').textContent.slice(0, 60)})`, shown('mdiary') && /junta o exército/.test($('mdiary-body').textContent) && $('mdiary-body').querySelectorAll('button[data-report]').length >= 1);
+  $('mdiary-close').click();
   $('m-recon').click();
-  check('«Reconhecer» arms the scouting mode and says what the click will do', $('m-recon').getAttribute('aria-pressed') === 'true' && /batedores/.test($('m-hint').textContent));
+  check('«Reconhecer» arms the scouting mode, pauses and says what the click will do', $('m-recon').getAttribute('aria-pressed') === 'true' && /batedores/.test($('m-status').textContent) && !G.campaign.running);
   $('m-recon').click();
-  check('pressing it again gives up without spending the day', $('m-recon').getAttribute('aria-pressed') === 'false' && f.state.day === 0 && /Clica para marchar/.test($('m-hint').textContent));
+  check('pressing it again gives up without spending the day', $('m-recon').getAttribute('aria-pressed') === 'false' && f.state.day === 0 && /Acampado/.test($('m-status').textContent));
   G.campaign.order({ kind: 'reconhecer', to: { x: f.state.party.x + 60, y: f.state.party.y } });
-  check(`scouting spends one day and the scouts report back (${[...$('mlog').children].at(-1)?.textContent})`, f.state.day === 1 && /Os batedores voltam/.test($('mlog').textContent) && /Batedores:/.test($('mintel').textContent));
+  check(`scouting spends one day and the scouts report back (${[...$('mlog').children].at(-1)?.textContent})`, f.state.day === 1 && /Os batedores voltam/.test($('mlog').textContent) && /Batedores:/.test(diaryTab('relatos').textContent));
+  $('mdiary-close').click();
   G.campaign.order({ kind: 'reconhecer', to: { x: f.state.party.x + 900, y: f.state.party.y + 900 } });
   check('scouting too far is refused for free', f.state.day === 1 && /longe de mais para os batedores.*O dia não passa\./.test([...$('mlog').children].at(-1)?.textContent || ''));
-  $('m-intel').click();
 
   // --- PR #10: arquivo de relatos, diário de espera, painel de batalha e recusar o combate ---
-  $('m-intel').click();
-  { const arch = $('mintel').querySelector('button[data-archive]');
-    check(`the reports list ends with the archive toggle (${arch?.textContent})`, !!arch && /Arquivo \(\d+ antigos\)/.test(arch.textContent));
-    const cs = win.getComputedStyle($('mpanels'));
-    check(`the reports and places panels share one column at the top left (${cs.left}/${cs.top})`, cs.left === '12px' && cs.top === '64px' && cs.flexDirection === 'column' && $('mintel').parentElement === $('mpanels') && $('mplaces').parentElement === $('mpanels')); }
-  $('m-intel').click();
+  { const arch = [...diaryTab('relatos').querySelectorAll('button')].find(b => /Arquivo/.test(b.textContent));
+    check(`the reports tab has the archive toggle (${arch?.textContent})`, !!arch && /Arquivo \(\d+ antigos\)/.test(arch.textContent));
+    $('mdiary-close').click();
+    const cs = win.getComputedStyle($('mside'));
+    check(`the issues column sits on the right, beside the map (${cs.right}/${cs.width})`, cs.right === '0px' && cs.width === '320px' && $('mctx').parentElement === $('mside') && $('missues').parentElement === $('mside')); }
   { const d = f.state.day; G.campaign.order({ kind: 'esperar' });
     const last = [...$('mlog').children].map(li => li.textContent).find(t => /^Esperas/.test(t)) || '';
     check(`waiting writes a diary line (${last})`, f.state.day === d + 1 && (/^Esperas/.test(last) || f.phase !== 'mapa')); }
@@ -655,46 +729,42 @@ function fixWave({ G, doc, win, check, st, setGod, $, shown }) {
     cv.dispatchEvent(new win.MouseEvent('dblclick', { clientX: q.x, clientY: q.y, bubbles: true }));
     check(`double click in scouting mode sends the scouts once, not three days (${f.state.day - day0} day)`,
       f.phase === 'mapa' && f.state.day === day0 + 1 && f.state.party.x === px && f.state.party.y === py);
-    $('m-intel').click();
+    diaryTab('relatos');
     const d1 = f.state.day, x1 = f.state.party.x, y1 = f.state.party.y;
     win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'ArrowUp', key: 'ArrowUp' }));
-    check('arrow keys do not march while the reports panel is open', f.state.day === d1 && f.state.party.x === x1 && f.state.party.y === y1 && shown('mintel'));
-    $('m-intel').click();
+    check('arrow keys do nothing while the Diário is open', f.state.day === d1 && f.state.party.x === x1 && f.state.party.y === y1 && !G.campaign.dest && shown('mdiary'));
+    $('mdiary-close').click();
+    win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'ArrowUp', key: 'ArrowUp' }));
+    check('on the map an arrow key sets a destination one day north', !!G.campaign.dest && Math.round(G.campaign.dest.y) === Math.round(y1 - 45));
+    G.campaign.pause();
+    win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'ArrowUp', key: 'ArrowUp' }));
+    $('m-go').click();   // com destino, «Ir» cancela-o
     $('m-recon').click();
     const d2 = f.state.day;
     G.campaign.order({ kind: 'acampar' });
     check('another order cancels the scouting mode', $('m-recon').getAttribute('aria-pressed') === 'false'
-      && f.state.day === d2 + 1 && /Clica para marchar/.test($('m-hint').textContent));
+      && f.state.day === d2 + 1 && !/batedores/.test($('m-status').textContent));
   }
 
-  // --- lista de lugares pelo teclado ---
-  check('the map has a «Lugares» button', $('m-places')?.tagName === 'BUTTON' && $('m-places').textContent.trim() === 'Lugares' && $('m-places').getAttribute('aria-expanded') === 'false');
-  $('m-places').click();
-  const items = [...($('mplaces')?.querySelectorAll('button[data-place]') || [])];
-  check(`«Lugares» opens a list of every settlement as buttons (${items.length})`, shown('mplaces') && $('m-places').getAttribute('aria-expanded') === 'true'
-    && items.length === f.state.world.settlements.length && items.every(b => b.tabIndex >= 0 && !b.disabled));
+  // --- lista de lugares pelo teclado (no Diário) ---
+  check('the Diário has a «Lugares» tab', $('mdiary-tab-lugares')?.textContent.trim() === 'Lugares');
+  diaryTab('lugares');
+  const items = [...$('mdiary-body').querySelectorAll('button[data-place]')];
+  check(`«Lugares» lists every settlement as buttons (${items.length})`, items.length === f.state.world.settlements.length && items.every(b => b.tabIndex >= 0 && !b.disabled));
   check(`list items read «nome — tipo, N dias» (${items[1]?.textContent})`, items.every(b => /^.+ — (aldeia|castro|posto|serra)( queimada| tomado| já atacado)?, (aqui|1 dia|\d+ dias)$/.test(b.textContent)));
-  check('focus goes into the list', doc.activeElement === items[0]);
-  const target = items.find(b => b.dataset.place !== vil.id), tid = target.dataset.place, tname = f.state.world.settlements.find(x => x.id === tid).name;
-  target.focus(); target.click();   // Enter on a focused button activates it
-  check(`activating a place selects it: its panel appears, focus on its first action (${$('mctx').textContent.slice(0, 40)})`, shown('mctx') && $('mctx').querySelector('h3').textContent === tname && $('mctx').contains(doc.activeElement));
-  check('the list is scrollable', /auto|scroll/.test(win.getComputedStyle($('mplaces')).overflowY || ''));
+  const target = items.find(b => b.dataset.place !== vil.id), tid = target.dataset.place, tname = placeName(f.state, tid);
+  target.focus(); target.click();
+  check(`activating a place closes the Diário and selects it: its panel appears with the focus (${$('mctx').textContent.slice(0, 40)})`, !shown('mdiary') && shown('mctx') && $('mctx').querySelector('h3').textContent === tname && $('mctx').contains(doc.activeElement));
+  check('the side column scrolls', /auto|scroll/.test(win.getComputedStyle($('mside')).overflowY || ''));
   win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'Escape', key: 'Escape' }));
-  check('Escape closes the list first, stays on the map, focus back on «Lugares»', !shown('mplaces') && G.state === 'map' && doc.activeElement === $('m-places'));
-  // --- «Objetivo»: regras reais, curto, sem janela que interrompa ---
-  check('the map has an «Objetivo» button, collapsed, with an unread dot', $('m-goal')?.tagName === 'BUTTON' && $('m-goal').getAttribute('aria-expanded') === 'false' && /•/.test($('m-goal').textContent) && !shown('mgoal'));
-  $('m-places').click();
-  $('m-goal').click();
-  const gt = $('mgoal').textContent;
-  check('«Objetivo» opens, closes «Lugares» (panels never stack) and loses its dot', shown('mgoal') && !shown('mplaces') && $('m-goal').getAttribute('aria-expanded') === 'true' && !/•/.test($('m-goal').textContent));
-  check(`«Objetivo» states the real win/lose numbers (${WIN_MEN} homens, ${WIN_FAME} fama, ${YEAR_DAYS} dias) and the first steps`,
+  check('Escape closes the panel first, stays on the map, back to the issues', !shown('mctx') && shown('missues') && G.state === 'map');
+  // --- objetivo: regras reais, no separador «Campanha» do Diário ---
+  const gt = diaryTab('campanha').textContent;
+  check(`«Campanha» states the real win/lose numbers (${WIN_MEN} homens, ${WIN_FAME} fama, ${YEAR_DAYS} dias), the fame and the first steps`,
     gt.includes(`${WIN_MEN}+ homens`) && gt.includes(`${WIN_FAME}+ de fama`) && gt.includes(String(YEAR_DAYS)) && /Vitória/.test(gt) && /Derrota/.test(gt)
-    && /Homens/.test(gt) && /Comida/.test(gt) && /Armas/.test(gt) && /Fama/.test(gt) && /Primeiros dias/.test(gt) && /Agora: \d+ homens/.test(gt));
-  $('m-places').click();
-  check('opening «Lugares» closes «Objetivo»', shown('mplaces') && !shown('mgoal'));
-  $('m-goal').click();
+    && /Homens/.test(gt) && /Comida/.test(gt) && /Armas/.test(gt) && /Fama: \d+/.test(gt) && /Primeiros dias/.test(gt) && /Agora: \d+ homens/.test(gt));
   win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'Escape', key: 'Escape' }));
-  check('Escape closes «Objetivo» first, stays on the map', !shown('mgoal') && G.state === 'map');
+  check('Escape closes the Diário, stays on the map', !shown('mdiary') && G.state === 'map');
   check('map copy uses post-1990 spelling', !/acç|direcç|selecç/.test($('map').innerHTML));
   G.campaign.close();
 
