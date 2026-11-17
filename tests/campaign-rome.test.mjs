@@ -402,7 +402,7 @@ test('invariantes: depois de qualquer situação, away ≤ famílias, Σ away �
 });
 
 test('texto: cada acontecimento novo tem uma frase que nomeia a aldeia', () => {
-  const s = calm(), id = s.communities.vau.settlement, name = s.world.settlements.find(x => x.id === id).name;
+  const s = calm(), id = s.communities.vau.settlement, name = 'Aldeia do Vau';   // o nome da comunidade, não o do lugar no mundo gerado (PR 5)
   const all = [
     { type: 'tributo-exigido', id, food: 20, day: 102 }, { type: 'tributo-pago', id, food: 20, auto: true }, { type: 'tributo-pago', id, food: 20, auto: false },
     { type: 'castigo', id, why: 'tributo' }, { type: 'castigo', id, why: 'apoio' }, { type: 'castigo', id, why: 'suspeita' }, { type: 'castigo-fim', id },
@@ -529,7 +529,7 @@ test('abandono: os homens do bando e as famílias passam para a acolhedora, resp
 });
 
 test('texto: a ordem de pagar que falha por falta de comida diz quanto falta e nomeia a aldeia', () => {
-  const s = calm(), id = s.communities.vau.settlement, name = s.world.settlements.find(x => x.id === id).name;
+  const s = calm(), id = s.communities.vau.settlement, name = 'Aldeia do Vau';   // o nome da comunidade, não o do lugar no mundo gerado (PR 5)
   const t = eventText({ type: 'tributo-sem-comida', id, food: 42, have: 30 }, s);
   assert.ok(t.includes(name) && t.includes('42') && t.includes('30'), t);
 });

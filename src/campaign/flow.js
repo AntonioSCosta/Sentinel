@@ -9,6 +9,8 @@ import { battleSpec, BATTLE_TYPES, applyResult, withdrawFrom, ALLY_CAP } from '.
 import { dueScheduled, rollEvent } from './events.js';
 import { ensureIntel, forgetForce, rememberForce } from './intel.js';
 import { ensureCommunities } from './communities.js';
+import { payTribute, refuseTribute } from './rome.js';
+import { postureSnapshot, postureChanges, record, validJournal } from './journal.js';
 
 export const STORAGE_KEY = 'viriato.campaign';
 const PHASES = ['mapa', 'batalha', 'fim'];
@@ -24,15 +26,22 @@ function scheduledSpec(entry, state, rng) {
   };
 }
 
-function build(state, storage, phase, battle) {
+function build(state, storage, phase, battle, journal = []) {
   ensureIntel(state);   // campanha nova ou gravação antiga: o jogador começa a saber o que tem à vista
   ensureCommunities(state);   // gravação v1 de antes das comunidades: ganha-as no estado inicial
+  /** Corre `fn` (que mexe no estado) e acrescenta aos eventos as mudanças de postura; regista tudo no Diário do dia. */
+  const chronicle = (fn, day = () => state.day) => {
+    const before = postureSnapshot(state), out = fn();
+    out.events.push(...postureChanges(before, state));
+    record(flow.journal, day(), out.events);
+    return out;
+  };
   const flow = {
-    state, phase, battle,
+    state, phase, battle, journal,
     save() {
       if (!storage || typeof storage.setItem !== 'function') return;
       try { // gravar é best-effort (quota, modo privado): nunca rebenta o jogo
-        storage.setItem(STORAGE_KEY, JSON.stringify({ v: 1, phase: flow.phase, battle: flow.battle, state: JSON.parse(serialize(state)) }));
+        storage.setItem(STORAGE_KEY, JSON.stringify({ v: 1, phase: flow.phase, battle: flow.battle, state: JSON.parse(serialize(state)), journal: flow.journal }));
       } catch { /* ignorado */ }
     },
     order(o) {
@@ -47,10 +56,13 @@ function build(state, storage, phase, battle) {
         flow.save();
         return { events: [], battle: flow.battle };
       }
+      const before = postureSnapshot(state);
       const { events, encounter, refused } = stepDay(state, o ?? {}, rng);
       if (refused) return { events, battle: null, refused: true };   // nada mudou: nem dia, nem acontecimentos, nem save
       const ev = rollEvent(state, rng);
       if (ev) events.push({ type: 'acontecimento', ...ev });
+      events.push(...postureChanges(before, state));
+      record(flow.journal, state.day - 1, events);   // os eventos são do dia que acabou
       if (encounter && !state.over) { flow.battle = battleSpec(encounter, state, rng); flow.phase = 'batalha'; }
       else yearEnd();
       if (state.over && flow.phase !== 'batalha') flow.phase = 'fim';
@@ -60,7 +72,8 @@ function build(state, storage, phase, battle) {
     /** Recusar o combate pendente (battles.withdrawFrom). Recusado sem mexer em nada quando não se pode. */
     withdraw() {
       if (flow.phase !== 'batalha') return { events: [], refused: true };
-      const events = withdrawFrom(state, flow.battle);
+      let events = null;
+      chronicle(() => ({ events: (events = withdrawFrom(state, flow.battle)) || [] }));
       if (!events) return { events: [], refused: true };
       flow.battle = null;
       yearEnd();
@@ -71,7 +84,7 @@ function build(state, storage, phase, battle) {
     finishBattle(result) {
       if (flow.phase !== 'batalha') return { events: [], refused: true };
       const battle = flow.battle;
-      const events = applyResult(state, battle, result ?? {});
+      const { events } = chronicle(() => ({ events: applyResult(state, battle, result ?? {}) }));
       if (result?.won && battle?.foeId !== undefined) {
         // Só se esquece uma força que deixou de existir. O pretor derrotado numa defesa de aldeia
         // recua e sobrevive: nesse caso volta a ser visto, com os homens que lhe restam.
@@ -87,6 +100,30 @@ function build(state, storage, phase, battle) {
       flow.save();
       return { events };
     },
+  };
+  /**
+   * O jogador manda pagar ou recusar o tributo da comunidade `id` (rome.js: as regras e o prazo são de lá). Não gasta o dia.
+   * { events, refused }: recusado sem mexer em nada fora do mapa, sem pedido pendente, fora do prazo ou sem comida para pagar.
+   */
+  function tribute(kind, id) {
+    if (flow.phase !== 'mapa') return { events: [], refused: true };
+    const r = chronicle(() => ({ events: kind === 'pagar' ? payTribute(state, id) : refuseTribute(state, id) }));
+    if (!r.events.length || r.events[0].type === 'tributo-sem-comida') return { events: r.events, refused: true };   // nada mudou (rome.js garante-o)
+    if (kind === 'recusar') record(flow.journal, state.day, [{ type: 'tributo-recusado', id: state.communities[id].settlement }]);
+    flow.save();
+    return { events: r.events, refused: false };
+  }
+  flow.payTribute = id => tribute('pagar', id);
+  flow.refuseTribute = id => tribute('recusar', id);
+  /** O que uma ordem daria hoje, sem mexer em nada: { events, refused, state } (o estado é uma cópia já com o dia passado). */
+  flow.preview = o => {
+    const copy = structuredClone(state), r = stepDay(copy, o ?? {}, dayRng(copy));
+    return { events: r.events, refused: !!r.refused, state: copy, encounter: r.encounter ?? null };
+  };
+  /** O que pagar ou recusar o tributo daria, sem mexer em nada: { events, state }. */
+  flow.previewTribute = (kind, id) => {
+    const copy = structuredClone(state);
+    return { events: kind === 'pagar' ? payTribute(copy, id) : refuseTribute(copy, id), state: copy };
   };
   function yearEnd() {
     if (!state.over && state.day >= YEAR_DAYS) state.over = state.men >= WIN_MEN && state.fame >= WIN_FAME ? 'vitoria' : 'derrota';
@@ -116,7 +153,7 @@ export function loadFlow(storage) {
     if (!b || typeof b !== 'object' || !BATTLE_TYPES.includes(b.type) || !fin(b.realMen) || !fin(b.allies)
       || !b.enemies || typeof b.enemies !== 'object') return null;
   }
-  return build(state, storage, state.over ? 'fim' : parsed.phase, battle);
+  return build(state, storage, state.over ? 'fim' : parsed.phase, battle, validJournal(parsed.journal) ? parsed.journal : []);   // um diário estragado não deita a campanha fora
 }
 
 export function clearSave(storage) { storage?.removeItem?.(STORAGE_KEY); }

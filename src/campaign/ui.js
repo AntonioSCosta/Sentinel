@@ -8,6 +8,7 @@ import { isBridged, isStory } from './bridge.js';
 import { START, foodPerDay } from './state.js';
 import { MARCH_SPEED } from './simulation.js';
 import { TRIBUTE, PUNISH } from './rome.js';
+import { placeName, POSTURE_LABEL } from './strings.js';
 
 /** Relatos de Roma (doctrine.js): o que muda quando uma contramedida entra e quando sai. */
 const DOCTRINE_TEXT = {
@@ -53,7 +54,7 @@ function placeState(s, state) {
 export function placeLabel(s, state) {
   const d = Math.hypot(s.x - state.party.x, s.y - state.party.y), days = d <= REACH ? 0 : Math.ceil((d - REACH) / MARCH_SPEED) || 1;
   const st = placeState(s, state);
-  return `${s.name} — ${s.kind}${st ? ' ' + st : ''}, ${days ? `${days} ${days === 1 ? 'dia' : 'dias'}` : 'aqui'}`;
+  return `${placeName(state, s.id)} — ${s.kind}${st ? ' ' + st : ''}, ${days ? `${days} ${days === 1 ? 'dia' : 'dias'}` : 'aqui'}`;
 }
 
 const KEEP_DAY = 'O dia não passa.';
@@ -79,8 +80,8 @@ const farText = d => (d <= MARCH_SPEED ? 'a menos de um dia de marcha' : `a cerc
 
 /** Um relato por extenso: quem o traz, o que viu e com que certeza. Nunca diz mais do que o relato sabe. */
 export function reportText(r, state) {
-  const place = id => state.world.settlements.find(s => s.id === id)?.name;
-  const nearest = () => state.world.settlements.reduce((a, b) => (Math.hypot(b.x - r.x, b.y - r.y) < Math.hypot(a.x - r.x, a.y - r.y) ? b : a)).name;
+  const place = id => placeName(state, id);
+  const nearest = () => placeName(state, state.world.settlements.reduce((a, b) => (Math.hypot(b.x - r.x, b.y - r.y) < Math.hypot(a.x - r.x, a.y - r.y) ? b : a)).id);
   switch (r.src) {
     case 'aldeia': return `Relato de ${place(r.place) ?? 'uma aldeia'}: viram ${um(r.kind)} por perto${r.men ? `, ${menText(r.men)}` : ''}${r.dir ? `, a seguir para ${r.dir}` : ''}.`;
     case 'rumor': return `Rumor: fala-se ${de(um(r.kind))} para os lados de ${nearest()}. Nada de certo.`;
@@ -124,7 +125,7 @@ const ATENCAO_TEXT = { rotina: 'volta à rotina', vigilancia: 'passa a vigiar o 
 
 /** Uma frase curta (pt-PT) por evento devolvido por flow.order()/finishBattle(); `dayEvents` são os outros eventos do mesmo dia. */
 export function eventText(ev, state, dayEvents = []) {
-  const name = id => state.world.settlements.find(s => s.id === id)?.name ?? 'o povoado';
+  const name = id => placeName(state, id) ?? 'o povoado';
   switch (ev.type) {
     case 'recrutou': return ev.men ? `${name(ev.id)}: ${ev.men} homens juntam-se a ti.` : `${name(ev.id)}: ninguém tem armas para dar.`;
     case 'recrutar-recusado': return `${name(ev.id)}: ${RECRUIT_NO[ev.why] ?? 'não dão homens ao bando'}. ${KEEP_DAY}`;
@@ -149,6 +150,8 @@ export function eventText(ev, state, dayEvents = []) {
     case 'ano-vencido': return 'O exército do pretor foi desfeito.';
     case 'ruina': return 'O bando desfez-se.';
     case 'aldeia-queimada': return `${name(ev.id)} foi queimada pelos romanos.`;
+    case 'postura': return `${name(ev.id)} está agora ${POSTURE_LABEL[ev.to]?.toLowerCase() ?? ev.to} (era ${POSTURE_LABEL[ev.from]?.toLowerCase() ?? ev.from}).`;
+    case 'tributo-recusado': return `Recusaste o tributo de ${name(ev.id)}.`;
     case 'tributo-exigido': return `Roma exige tributo a ${name(ev.id)}: ${ev.food} de comida em ${TRIBUTE.days} dias.`;
     case 'tributo-sem-comida': return `${name(ev.id)}: não há comida para pagar o tributo (${ev.food} devidos, ${ev.have} nas reservas). Não se paga em parte e o prazo continua. ${KEEP_DAY}`;
     case 'tributo-pago': return ev.auto ? `${name(ev.id)} paga o tributo a Roma (${ev.food} de comida).` : `${name(ev.id)} entrega o tributo a Roma por tua ordem (−${ev.food} de comida).`;
@@ -191,7 +194,7 @@ const CONTEXT_TEXT = {
  * Só usa a especificação da batalha (o inimigo está à frente do bando: os números são os que se veem).
  */
 export function battleBrief(b, state) {
-  const name = id => state.world.settlements.find(s => s.id === id)?.name;
+  const name = id => placeName(state, id);
   const mine = b.allies + (b.bonus?.allies || 0), theirs = b.enemies.legio + b.enemies.velites + (b.bonus?.enemies || 0) + (b.enemies.centurion && !b.commander ? 1 : 0);
   const chief = b.commander || state.praetor?.name || 'o pretor';
   const who = b.foeKind === 'pretor' ? `o exército de ${chief}` : FOE_WHO[b.foeKind] || 'uma força romana';
