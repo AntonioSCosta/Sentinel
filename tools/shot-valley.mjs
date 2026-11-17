@@ -21,8 +21,22 @@ for (const vp of [{ width: 1366, height: 768 }, { width: 1280, height: 800 }, { 
   await shot('inicio');
   await page.evaluate(() => { const c = window.__game.campaign; c.select(c.flow.state.communities.ribeira.settlement); });
   await page.waitForTimeout(400); await shot('ribeira');
-  await page.evaluate(() => { const c = window.__game.campaign; c.select(null); for (let i = 0; i < 40 && c.flow.phase === 'mapa'; i++) c.flow.order({ kind: 'acampar' }); c.render(); });
+  await page.evaluate(() => { const c = window.__game.campaign; c.select(null); c.flow.state.done.push('cativos'); for (let i = 0; i < 40 && c.flow.phase === 'mapa'; i++) c.flow.order({ kind: 'acampar' }); c.render(); });
   await page.waitForTimeout(600); await shot('dia40');
+  // só na interface nova (PR 5): um tributo pendente com a interrupção do dia, e o Diário
+  if (await page.evaluate(() => !!document.getElementById('missues'))) {
+    await page.evaluate(() => {
+      const c = window.__game.campaign, s = c.flow.state, r = s.communities.ribeira;
+      r.situation = 'tributada'; r.due = { food: 18, day: s.day + 7 }; r.food = Math.max(r.food, 40);
+      s.communities.vau.situation = 'castigada'; s.communities.vau.until = s.day + 12;
+      c.flow.journal.push({ day: s.day, type: 'castigo', id: s.communities.vau.settlement, why: 'apoio' });
+      c.render();
+    });
+    await page.waitForTimeout(400); await shot('assuntos');
+    await page.evaluate(() => window.__game.campaign.openDiary('comunidades'));
+    await page.waitForTimeout(300); await shot('diario');
+    await page.evaluate(() => window.__game.campaign.closeDiary());
+  }
   check(`${tag}: sem erros de página`, errors.length === 0, errors.join(' | '));
   await page.close();
 }

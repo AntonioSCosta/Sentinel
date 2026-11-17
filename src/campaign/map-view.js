@@ -326,6 +326,12 @@ function drawIssueMark(ctx, x, y, kind) {
   ctx.restore();
 }
 
+/** Legenda (Diário): a bandeira de uma postura ou a marca de uma situação, num canvas pequeno, centrada em (x, y). */
+export function drawLegend(ctx, kind, value, x, y) {
+  if (kind === 'postura') drawFlag(ctx, x - 18, y + 6, value);
+  else drawSituation(ctx, x + 16, y - 9, value);
+}
+
 /** O ofício de cada comunidade, por cima da figura do lugar (aldeia ou castro). */
 function drawOffice(ctx, id, x, y, dead) {
   ctx.save();

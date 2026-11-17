@@ -12,7 +12,8 @@
     "balance": "node tools/balance.mjs",
     "e2e:paineis": "node tools/e2e-campaign-panels.mjs",
     "e2e:menu": "node tools/e2e-menu.mjs",
-    "e2e:mapa": "node tools/e2e-map-info.mjs"
+    "e2e:mapa": "node tools/e2e-map-info.mjs",
+    "e2e:vale": "node tools/e2e-valley.mjs"
   },
   "keywords": [],
   "author": "",

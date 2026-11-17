@@ -123,6 +123,7 @@ export const UI = {
     noMotives: 'Ainda nada de marcante.', actions: 'O que podes fazer', unavailable: 'Ainda não existe nesta fase',
     later: 'Pedir comida, pedir abrigo, visitar e proteger a aldeia ainda não são ações do jogo.',
     goHere: 'Ir até aqui', reconHere: 'Reconhecer a zona', recruit: 'Recrutar', help: 'Pedir ajuda', attack: 'Atacar o posto',
+    taken: 'Tomado pelo bando.', attacked: 'Já atacado: a guarnição está avisada.', burnt: 'Queimada.',
     trendUp: 'a subir', trendDown: 'a descer', steady: 'estável',
   },
 };
@@ -138,6 +139,8 @@ export const ACTION_NO = {
   'sem-comunidade': 'Aldeia pequena, fora do vale: não dá homens.',
   'ajuda-recusada': days => `Já ajudaram há pouco; volta daqui a ${daysText(days)}.`,
   'posto-atacado': 'Este posto já foi atacado.',
+  'recon-longe': 'Fica fora do alcance dos batedores: aproxima-te primeiro.',
+  'recon-homens': 'Precisas de mais homens para mandar batedores.',
   'tributo-sem-comida': (food, have) => `A aldeia não tem comida para pagar (${food} devidos, ${have} nas reservas). Não se paga em parte.`,
   outro: 'Não se pode fazer daqui.',
 };
