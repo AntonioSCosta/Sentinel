@@ -109,12 +109,19 @@ function waitText(ev, state, dayEvents) {
     ev.food > 0 ? `Comida: −${ev.food}.` : ''].filter(Boolean).join(' ');
 }
 
+/** Porque é que uma aldeia não dá homens (evento `recrutar-recusado`). */
+const RECRUIT_NO = {
+  postura: 'não confiam em ti o bastante para te darem homens',
+  jovens: 'já não há jovens para dar ao bando',
+  'sem-comunidade': 'é uma aldeia pequena, fora do vale: não tem quem dar ao bando',
+};
+
 /** Uma frase curta (pt-PT) por evento devolvido por flow.order()/finishBattle(); `dayEvents` são os outros eventos do mesmo dia. */
 export function eventText(ev, state, dayEvents = []) {
   const name = id => state.world.settlements.find(s => s.id === id)?.name ?? 'o povoado';
   switch (ev.type) {
     case 'recrutou': return ev.men ? `${name(ev.id)}: ${ev.men} homens juntam-se a ti.` : `${name(ev.id)}: ninguém tem armas para dar.`;
-    case 'recrutar-cedo': return `${name(ev.id)}: já recrutaste aqui há pouco${ev.days ? `; volta daqui a ${days(ev.days)}` : ''}. ${KEEP_DAY}`;
+    case 'recrutar-recusado': return `${name(ev.id)}: ${RECRUIT_NO[ev.why] ?? 'não dão homens ao bando'}. ${KEEP_DAY}`;
     case 'sem-armas': return `Não tens armas para equipar recrutas. ${KEEP_DAY}`;
     case 'posto-atacado': return `${name(ev.id)}: este posto já foi atacado, e só se ataca uma vez. ${KEEP_DAY}`;
     case 'ajuda': return `${name(ev.id)} dá-te ${ev.food} de comida${ev.men ? ` e ${ev.men} homens` : ''}.`;

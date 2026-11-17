@@ -11,8 +11,10 @@
 // Estado de uma comunidade (state.communities[id]) — o que cada campo significa e quem lhe mexe:
 //   families  famílias que a aldeia tem agora (inteiro ≥ 0). Só desce por Roma (castigo, queima, abandono; PR 4) e sobe nunca
 //             no vale inicial. Base da produção e do limite de jovens.
-//   away      homens desta aldeia que estão no bando (inteiro, 0 ≤ away ≤ families). Sobe ao recrutar (PR 2); desce quando
-//             morrem (baixas atribuídas à aldeia de origem) ou regressam. `youth` e `production` descontam-no.
+//   away      homens desta aldeia que estão no bando (inteiro, 0 ≤ away ≤ families, e a soma das cinco ≤ state.men). Sobe ao
+//             recrutar (simulation.js); desce com as baixas, atribuídas à aldeia de origem (`loseMen`, usada por `spend`, a fome
+//             e os acontecimentos). Os homens do bando sem aldeia (o bando inicial, voluntários dos castros) contam como `sem`
+//             em `bandOrigins`. `youth` e `production` descontam-no.
 //   situation o que Roma lhe fez e dura enquanto durar o estado: um de SITUATIONS. 'livre' é o normal. Quem a muda é Roma
 //             (PR 4); a postura (confiança/medo) não a altera nem depende só dela.
 //   until     dia (número) em que a `situation` atual acaba por si; null se não tem fim marcado (ou está 'livre'). Só tem
@@ -73,6 +75,11 @@ export const POSTURES = [
 export const HYSTERESIS = 5;         // margem extra para mudar de degrau: a postura não salta de um lado para o outro
 export const MOTIVE_MIN = 5;         // mudanças mais pequenas não criam motivo
 export const MAX_MOTIVES = 8;
+/**
+ * Que parte dos jovens disponíveis (arredondada para cima, mínimo 1) uma comunidade deixa ir numa visita, por postura.
+ * 0 = recusa. Afinar com `npm run balance`.
+ */
+export const RECRUIT_SHARE = { comprometida: 0.5, amiga: 0.35, neutra: 0.15, receosa: 0, colabora: 0 };
 export const START_FOOD = 0.6;       // reservas iniciais por família
 export const SITUATIONS = ['livre', 'tributada', 'castigada', 'ocupada', 'queimada', 'abandonada'];
 
@@ -97,10 +104,51 @@ export function postureFor(m, prev = null) {
 /** Jovens que a aldeia ainda pode dar (os que já estão no bando contam como dados). */
 export const youth = c => Math.max(0, Math.floor(c.families * IDENTITY[c.id].youthRate) - c.away);
 
-/** Comida e armas que a aldeia produz numa estação. */
+/**
+ * Comida e armas que a aldeia produz numa estação. Cada homem que está no bando é uma mão a menos: a produção desce na
+ * proporção `away / families` (os homens fora sobre as famílias que trabalham), até zero.
+ */
 export function production(c, season) {
   const o = OFFICES[IDENTITY[c.id].office];
-  return { food: Math.round(c.families * (o.yield[season] ?? 0)), arms: o.arms };
+  const hands = c.families > 0 ? Math.max(0, 1 - c.away / c.families) : 0;
+  return { food: Math.round(c.families * (o.yield[season] ?? 0) * hands), arms: Math.round(o.arms * hands) };
+}
+
+/** A comunidade que ocupa o lugar `settlementId` do mundo, se houver. */
+export const communityAt = (state, settlementId) => COMMUNITY_IDS.map(id => state.communities?.[id]).find(c => c && c.settlement === settlementId);
+
+/**
+ * De onde vêm os homens do bando: { <comunidade>: homens, …, sem: homens }. `sem` são os que não vieram de nenhuma
+ * aldeia (o bando com que se começa e os voluntários dos castros). Só aparecem as comunidades com homens no bando.
+ */
+export function bandOrigins(state) {
+  const out = {};
+  let sum = 0;
+  for (const id of COMMUNITY_IDS) { const a = state.communities?.[id]?.away ?? 0; if (a > 0) { out[id] = a; sum += a; } }
+  out.sem = Math.max(0, state.men - sum);
+  return out;
+}
+
+/**
+ * Tira `n` homens ao bando e atribui as baixas às origens em proporção ao que cada uma tem no bando (restos para quem
+ * tem a maior fração; empate pela ordem do vale e `sem` por último): determinístico, sem sorteio.
+ * Baixa `away` das comunidades e devolve só as parcelas não nulas, ex.: { souto: 2, sem: 5 }.
+ */
+export function loseMen(state, n) {
+  const w = bandOrigins(state), keys = Object.keys(w).filter(k => w[k] > 0);
+  const total = keys.reduce((t, k) => t + w[k], 0);
+  const k = Math.min(Math.max(0, Math.floor(Number.isFinite(n) ? n : 0)), total);
+  const part = keys.map(key => ({ key, base: Math.floor(k * w[key] / total), frac: (k * w[key]) % total }));
+  let rest = k - part.reduce((t, p) => t + p.base, 0);
+  for (const p of [...part].sort((a, b) => b.frac - a.frac)) if (rest > 0 && p.frac > 0) { p.base++; rest--; }
+  const out = {};
+  for (const p of part) {
+    if (p.base <= 0) continue;
+    out[p.key] = p.base;
+    if (p.key !== 'sem') state.communities[p.key].away -= p.base;
+  }
+  state.men = Math.max(0, state.men - k);
+  return out;
 }
 
 /** Uma comunidade no seu estado inicial, ligada ao lugar `settlement` do mundo. */

@@ -10,6 +10,8 @@ const rng = () => makeRng(7);
 const fresh = () => newCampaign(3);
 const find = (s, kind) => s.world.settlements.find(x => x.kind === kind);
 const at = (s, p) => { s.party.x = p.x; s.party.y = p.y; };
+/** O lugar do Souto (amiga: dá homens): as aldeias soltas do mundo gerado já não recrutam. */
+const souto = s => s.world.settlements.find(x => x.id === s.communities.souto.settlement);
 const far = s => { s.party.x = 500; s.party.y = 10; }; // longe de tudo o que importa
 const ACAMPAR = { kind: 'acampar' };
 
@@ -254,7 +256,7 @@ test('cooldown suprime encontros e desce 1 por dia', () => {
 });
 
 test('recrutar numa aldeia', () => {
-  const s = fresh(), v = find(s, 'aldeia');
+  const s = fresh(), v = souto(s);
   at(s, v); s.fame = 35; s.arms = 10;
   const men = s.men, gain = recruitsFrom(35);
   stepDay(s, { kind: 'recrutar', id: v.id }, rng());
@@ -263,14 +265,11 @@ test('recrutar numa aldeia', () => {
   assert.equal(s.villages[v.id].recruitedDay, 0);
   const m2 = s.men;
   stepDay(s, { kind: 'recrutar', id: v.id }, rng());
-  assert.equal(s.men, m2); // < 10 dias
-  s.day = 10;
-  stepDay(s, { kind: 'recrutar', id: v.id }, rng());
-  assert.equal(s.men, m2 + gain);
+  assert.equal(s.men, m2 + gain); // sem espera fixa: volta a dar logo no dia seguinte
 });
 
 test('recrutar não excede as armas', () => {
-  const s = fresh(), v = find(s, 'aldeia');
+  const s = fresh(), v = souto(s);
   at(s, v); s.fame = 80; s.arms = 2;
   const men = s.men;
   stepDay(s, { kind: 'recrutar', id: v.id }, rng());
@@ -386,7 +385,7 @@ test('defesa: aldeia queimada, party longe ou escondida não dão defesa', () =>
 
 // Fix wave: recrutar sem armas não gasta a vez; um posto só se ataca uma vez por campanha.
 test('recrutar sem armas: evento próprio e a aldeia fica disponível', () => {
-  const s = fresh(), v = find(s, 'aldeia');
+  const s = fresh(), v = souto(s);
   at(s, v); s.arms = 0;
   const men = s.men, r = stepDay(s, { kind: 'recrutar', id: v.id }, rng());
   assert.deepEqual(r.events.filter(e => e.type === 'sem-armas'), [{ type: 'sem-armas', id: v.id }]);

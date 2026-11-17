@@ -3,6 +3,7 @@
 import { romansCampaign } from './clock.js';
 import { praetorStep } from './praetor.js';
 import { foodPerDay, recruitsFrom, checkRuin } from './state.js';
+import { communityAt, youth, loseMen, RECRUIT_SHARE } from './communities.js';
 import { updateIntel, SCOUTS, RECON_RANGE } from './intel.js';
 import { ensureDoctrine, tickDoctrine, moveHunter, spottedAmbush, escortBonus, nextSpawnGap, FIRST_SPAWN, FIRST_SPAWN_MIN, FIRST_NEAR } from './doctrine.js';
 import { makeRng } from './rng.js';
@@ -13,7 +14,7 @@ export const ENCOUNTER_RADIUS = 30;
 const REACH = 20, ROAD_NEAR = 25, VILLAGE_NEAR = 25;
 export const HELP_GAP = 25, HELP_FOOD = 40;   // afinados na Task 18 (npm run balance)
 export const CONVOY_CHANCE = 0.45;   // cada destacamento que sai de um posto é uma coluna de abastecimento com esta probabilidade
-const RECRUIT_GAP = 10, HELP_FAME = 30, HELP_MEN = 2;
+const HELP_FAME = 30, HELP_MEN = 2;
 const PATROL_MEN = { patrulha: 6, comboio: 8 };
 const STARVE = 0.10;
 
@@ -62,16 +63,21 @@ function applyOrder(state, order) {
       moveToward(party, { x: Math.min(world.w, Math.max(0, to.x)), y: Math.min(world.h, Math.max(0, to.y)) }, MARCH_SPEED);
       return none;
     }
-    case 'recrutar': {
-      const { s, no } = reach('aldeia');
-      if (no) return no;
+    case 'recrutar': {   // só as comunidades do vale dão homens; cada um sai dos jovens da sua aldeia (communities.js)
+      const s = state.world.settlements.find(x => x.id === order.id && (x.kind === 'aldeia' || x.kind === 'castro'));
+      if (!s) return invalid('desconhecido');
+      if (dist(s, party) > REACH) return invalid('longe', s.id);
       const v = state.villages[s.id];
-      if (!v) return invalid('desconhecido');
-      if (v.burnt) return invalid('queimada', s.id);
-      if (state.day - v.recruitedDay < RECRUIT_GAP) return refuse({ type: 'recrutar-cedo', id: s.id, days: RECRUIT_GAP - (state.day - v.recruitedDay) });
+      if (v?.burnt) return invalid('queimada', s.id);
+      const c = communityAt(state, s.id);
+      if (!c) return s.kind === 'aldeia' ? refuse({ type: 'recrutar-recusado', id: s.id, why: 'sem-comunidade' }) : invalid('desconhecido');
+      const share = RECRUIT_SHARE[c.posture] ?? 0, avail = youth(c);
+      if (share <= 0) return refuse({ type: 'recrutar-recusado', id: s.id, why: 'postura', posture: c.posture });
+      if (avail <= 0) return refuse({ type: 'recrutar-recusado', id: s.id, why: 'jovens' });
       if (state.arms <= 0) return refuse({ type: 'sem-armas', id: s.id });   // não gasta a vez da aldeia
-      const n = Math.min(recruitsFrom(state.fame), state.arms);
-      state.men += n; state.arms -= n; v.recruitedDay = state.day;
+      const n = Math.min(recruitsFrom(state.fame), state.arms, avail, Math.max(1, Math.ceil(avail * share)));
+      state.men += n; state.arms -= n; c.away += n;
+      if (v) v.recruitedDay = state.day;   // só registo: já não há espera entre recrutamentos
       return { events: [{ type: 'recrutou', id: s.id, men: n }], encounter: null };
     }
     case 'pedir-ajuda': {
@@ -155,7 +161,7 @@ function feed(state, events) {
   if (state.food >= need) { state.food -= need; return; }
   state.food = 0;
   const dead = Math.min(state.men, Math.max(1, Math.floor(state.men * STARVE)));
-  state.men -= dead;
+  loseMen(state, dead);
   events.push({ type: 'fome', mortos: dead });
 }
 

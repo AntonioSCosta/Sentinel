@@ -9,6 +9,7 @@ import { createFlow } from '../src/campaign/flow.js';
 import { YEAR_DAYS } from '../src/campaign/clock.js';
 import { foodPerDay } from '../src/campaign/state.js';
 import { makeRng } from '../src/campaign/rng.js';
+import { COMMUNITY_IDS, RECRUIT_SHARE, youth } from '../src/campaign/communities.js';
 import { HELP_GAP } from '../src/campaign/simulation.js';
 import { ensureDoctrine, sectorOf, SECTORS } from '../src/campaign/doctrine.js';
 
@@ -54,9 +55,10 @@ function survive(s, mem, defend = true) {
     const c = nearest(set.filter(x => x.kind === 'castro' && !(s.help && x.id in s.help && s.day - s.help[x.id] < HELP_GAP)), party);
     if (c) return go(c, { kind: 'pedir-ajuda', id: c.id });
   }
-  // 3) recrutar de 10 em 10 dias, se houver armas
+  // 3) recrutar de 10 em 10 dias (cadência do bot), se houver armas, numa comunidade do vale que dê homens
   if (s.arms > 0 && s.day - mem.lastRecruit >= 10) {
-    const v = nearest(live.filter(x => s.day - s.villages[x.id].recruitedDay >= 10), party);
+    const givers = COMMUNITY_IDS.map(id => s.communities[id]).filter(c => RECRUIT_SHARE[c.posture] > 0 && youth(c) > 0);
+    const v = nearest(set.filter(x => givers.some(c => c.settlement === x.id) && !s.villages[x.id]?.burnt), party);
     if (v) { if (at(v)) mem.lastRecruit = s.day; return go(v, { kind: 'recrutar', id: v.id }); }
   }
   // 4) uma patrulha a ameaçar uma aldeia perto: vai defendê-la

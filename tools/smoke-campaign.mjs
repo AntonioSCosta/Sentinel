@@ -596,7 +596,7 @@ function fixWave({ G, doc, win, check, st, setGod, $, shown }) {
 
   // --- recrutar sem armas ---
   G.campaignStorage.clear(); G.startCampaign(41); G.showCampaignMap();
-  f = G.campaign.flow; const vil = f.state.world.settlements.find(x => x.kind === 'aldeia');
+  f = G.campaign.flow; const vil = f.state.world.settlements.find(x => x.id === f.state.communities.souto.settlement);
   f.state.party = { x: vil.x, y: vil.y }; f.state.arms = 0;
   const dayBefore = $('m-day').textContent, foodBefore = f.state.food;
   G.campaign.order({ kind: 'recrutar', id: vil.id });

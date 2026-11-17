@@ -2,7 +2,7 @@
 import { generateWorld } from './worldgen.js';
 import { validDoctrine, validHunter } from './doctrine.js';
 import { validIntel } from './intel.js';
-import { newCommunities, validCommunities } from './communities.js';
+import { newCommunities, validCommunities, loseMen } from './communities.js';
 
 /** Tabela de equilíbrio, afinada na Task 18 com `npm run balance` (ver a spec, secção 9). */
 export const START = { men: 14, food: 60, arms: 15, fame: 20 };
@@ -22,9 +22,10 @@ export function newCampaign(seed) {
     villages, communities: newCommunities(world), praetor: null, patrols: [], done: [], over: null, cooldown: 0 };
 }
 
-/** Subtrai cada campo dado, saturando em 0. */
+/** Subtrai cada campo dado, saturando em 0. Os homens perdidos saem das aldeias de origem (communities.loseMen). */
 export function spend(state, cost) {
-  for (const k of ['men', 'food', 'arms', 'fame']) if (cost[k] !== undefined) state[k] = Math.max(0, state[k] - cost[k]);
+  if (cost.men !== undefined) loseMen(state, cost.men);
+  for (const k of ['food', 'arms', 'fame']) if (cost[k] !== undefined) state[k] = Math.max(0, state[k] - cost[k]);
   return state;
 }
 
@@ -35,6 +36,7 @@ export function checkRuin(state) {
   return false;
 }
 
+const sumAway = o => Object.values(o.communities).reduce((n, c) => n + c.away, 0);
 export const serialize = state => JSON.stringify(state);
 
 const isObj = x => !!x && typeof x === 'object' && !Array.isArray(x);
@@ -60,6 +62,6 @@ export function deserialize(text) {
   if ('intel' in o && !validIntel(o.intel)) return null;   // o que o jogador sabe (opcional: gravações antigas não o têm)
   if (!isObj(o.world) || !isObj(o.world.start) || !Array.isArray(o.world.settlements)) return null;
   if (!o.world.settlements.every(s => isObj(s) && typeof s.id === 'string' && num(s.x) && num(s.y))) return null;
-  if ('communities' in o && !validCommunities(o.communities, o.world)) return null;   // as cinco comunidades do vale, ligadas ao mundo (opcional: gravações antigas não as têm)
+  if ('communities' in o && !(validCommunities(o.communities, o.world) && sumAway(o) <= o.men)) return null;   // as cinco comunidades do vale, ligadas ao mundo, e os homens delas no bando não passam do bando (opcional: gravações antigas não as têm)
   return o;
 }
