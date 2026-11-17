@@ -275,3 +275,83 @@ test('a interface não muda a simulação: os mesmos dias pelo fluxo dão o mesm
   }
   assert.equal(serialize(a.state), serialize(b.state));
 });
+
+// ——— revisão do PR 5: a pré-visualização respeita as batalhas agendadas; o Diário guarda o dia certo ———
+import { CATIVOS_FROM, CATIVOS_TO } from '../src/campaign/events.js';
+
+/** Fluxo calmo SEM «Os Cativos» já vividos: o capítulo agendado está em jogo entre os dias 10 e 20. */
+const scheduledFlow = (day, seed = 3) => {
+  const st = fakeStorage(), f = createFlow({ storage: st, seed }), s = f.state;
+  s.praetor = null; s.patrols = []; s.food = 1e5; s.men = 40; s.arms = 40; s.fame = 50; ensureDoctrine(s).nextSpawn = 1e9;
+  s.day = day;
+  const p = place(s, 'souto'); be(s.communities.souto, 'amiga'); s.party = { x: p.x, y: p.y };
+  f.save();
+  return { f, st, p };
+};
+
+for (const day of [CATIVOS_FROM, CATIVOS_FROM + 1, CATIVOS_TO]) {
+  test(`preview no dia ${day}: «Os Cativos» estão agendados — a ordem não se cumpre, e a pré-visualização diz o mesmo que a execução`, () => {
+    const { f, st, p } = scheduledFlow(day), s = f.state, o = { kind: 'recrutar', id: p.id };
+    const before = serialize(s), journal = JSON.stringify(f.journal), saved = st.getItem(STORAGE_KEY);
+    const pv = f.preview(o);
+    assert.equal(pv.executes, false, 'a ordem não se cumpre');
+    assert.equal(pv.scheduled?.id, 'cativos'); assert.equal(pv.battle?.chapter, 'cativos'); assert.equal(pv.battle?.type, 'historica');
+    assert.deepEqual(pv.events, [], 'sem ganhos nem custos de uma ação que não acontece');
+    assert.equal(pv.state.communities.souto.away, 0); assert.equal(pv.state.men, s.men);
+    assert.equal(serialize(s), before, 'o estado real não muda'); assert.equal(JSON.stringify(f.journal), journal, 'nem o Diário');
+    assert.equal(st.getItem(STORAGE_KEY), saved, 'nem a gravação');
+    const r = f.order(o);
+    assert.equal(f.phase, 'batalha'); assert.deepEqual(r.battle, pv.battle, 'a batalha prevista é a que começa');
+    assert.deepEqual(r.events, []); assert.equal(s.men, 40, 'não recrutou'); assert.equal(s.day, day, 'o dia não passou');
+  });
+}
+
+test('preview fora da janela dos Cativos (dias 9 e 21): a ordem cumpre-se e a pré-visualização bate com a execução', () => {
+  for (const day of [CATIVOS_FROM - 1, CATIVOS_TO + 1]) {
+    const { f, p } = scheduledFlow(day), o = { kind: 'recrutar', id: p.id };
+    const pv = f.preview(o);
+    assert.equal(pv.executes, true, `dia ${day}`); assert.equal(pv.scheduled, null);
+    const r = f.order(o);
+    assert.equal(f.phase, 'mapa');
+    assert.deepEqual(r.events.find(e => e.type === 'recrutou'), pv.events.find(e => e.type === 'recrutou'), `dia ${day}`);
+    assert.equal(f.state.men, pv.state.men);
+  }
+});
+
+test('preview fora do mapa (batalha em curso): não se cumpre nada, como em flow.order', () => {
+  const { f, p } = scheduledFlow(5); f.phase = 'batalha';
+  const pv = f.preview({ kind: 'recrutar', id: p.id });
+  assert.equal(pv.executes, false); assert.equal(pv.refused, true); assert.deepEqual(pv.events, []);
+});
+
+test('Diário: um tributo exigido no dia X fica no dia X, com o vencimento à parte', () => {
+  const f = quietFlow(), s = f.state, c = be(s.communities.ribeira, 'neutra');   // neutra: fica tributada (não paga sozinha)
+  c.food = 120; s.day = 91;
+  const r = f.order({ kind: 'acampar' });
+  const ev = r.events.find(e => e.type === 'tributo-exigido');
+  assert.ok(ev, 'Roma exigiu tributo no início do verão'); assert.equal(s.day, 92); assert.equal(ev.day, 102, 'o evento da simulação não muda');
+  const j = f.journal.find(e => e.type === 'tributo-exigido');
+  assert.equal(j.day, 92, 'no Diário, o dia em que foi exigido'); assert.equal(j.dueDay, 102, 'o prazo fica guardado');
+  assert.equal(c.due.day - j.day, TRIBUTE.days, 'dez dias de prazo, como a regra');
+  assert.equal(f.journal.find(e => e.type === 'colheita').day, 92, 'a colheita do fim da primavera também é do dia 92');
+});
+
+test('Diário: o que a ordem faz fica no dia em que se deu a ordem; o que vem depois da viragem do dia, no dia seguinte', () => {
+  const f = quietFlow(), s = f.state, p = place(s, 'souto'); be(s.communities.souto, 'amiga'); s.party = { x: p.x, y: p.y }; s.day = 91;
+  f.order({ kind: 'recrutar', id: p.id });
+  assert.equal(f.journal.find(e => e.type === 'recrutou').day, 91);
+  assert.equal(f.journal.find(e => e.type === 'colheita').day, 92);
+});
+
+test('Diário: record nunca deixa o «day» de um evento tapar o dia em que aconteceu', () => {
+  const j = []; record(j, 7, [{ type: 'tributo-exigido', id: 'aldeia-1', food: 5, day: 17 }]);
+  assert.deepEqual(j, [{ type: 'tributo-exigido', id: 'aldeia-1', food: 5, day: 7, dueDay: 17 }]);
+  assert.equal(validJournal(j), true);
+});
+
+test('preview de uma ordem que leva a combate: prevê a mesma batalha que a execução começa', () => {
+  const f = quietFlow(), s = f.state, posto = s.world.settlements.find(x => x.kind === 'posto');
+  s.party = { x: posto.x, y: posto.y };
+  const o = { kind: 'atacar', id: posto.id }, pv = f.preview(o), r = f.order(o);
+  assert.equal(pv.executes, true); assert.ok(pv.battle); assert.deepEqual(r.battle, pv.battle);
+});

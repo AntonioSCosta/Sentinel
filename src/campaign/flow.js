@@ -57,12 +57,13 @@ function build(state, storage, phase, battle, journal = []) {
         return { events: [], battle: flow.battle };
       }
       const before = postureSnapshot(state);
-      const { events, encounter, refused } = stepDay(state, o ?? {}, rng);
+      const { events, encounter, refused, dayBreak = events.length } = stepDay(state, o ?? {}, rng);
       if (refused) return { events, battle: null, refused: true };   // nada mudou: nem dia, nem acontecimentos, nem save
       const ev = rollEvent(state, rng);
       if (ev) events.push({ type: 'acontecimento', ...ev });
       events.push(...postureChanges(before, state));
-      record(flow.journal, state.day - 1, events);   // os eventos são do dia que acabou
+      record(flow.journal, state.day - 1, events.slice(0, dayBreak));   // a ordem, a marcha, o pretor: o dia que acabou
+      record(flow.journal, state.day, events.slice(dayBreak));          // a colheita, Roma, os relatos, o acontecimento: o dia novo
       if (encounter && !state.over) { flow.battle = battleSpec(encounter, state, rng); flow.phase = 'batalha'; }
       else yearEnd();
       if (state.over && flow.phase !== 'batalha') flow.phase = 'fim';
@@ -115,10 +116,24 @@ function build(state, storage, phase, battle, journal = []) {
   }
   flow.payTribute = id => tribute('pagar', id);
   flow.refuseTribute = id => tribute('recusar', id);
-  /** O que uma ordem daria hoje, sem mexer em nada: { events, refused, state } (o estado é uma cópia já com o dia passado). */
+  /**
+   * O que uma ordem daria hoje, sem mexer em nada, pela mesma ordem de prioridade de flow.order: fora do mapa nada se
+   * cumpre; com um capítulo agendado devido (dueScheduled) a ordem não se cumpre e começa esse capítulo; só então stepDay.
+   * { executes, refused, events, state, encounter, scheduled, battle }: `state` é uma cópia; `events` vazio quando a
+   * ordem não se cumpre (nada de ganhos ou custos de uma ação que não acontece); `battle` é a batalha que começaria.
+   */
   flow.preview = o => {
-    const copy = structuredClone(state), r = stepDay(copy, o ?? {}, dayRng(copy));
-    return { events: r.events, refused: !!r.refused, state: copy, encounter: r.encounter ?? null };
+    const copy = structuredClone(state), rng = dayRng(copy);
+    const none = { executes: false, refused: false, events: [], state: copy, encounter: null, scheduled: null, battle: null };
+    if (flow.phase !== 'mapa') return { ...none, refused: true };
+    const due = dueScheduled(copy);
+    if (due) return { ...none, scheduled: { id: due.id, chapter: due.chapter }, battle: scheduledSpec(due, copy, rng) };
+    const r = stepDay(copy, o ?? {}, rng);
+    if (r.refused) return { ...none, refused: true, events: r.events };
+    const ev = rollEvent(copy, rng);   // o mesmo sorteio, pela mesma ordem que flow.order
+    if (ev) r.events.push({ type: 'acontecimento', ...ev });
+    const battle = r.encounter && !copy.over ? battleSpec(r.encounter, copy, rng) : null;
+    return { ...none, executes: true, events: r.events, encounter: r.encounter ?? null, battle };
   };
   /** O que pagar ou recusar o tributo daria, sem mexer em nada: { events, state }. */
   flow.previewTribute = (kind, id) => {

@@ -154,6 +154,7 @@ export const EFFECT = {
   punished: 'Há romanos à vista: Roma castiga a aldeia.',
   battle: 'Leva a combate.',
   instant: 'Não gasta o dia.',
+  scheduled: title => `Hoje não se cumpre: antes disso começa «${title}». Sem ganhos nem custos desta ação.`,
 };
 
 /** O Diário: separadores e títulos. */

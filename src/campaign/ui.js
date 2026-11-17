@@ -599,6 +599,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     };
     const add = (id, label, o) => {
       const r = pv(o), days = marchDays(s);
+      if (r.scheduled) { out.push({ id, label, info: EFFECT.scheduled(EPISODES[r.scheduled.chapter]?.[0] ?? r.scheduled.chapter), run: () => step(o) }); return; }   // flow.order lança o capítulo e não cumpre a ordem
       out.push(r.refused ? { id, label, why: refusedText(r.events[0], days), run: null } : { id, label, info: effects(r, c?.id), run: () => step(o) });
     };
     if (c && c.situation === 'tributada' && c.due) {

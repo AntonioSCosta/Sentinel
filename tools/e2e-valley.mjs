@@ -169,6 +169,24 @@ for (const vp of [{ width: 1366, height: 768 }, { width: 844, height: 390 }]) {
   await page.close();
 }
 
+// revisão do PR 5: no dia 10, com «Os Cativos» por viver, recrutar não promete homens: diz que não se cumpre
+{
+  const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+  const errors = []; page.on('pageerror', e => errors.push(String(e)));
+  await openMap(page);
+  const r = await page.evaluate(() => {
+    const c = window.__game.campaign, s = c.flow.state, p = s.world.settlements.find(x => x.id === s.communities.souto.settlement);
+    s.done = s.done.filter(x => x !== 'cativos'); s.day = 10; s.party = { x: p.x, y: p.y }; c.select(p.id);
+    const info = document.querySelector('#mctx [data-act="recrutar"] + small')?.textContent ?? '', men = s.men;
+    document.querySelector('#mctx [data-act="recrutar"]').click();
+    return { info, phase: c.flow.phase, chapter: c.flow.battle?.chapter, same: s.men === men && s.day === 10 };
+  });
+  check('pré-visualização no dia 10: «Recrutar» diz que não se cumpre e não mostra ganhos', /não se cumpre/.test(r.info) && /Os Cativos/.test(r.info) && !/\+\d+ homens/.test(r.info), r.info);
+  check('… e carregar lança «Os Cativos» sem recrutar nem passar o dia', r.phase === 'batalha' && r.chapter === 'cativos' && r.same, JSON.stringify(r));
+  check('sem erros de página (dia 10)', errors.length === 0, errors.join(' | '));
+  await page.close();
+}
+
 // 6: a velocidade escolhida sobrevive a recarregar a página
 {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });

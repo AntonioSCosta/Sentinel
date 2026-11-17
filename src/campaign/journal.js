@@ -33,9 +33,17 @@ export function postureChanges(before, state) {
   return out;
 }
 
-/** Acrescenta ao diário os eventos que contam, com o dia; mantém só os últimos JOURNAL_MAX. */
+/**
+ * Acrescenta ao diário os eventos que contam; mantém só os últimos JOURNAL_MAX. Numa entrada, `day` é SEMPRE o dia em
+ * que o acontecimento se deu. Se o próprio evento trouxer um `day` com outro sentido (hoje só `tributo-exigido`, onde é
+ * o dia em que o prazo acaba), guarda-se como `dueDay`.
+ */
 export function record(journal, day, events) {
-  for (const ev of events || []) if (ev && categoryOf(ev.type)) journal.push({ day, ...ev });
+  for (const ev of events || []) {
+    if (!ev || !categoryOf(ev.type)) continue;
+    const { day: own, ...rest } = ev;
+    journal.push(own === undefined ? { ...rest, day } : { ...rest, day, dueDay: own });
+  }
   if (journal.length > JOURNAL_MAX) journal.splice(0, journal.length - JOURNAL_MAX);
   return journal;
 }

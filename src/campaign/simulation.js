@@ -210,7 +210,7 @@ function detect(state, order, hidden, events) {
 }
 
 /**
- * Um dia. Devolve os eventos e o eventual encontro. Uma ordem recusada não gasta o dia: devolve
+ * Um dia. Devolve os eventos e o eventual encontro, e `dayBreak`: o índice do primeiro evento que já é do dia seguinte. Uma ordem recusada não gasta o dia: devolve
  * { refused: true, events } sem mexer no estado (nem dia, nem comida, nem patrulhas, nem pretor).
  */
 export function stepDay(state, order, rng) {
@@ -227,6 +227,7 @@ export function stepDay(state, order, rng) {
   feed(state, events);
   if (checkRuin(state)) events.push({ type: 'derrota' });
   state.day += 1;
+  const dayBreak = events.length;   // daqui em diante os eventos já são do dia novo (colheita, Roma, relatos): o Diário regista-os nesse dia
   events.push(...closeDay(state, state.day - 1));   // fim de estação: colheita; de setembro em diante, a fome das aldeias
   const blocked = state.cooldown > 0;
   if (blocked) state.cooldown -= 1;
@@ -238,5 +239,5 @@ export function stepDay(state, order, rng) {
   if (!encounter && !state.over && (order.kind === 'esperar' || order.kind === 'esconder')) {
     events.push({ type: 'espera', order: order.kind, road: nearRoad(state.world, state.party), food: food - state.food });
   }
-  return { events, encounter };
+  return { events, encounter, dayBreak };
 }
