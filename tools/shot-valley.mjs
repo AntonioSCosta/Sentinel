@@ -13,7 +13,7 @@ const { url, browser, check, finish } = await startE2E();
 for (const vp of [{ width: 1366, height: 768 }, { width: 1280, height: 800 }, { width: 1024, height: 600 }, { width: 844, height: 390 }]) {
   const tag = `${vp.width}x${vp.height}`, page = await browser.newPage({ viewport: vp });
   const errors = []; page.on('pageerror', e => errors.push(String(e)));
-  await page.goto(url);
+  await page.goto(url + '&legacy-map-test=1');
   await page.waitForFunction(() => !!window.__game, null, { timeout: 60000 });
   await page.evaluate(() => { const G = window.__game; G.campaignStorage.clear(); G.startCampaign(1); G.showCampaignMap(); G.campaign.pause?.(); });
   await page.waitForSelector('#map:not(.hidden)'); await page.waitForTimeout(1200);

@@ -29,7 +29,7 @@ import { campStart, campGarrison, campPhase, CAMP_MISSIONS, TENTS_TO_BURN, RELIE
  * Builds the whole game. Rendering, DOM and window are injected so the game can run headless in tests.
  * @returns game API used by boot() and by tools/smoke.mjs
  */
-export async function createGame({ THREE, renderer, canvas, document, window, rapier = null, loader = null, quality = 'medium', chars = null, storage = (() => { try { return window.localStorage; } catch (_) { return null; } })() }) {
+export async function createGame({ THREE, renderer, canvas, document, window, rapier = null, loader = null, quality = 'medium', chars = null, legacyCampaignMapForTests = false, storage = (() => { try { return window.localStorage; } catch (_) { return null; } })() }) {
 clearColliders();
 const $ = id => document.getElementById(id);
 
@@ -3193,8 +3193,8 @@ $('sens2').addEventListener('input', e => { setSens(+e.target.value); $('sens').
 /* =========================================================
    Main loop
    ========================================================= */
-/* Campanha: ecrã do mapa (src/campaign/ui.js). Estado 'map': o 3D não corre nem pede o rato. */
-const campUI = createCampaignUI({ document, window, storage, startBattle: spec => startCampaignBattle(spec), onClose: () => { campIntro = false; state = 'menu'; $('menu').classList.remove('hidden'); refreshCampMenu(); } });
+/* Campanha: ecrã do mapa (src/campaign/ui.js). Estado 'map': a arena não corre nem pede o rato. */
+const campUI = createCampaignUI({ document, window, storage, legacyMapForTests: legacyCampaignMapForTests, startBattle: spec => startCampaignBattle(spec), onClose: () => { campIntro = false; state = 'menu'; $('menu').classList.remove('hidden'); refreshCampMenu(); } });
 function refreshCampMenu() { const sv = campUI.saveState(); $('camp-cont').classList.toggle('hidden', !sv); $('camp-cont').textContent = sv === 'fim' ? 'Ver resultado' : 'Continuar campanha'; $('camp-confirm').classList.add('hidden'); }
 function openCampaign(f) { try { document.exitPointerLock && document.exitPointerLock(); } catch (_) {} releaseAll(); if (!f()) { refreshCampMenu(); return; } state = 'map'; for (const id of ['menu', 'end', 'pause', 'hud']) $(id).classList.add('hidden'); }
 /** Revela o mapa da campanha do fluxo já carregado (fim do prólogo da campanha). Espelha os passos do openCampaign/backToMap. */
@@ -3311,7 +3311,9 @@ export async function boot() {
   catch (err) { console.warn('Rapier unavailable, using simple physics', err); rapier = null; }
   renderer.useLegacyLights = true;
   const chars = await loadChars(THREE).catch(err => { console.warn('Animated characters unavailable, using simple models', err); return null; });
-  const game = await createGame({ chars, THREE, renderer, canvas, document, window, rapier, loader: new THREE.TextureLoader(), quality: (() => { try { return window.localStorage.getItem('viriato.quality') || 'medium'; } catch (_) { return 'medium'; } })() });
+  const testQuery = new URLSearchParams(window.location.search);
+  const legacyCampaignMapForTests = testQuery.get('manual') === '1' && testQuery.get('legacy-map-test') === '1';
+  const game = await createGame({ legacyCampaignMapForTests, chars, THREE, renderer, canvas, document, window, rapier, loader: new THREE.TextureLoader(), quality: (() => { try { return window.localStorage.getItem('viriato.quality') || 'medium'; } catch (_) { return 'medium'; } })() });
   if (!game.physicsOk) document.getElementById('physnote').classList.remove('hidden');
   let last = 0;
   // tuning aids: F8 = slow motion (1×, ½×, ¼×); window.__moves / window.__combat = poses and timings, editable live in the console
