@@ -30,8 +30,8 @@
   #mtop .res span{font-size:17px}#mtop .res small{color:var(--dim);font-size:13px;margin-left:4px}
   #m-food-box.low span,#m-food-box.low b{color:#ff9a7a}
   #m-side-toggle{display:none;min-height:36px;padding:4px 12px;font-size:13px}
-  #mapcv:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
-  #mapcv{position:absolute;left:0;top:48px;bottom:56px;width:calc(100% - 320px);height:calc(100% - 104px);display:block;cursor:crosshair}
+  :is(#mapcv,#campaign-map-3d):focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
+  :is(#mapcv,#campaign-map-3d){position:absolute;left:0;top:48px;bottom:56px;width:calc(100% - 320px);height:calc(100% - 104px);display:block;cursor:crosshair}
   #mside{position:absolute;right:0;top:48px;bottom:56px;width:320px;overflow-y:auto;background:#15110d;border-left:1px solid #4a3a2a;font-size:16px}
   #mside h2{font-family:'Cinzel',serif;font-size:13px;letter-spacing:.2em;color:var(--dim);text-transform:uppercase;margin:14px 16px 8px;font-weight:400}
   #missues-list{list-style:none;margin:0;padding:0 10px 12px}
@@ -100,10 +100,10 @@
   #mdiary-body .reports .old{opacity:.6}#mdiary-body .arch{margin:8px 0;font-size:13px}
   #mdiary .row{margin-top:10px}
   @media (max-width:1280px){#mtop{gap:10px}#mtop .res{gap:10px}#m-left{display:none}}
-  @media (max-width:1100px){#mapcv{width:calc(100% - 290px)}#mside{width:290px}#mlog{max-width:min(420px,calc(100% - 320px))}}
+  @media (max-width:1100px){:is(#mapcv,#campaign-map-3d){width:calc(100% - 290px)}#mside{width:290px}#mlog{max-width:min(420px,calc(100% - 320px))}}
   /* estreito ou baixo: a coluna é uma gaveta por cima do mapa (fecha-se com ESC ou com «Assuntos») */
   @media (max-width:900px),(max-height:480px){
-    #mapcv{width:100%}#m-side-toggle{display:inline-block}
+    :is(#mapcv,#campaign-map-3d){width:100%}#m-side-toggle{display:inline-block}
     #mside{width:min(340px,86vw);box-shadow:-10px 0 30px rgba(0,0,0,.6);z-index:2}#mside.closed{display:none}
     #mtop{gap:8px;padding:0 8px;font-size:14px}#mtop .when b{font-size:14px}#m-season{display:none}
     #mtop .res{gap:8px}#mtop .res b{font-size:9px;letter-spacing:.06em;margin-right:3px}#mtop .res span{font-size:15px}#mtop .res small{display:none}
@@ -112,7 +112,7 @@
     #mlog{max-width:calc(100% - 24px);font-size:13px}
   }
   @media (max-width:700px){#mbot .hint{display:none}}
-  @media (max-height:480px){#mtop{height:42px}#mapcv,#mside{top:42px}#mbot{height:48px}#mapcv,#mside{bottom:48px}#mapcv{height:calc(100% - 90px)}#mlog{bottom:54px}#mbot button{min-height:38px}}
+  @media (max-height:480px){#mtop{height:42px}:is(#mapcv,#campaign-map-3d),#mside{top:42px}#mbot{height:48px}:is(#mapcv,#campaign-map-3d),#mside{bottom:48px}:is(#mapcv,#campaign-map-3d){height:calc(100% - 90px)}#mlog{bottom:54px}#mbot button{min-height:38px}}
   #mbattle,#mend{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(5,4,3,.8)}
   #mend{background:radial-gradient(ellipse at 50% 40%,#1e140c,#050403 75%)}
   #mend h1{font-size:40px;line-height:1.1}#mend-result{font-family:'Cinzel',serif;font-size:22px;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin:10px 0 14px}
@@ -216,6 +216,8 @@
   .stats span:nth-child(even){color:var(--gold);text-align:right}
   #loaderr{color:#ff8a70}
 </style>
+  <link rel="stylesheet" href="./src/campaign-map-3d/campaign-view.css">
+  <link rel="stylesheet" href="./src/campaign-map-3d/tactical-labels.css">
 </head>
 <body>
 <canvas id="gl"></canvas>
@@ -278,7 +280,7 @@
       <b>V</b><span>1.ª / 3.ª pessoa</span><span></span><span></span>
     </div>
     <p id="physnote" class="hidden" style="font-size:15px;color:var(--dim)">Física simplificada: o motor de física não carregou, o jogo continua jogável.</p>
-    <p id="loaderr" class="hidden">Não foi possível carregar o motor 3D. Verifica a ligação e recarrega a página.</p>
+    <p id="loaderr" class="hidden">Não foi possível iniciar o motor 3D. Verifica se o navegador suporta WebGL, ativa a aceleração gráfica e recarrega a página.</p>
     <div class="menu-foot">
       <button type="button" class="go" id="start" disabled>A CARREGAR…</button>
       <div class="row"><button type="button" id="camp-new">CAMPANHA — Um Ano de Guerra</button>
@@ -307,10 +309,23 @@
     </div>
     <button type="button" id="m-side-toggle" aria-controls="mside" aria-expanded="true">Assuntos</button>
   </header>
-  <canvas id="mapcv" tabindex="0" aria-label="Mapa do vale. Clica numa povoação para a ver, ou num ponto vazio para lá ir. O Diário tem a lista dos lugares para o teclado."></canvas>
+  <canvas id="mapcv" class="hidden" tabindex="0" aria-label="Mapa do vale. Clica numa povoação para a ver, ou num ponto vazio para lá ir. O Diário tem a lista dos lugares para o teclado."></canvas>
+  <div id="campaign-map-3d">
+    <canvas id="m-scene" tabindex="0" aria-label="Mapa do vale em 3D. Seleciona uma povoação ou clica no terreno para marchar. O Diário lista os lugares."></canvas>
+    <div class="map-labels" aria-label="Locais e forças conhecidas"></div>
+    <div class="map-controls" role="group" aria-label="Câmara do mapa" data-reserve-labels>
+      <button type="button" data-camera="left" aria-label="Rodar para a esquerda">↶</button>
+      <button type="button" data-camera="right" aria-label="Rodar para a direita">↷</button>
+      <button type="button" data-camera="out" aria-label="Afastar">−</button>
+      <button type="button" data-camera="in" aria-label="Aproximar">+</button>
+      <button type="button" data-camera="reset">Centrar</button>
+    </div>
+    <p class="map-preview" data-reserve-labels></p>
+    <p class="map-error" role="alert" hidden></p>
+  </div>
   <div id="mtip" class="hidden" role="tooltip"></div>
-  <ul id="mlog" role="status" aria-live="polite" aria-label="Últimos acontecimentos"></ul>
-  <aside id="mside" aria-label="Assuntos e povoação">
+  <ul id="mlog" role="status" aria-live="polite" aria-label="Últimos acontecimentos" data-reserve-labels></ul>
+  <aside id="mside" aria-label="Assuntos e povoação" data-reserve-labels>
     <section id="missues" aria-labelledby="missues-h">
       <div id="m-int" class="hidden" role="alert">
         <h2>O tempo parou</h2>

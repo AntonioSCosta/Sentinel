@@ -1,3 +1,4 @@
+import { createCampaignMapView } from '../campaign-map-3d/campaign-view.js';
 // Ecrã do mapa da campanha: HUD em HTML + canvas 2D. Liga o DOM ao Flow; não conhece Three.js nem as batalhas 3D.
 import { makeView, drawMap, hitTest, toWorld, toScreen, agoLabel } from './map-view.js';
 import { intelView, estimateMen, SCOUTS, RECON_RANGE, RECON_RADIUS } from './intel.js';
@@ -231,7 +232,7 @@ export function battleBrief(b, state) {
  * dias inteiros da simulação (flow.order); a interface só escolhe quando dar o passo seguinte. Nada aqui decide regras:
  * o que uma ação daria vem de flow.preview / flow.previewTribute, os assuntos de issues.js.
  */
-export function createCampaignUI({ document: doc, window: win, storage, onClose = () => {}, startBattle = () => false }) {
+export function createCampaignUI({ document: doc, window: win, storage, onClose = () => {}, startBattle = () => false, legacyMapForTests = false }) {
   const $ = id => doc.getElementById(id);
   const el = (tag, cls, text) => { const e = doc.createElement(tag); if (cls) e.className = cls; if (text !== undefined && text !== null) e.textContent = text; return e; };
   let flow = null, view = null, active = false, selected = null, logDirty = true;
@@ -246,6 +247,15 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   const now = () => (win.performance && win.performance.now ? win.performance.now() : Date.now());
   const reduceMotion = () => !!(win.matchMedia && win.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const ctx2d = () => $('mapcv').getContext('2d');
+  const stage = $('campaign-map-3d');
+  stage.classList.toggle('hidden', legacyMapForTests);
+  $('mapcv').classList.toggle('hidden', !legacyMapForTests);
+  const map3d = legacyMapForTests ? null : createCampaignMapView(stage, {
+    window: win,
+    onPick: (hit, event) => mapAction(hit, pointAt(hit), event),
+    onHover: hit => updateHover(hit, pointAt(hit)),
+    onError: () => { pause(); },
+  });
   const name = id => placeName(flow.state, id) ?? '';
   const settlement = id => flow.state.world.settlements.find(x => x.id === id);
   const communityAt = id => { const k = communityOf(flow.state, id); return k ? flow.state.communities[k] : null; };
@@ -254,6 +264,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   const narrow = () => (win.innerWidth || 1200) <= 900 || (win.innerHeight || 800) <= 480;
 
   function resize() {
+    if (map3d) return;
     const cv = $('mapcv'), dpr = win.devicePixelRatio || 1;
     const r = cv.getBoundingClientRect();
     const w = Math.round(r.width || win.innerWidth || 800), h = Math.round(r.height || (win.innerHeight || 600) - 104);
@@ -274,15 +285,22 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     return { to: dest, label: `${daysText(days)} · −${food} comida` };
   }
   function paint() {
-    if (!active || !flow || !view) return;
-    const ctx = ctx2d();
-    if (!ctx) return;
-    const dpr = win.devicePixelRatio || 1;
-    ctx.setTransform?.(dpr, 0, 0, dpr, 0, 0);
+    if (!active || !flow) return;
     const scouting = mode === 'reconhecer' && flow.phase === 'mapa' ? { range: RECON_RANGE, radius: RECON_RADIUS, ok: !!hover && inRecon(hover) } : null;
     const fl = {}, t = now();
     for (const [id, t0] of Object.entries(flash)) { const k = 1 - (t - t0) / 1600; if (k > 0) fl[id] = k; else delete flash[id]; }
-    drawMap(ctx, view, flow.state, { party: shown || flow.state.party, facing, step: walk, selected, hover, trail, reach: REACH, focus, recon: scouting, issues: issueMarks(), flash: fl, route: route() });
+    const fx = { party: shown || flow.state.party, facing, step: walk, selected, hover, trail, reach: REACH,
+      focus, recon: scouting, issues: issueMarks(), flash: fl, route: route() };
+    if (map3d) {
+      if (flow.phase === 'mapa') map3d.paint(flow.state, fx);
+      else map3d.suspend();
+      return;
+    }
+    const ctx = view && ctx2d();
+    if (!ctx) return;
+    const dpr = win.devicePixelRatio || 1;
+    ctx.setTransform?.(dpr, 0, 0, dpr, 0, 0);
+    drawMap(ctx, view, flow.state, fx);
     if (Object.keys(fl).length && !flashT && typeof win.requestAnimationFrame === 'function' && !reduceMotion()) flashT = win.requestAnimationFrame(() => { flashT = 0; paint(); });
   }
   /** Redesenha no máximo uma vez por frame (o rato pode disparar dezenas de eventos por segundo). */
@@ -368,7 +386,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
 
   // --- tempo ---
   function play(n) {
-    if (!active || !flow || flow.phase !== 'mapa') { render(); return; }
+    if (!active || !flow || flow.phase !== 'mapa' || map3d?.failed) { render(); return; }
     if (n) { speed = n; saveSpeed(storage, n); }
     interrupt = []; running = true; schedule(); render();
   }
@@ -432,7 +450,11 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   }
   const COMMUNITY_KEYS = () => Object.values(flow.state.communities).map(c => `${c.situation}${c.due?.day ?? ''}${c.food}`).join('|');
   function sideOpen() { return !$('mside').classList.contains('closed'); }
-  function setSide(on) { $('mside').classList.toggle('closed', !on); $('m-side-toggle').setAttribute('aria-expanded', on ? 'true' : 'false'); }
+  function setSide(on) {
+    $('mside').classList.toggle('closed', !on);
+    $('m-side-toggle').setAttribute('aria-expanded', on ? 'true' : 'false');
+    if (map3d) schedulePaint();
+  }
   function renderIssues() {
     const box = $('missues'), list = $('missues-list'), panel = !!(selected && flow.phase === 'mapa');
     box.classList.toggle('hidden', panel);
@@ -638,7 +660,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   function renderTip() {
     const tip = $('mtip'), c = hover?.id ? communityAt(hover.id) : null;
     const dd = c ? marchDays(settlement(hover.id)) : 0;
-    if (!c || mode || !view) { tip.classList.add('hidden'); return; }
+    if (map3d || !c || mode || !view) { tip.classList.add('hidden'); return; }
     const q = toScreen(view, settlement(hover.id)), cv = $('mapcv').getBoundingClientRect(), mr = $('map').getBoundingClientRect();
     tip.textContent = '';
     tip.append(el('b', null, name(c.settlement)), el('span', null, `${chiefLine(c.id)} · ${POSTURE_LABEL[c.posture]}${c.situation !== 'livre' ? ` · ${SITUATION_LABEL[c.situation]}` : ''}`), el('em', null, communityLine(c)), el('small', null, dd ? `${daysText(dd)} de marcha · −${dd * foodPerDay(flow.state.men)} comida` : 'O bando está aqui.'));
@@ -661,14 +683,15 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     }
     renderBattle(); renderEnd(); renderIssues(); renderContext(); renderTip();
     if (diaryOpen()) renderDiary();
-    const busy = flow.phase !== 'mapa';
+    const busy = flow.phase !== 'mapa' || map3d?.failed === true;
     for (const b of $('map').querySelectorAll('[data-act], [data-speed], #m-pause')) if (!b.closest('#mctx, #missues, #mdiary')) b.disabled = busy;
     if (busy && running) pause();
   }
 
   // --- reconhecimento ---
   const inRecon = p => Math.hypot(p.x - flow.state.party.x, p.y - flow.state.party.y) <= RECON_RANGE;
-  const sameReconClick = (sx, sy) => !!reconClick && now() - reconClick.t < 600 && Math.hypot(sx - reconClick.x, sy - reconClick.y) <= 8;
+  const sameReconClick = event => event && reconClick && event.timeStamp >= reconClick.t && event.timeStamp - reconClick.t < 600 &&
+    Math.hypot(event.clientX - reconClick.x, event.clientY - reconClick.y) <= 8;
 
   // --- Diário ---
   let diaryTab = 'campanha', diaryOpener = null, archive = false;
@@ -752,31 +775,46 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
 
   // --- rato e teclado no mapa ---
   function mapPoint(e) { const r = $('mapcv').getBoundingClientRect(); return { sx: e.clientX - r.left, sy: e.clientY - r.top }; }
-  function mapClick(e) {
-    if (!active || flow.phase !== 'mapa') return;
-    const { sx, sy } = mapPoint(e), hit = hitTest(view, flow.state, sx, sy);
+  function pointAt(hit) {
+    if (!hit || !flow) return null;
+    if (hit.type === 'terrain') return hit;
+    if (hit.type === 'settlement') return settlement(hit.id);
+    return intelView(flow.state).forces.find(force => force.id === hit.id);
+  }
+
+  function mapAction(hit, at, event) {
+    if (!active || flow.phase !== 'mapa' || !at) return;
     if (mode === 'reconhecer') {
-      const at = toWorld(view, { x: sx, y: sy });
-      reconClick = { t: now(), x: sx, y: sy }; mode = null;
+      reconClick = event ? { t: event.timeStamp, x: event.clientX, y: event.clientY } : null;
+      mode = null;
       step({ kind: 'reconhecer', to: { x: at.x, y: at.y } });
       return;
     }
-    if (sameReconClick(sx, sy)) return;
-    if (mode === 'ir') { setDest(hit?.type === 'settlement' ? settlement(hit.id) : toWorld(view, { x: sx, y: sy })); return; }
-    if (hit && hit.type === 'settlement') { pick(hit.id); return; }
-    if (hit && (hit.type === 'patrol' || hit.type === 'praetor')) { const f = intelView(flow.state).forces.find(x => x.id === hit.id); if (f) { focus = { x: f.x, y: f.y, r: f.r || 0 }; schedulePaint(); } return; }
-    const w = toWorld(view, { x: sx, y: sy });
-    if (Math.hypot(w.x - flow.state.party.x, w.y - flow.state.party.y) < 2) return;
-    setDest(w);
+    if (sameReconClick(event)) return;
+    if (mode === 'ir') { setDest(hit?.type === 'settlement' ? settlement(hit.id) : at); return; }
+    if (hit?.type === 'settlement') { pick(hit.id); return; }
+    if (hit && hit.type !== 'terrain') {
+      const force = intelView(flow.state).forces.find(f => f.id === hit.id);
+      if (force) { focus = { x: force.x, y: force.y, r: force.r || 0 }; schedulePaint(); }
+      return;
+    }
+    if (Math.hypot(at.x - flow.state.party.x, at.y - flow.state.party.y) >= 2) setDest(at);
   }
-  $('mapcv').addEventListener('click', mapClick);
+
+  function mapClick(e) {
+    if (!active || flow.phase !== 'mapa') return;
+    const { sx, sy } = mapPoint(e);
+    const hit = hitTest(view, flow.state, sx, sy);
+    mapAction(hit, toWorld(view, { x: sx, y: sy }), e);
+  }
+  if (legacyMapForTests) $('mapcv').addEventListener('click', mapClick);
   function hoverLabel(hit, at) {
     const s = flow.state;
     const days = inReach(s.party, at) ? 0 : marchDaysTo(s.world, s.party, at);
     if (mode === 'reconhecer') return inRecon(at) ? `Reconhecer · ${SCOUTS} batedores, 1 dia` : 'Longe de mais para os batedores';
     const when = days ? `${daysText(days)} · −${days * foodPerDay(s.men)} comida` : 'aqui';
     if (hit?.type === 'settlement') return `${name(hit.id)} · ${when}`;
-    if (hit?.type === 'patrol' || hit?.type === 'praetor') {
+    if (hit?.type === 'patrol' || hit?.type === 'praetor' || hit?.type === 'force') {
       const f = intelView(s).forces.find(x => x.id === hit.id);
       if (!f) return when;
       const what = f.kind === 'pretor' ? `${f.name || 'Pretor'} · pretor` : `${FORCE_NAMES[f.kind] || 'Força romana'}${f.men ? ` · ${menText(estimateMen(f.men))}` : ''}${f.dir ? ` · para ${f.dir}` : ''}`;
@@ -784,18 +822,28 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     }
     return when;
   }
-  function pointerMove(e) {
-    if (!active || !flow || flow.phase !== 'mapa' || !view) return;
-    const { sx, sy } = mapPoint(e), s = flow.state, hit = hitTest(view, s, sx, sy);
-    const at = hit && hit.type === 'settlement' ? settlement(hit.id) || toWorld(view, { x: sx, y: sy }) : toWorld(view, { x: sx, y: sy });
-    const tipShown = hit?.type === 'settlement' && !mode && !!communityAt(hit.id);   // a dica HTML já diz o nome: no mapa fica só a linha e os dias
-    hover = { x: at.x, y: at.y, id: hit?.type === 'settlement' ? hit.id : null, label: tipShown ? null : hoverLabel(hit, at) };
-    $('mapcv').style.cursor = hit ? 'pointer' : 'crosshair';
+  function updateHover(hit, at) {
+    if (!active || !flow || flow.phase !== 'mapa') return;
+    const tipShown = !map3d && hit?.type === 'settlement' && !mode && !!communityAt(hit.id);
+    const next = at ? { x: at.x, y: at.y, id: hit?.type === 'settlement' ? hit.id : null, label: tipShown ? null : hoverLabel(hit, at) } : null;
+    if (!next && !hover) return;
+    hover = next;
     renderTip(); schedulePaint();
   }
-  function pointerLeave() { if (!hover) return; hover = null; $('mapcv').style.cursor = 'crosshair'; renderTip(); schedulePaint(); }
-  $('mapcv').addEventListener('mousemove', pointerMove);
-  $('mapcv').addEventListener('mouseleave', pointerLeave);
+  function pointerMove(e) {
+    if (!active || !flow || flow.phase !== 'mapa' || !view) return;
+    const { sx, sy } = mapPoint(e), hit = hitTest(view, flow.state, sx, sy);
+    const at = hit?.type === 'settlement' ? settlement(hit.id) : toWorld(view, { x: sx, y: sy });
+    $('mapcv').style.cursor = hit ? 'pointer' : 'crosshair';
+    updateHover(hit, at);
+  }
+  if (legacyMapForTests) {
+    $('mapcv').addEventListener('mousemove', pointerMove);
+    $('mapcv').addEventListener('mouseleave', () => {
+      $('mapcv').style.cursor = 'crosshair';
+      updateHover(null, null);
+    });
+  }
 
   // --- botões ---
   $('m-go').addEventListener('click', () => { if (!active || flow?.phase !== 'mapa') return; if (dest && mode !== 'ir') { setDest(null); return; } setMode('ir'); });
@@ -865,7 +913,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (r.refused) return;
     say(r.events); render();
   });
-  function suspend() { pause(); stopMarch(); hover = null; active = false; $('map').classList.add('hidden'); }
+  function suspend() { pause(); map3d?.suspend(); stopMarch(); hover = null; active = false; $('map').classList.add('hidden'); }
   function battleDone(result, line) {
     let r = { events: [] };
     if (flow && flow.phase === 'batalha') r = flow.finishBattle(result);
@@ -962,6 +1010,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
 
   function open(f) {
     pause();
+    reconClick = null;
     flow = f; active = true; selected = null; log.length = 0; logDirty = true; lastSaid = null; repeat = 1;
     stopMarch(); shown = null; hover = null; facing = 1; trail.length = 0; mode = null; dest = null; stance = null;
     memory = {}; interrupt = []; dismissed = new Set(); flash = {}; focus = null; issuesKey = ''; ctxKey = '';
@@ -977,7 +1026,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   }
   function close() {
     if (!active) return;
-    pause(); stopMarch(); hover = null;
+    pause(); map3d?.suspend(); stopMarch(); hover = null;
     $('mcron').classList.add('hidden'); cronOpener = null; $('mdiary').classList.add('hidden');
     active = false; $('map').classList.add('hidden');
     onClose();

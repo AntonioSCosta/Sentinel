@@ -21,14 +21,14 @@ for (const vp of [{ width: 1366, height: 768 }, { width: 1280, height: 800 }, { 
     s.communities.ribeira.situation = 'tributada'; s.communities.ribeira.due = { food: 10, day: s.day + 6 };
     c.flow.journal.push({ day: s.day, type: 'castigo', id: s.communities.vau.settlement, why: 'apoio' }); c.render();
   });
-  await page.waitForSelector('#mapcv');
+  await page.waitForSelector('#campaign-map-3d');
   const box = sel => page.locator(sel).boundingBox().catch(() => null);
   if (narrow) {
-    check(`${tag}: ecrã pequeno: a coluna começa fechada e o mapa ocupa a largura`, !(await page.locator('#mside').isVisible()), fmt(await box('#mapcv')));
+    check(`${tag}: ecrã pequeno: a coluna começa fechada e o mapa ocupa a largura`, !(await page.locator('#mside').isVisible()), fmt(await box('#campaign-map-3d')));
     await page.click('#m-side-toggle');
     check(`${tag}: «Assuntos» abre a gaveta`, await page.locator('#mside').isVisible());
   }
-  const top = await box('#mtop'), bot = await box('#mbot'), cv = await box('#mapcv'), side = await box('#mside');
+  const top = await box('#mtop'), bot = await box('#mbot'), cv = await box('#campaign-map-3d'), side = await box('#mside');
   check(`${tag}: a coluna cabe no ecrã`, inside(side, vp), fmt(side));
   check(`${tag}: a coluna não tapa as barras`, !hit(side, top) && !hit(side, bot), `coluna ${fmt(side)} | cima ${fmt(top)} | baixo ${fmt(bot)}`);
   check(`${tag}: o mapa não fica por baixo das barras`, !hit(cv, top) && !hit(cv, bot), fmt(cv));

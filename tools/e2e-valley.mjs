@@ -13,7 +13,7 @@ const { url, browser, check, finish } = await startE2E();
 const shot = async (page, name) => { if (OUT) { fs.mkdirSync(OUT, { recursive: true }); await page.screenshot({ path: path.join(OUT, `${name}.png`) }); } };
 
 async function openMap(page, seed = 3) {
-  await page.goto(url);
+  await page.goto(url + '&legacy-map-test=1');
   await page.waitForFunction(() => !!window.__game, null, { timeout: 60000 });
   await page.evaluate(seed => {
     const G = window.__game; G.campaignStorage.clear(); localStorage.removeItem('viriato.campaign.speed');

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sentinel · Mapa estratégico 3D</title>
+  <link rel="stylesheet" href="./src/campaign-map-3d/viewer.css">
+  <link rel="stylesheet" href="./src/campaign-map-3d/tactical-labels.css">
+  <script type="importmap">{"imports":{"three":"./vendor/three/three.module.js"}}</script>
+  <script type="module" src="./src/campaign-map-3d/viewer.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Sentinel</div>
+    <span class="divider" aria-hidden="true"></span>
+    <span class="view-name">Mapa estratégico 3D</span>
+    <form id="seed-form">
+      <label for="seed">Seed</label>
+      <input id="seed" name="seed" type="number" step="1" value="1" required>
+      <button type="submit">Gerar</button>
+    </form>
+    <label class="file-label">Abrir gravação <input id="save-file" type="file" accept=".json,application/json"></label>
+  </header>
+  <main class="map-frame">
+    <canvas id="map-scene" tabindex="0" aria-label="Mapa estratégico tridimensional. Setas para deslocar, mais e menos para alterar o zoom, Q e E para rodar."></canvas>
+    <div id="map-labels" aria-label="Locais e forças conhecidas"></div>
+    <aside class="legend" aria-label="Legenda" data-reserve-labels>
+      <h1>Vale dos Hermínios</h1>
+      <dl>
+        <div><dt><i class="symbol house"></i>Aldeia</dt><dd id="aldeia-count"></dd></div>
+        <div><dt><i class="symbol castro"></i>Castro</dt><dd id="castro-count"></dd></div>
+        <div><dt><i class="symbol peak"></i>Serra</dt><dd id="serra-count"></dd></div>
+        <div><dt><i class="symbol post"></i>Posto romano</dt><dd id="posto-count"></dd></div>
+        <div><dt><i class="symbol line road"></i>Estrada romana</dt></div>
+        <div><dt><i class="symbol line river"></i>Rio</dt></div>
+        <div><dt><i class="symbol standard"></i>Forças conhecidas</dt><dd id="known-count"></dd></div>
+        <div><dt><i class="symbol intel-zone"></i>Zona de informação</dt></div>
+      </dl>
+    </aside>
+    <div class="map-controls" role="group" aria-label="Controlos da câmara" data-reserve-labels>
+      <button type="button" id="rotate-left" aria-label="Rodar para a esquerda">↶</button>
+      <button type="button" id="rotate-right" aria-label="Rodar para a direita">↷</button>
+      <button type="button" id="zoom-out" aria-label="Afastar">−</button>
+      <button type="button" id="zoom-in" aria-label="Aproximar">+</button>
+      <button type="button" id="reset">Vista geral</button>
+    </div>
+    <div class="map-status" data-reserve-labels>
+      <p id="status" role="status">A preparar o relevo…</p>
+      <p id="selection" role="status"></p>
+    </div>
+  </main>
+</body>
+</html>
