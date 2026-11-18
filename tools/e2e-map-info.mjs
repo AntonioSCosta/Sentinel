@@ -12,7 +12,7 @@ const inside = (b, vp) => !!b && b.x >= 0 && b.y >= 0 && b.x + b.width <= vp.wid
 
 for (const vp of [{ width: 1366, height: 768 }, { width: 1280, height: 800 }, { width: 1024, height: 600 }, { width: 844, height: 390 }]) {
   const tag = `${vp.width}x${vp.height}`;
-  const page = await browser.newPage({ viewport: vp });
+  const page = await browser.newPage({ locale: 'pt-PT', viewport: vp });
   const errors = []; page.on('pageerror', e => errors.push(String(e)));
   await page.goto(url);
   await page.waitForFunction(() => !!window.__game, null, { timeout: 60000 });

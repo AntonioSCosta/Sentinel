@@ -7,8 +7,6 @@ const SCOUTED = { color: '#a6e2bf', width: 1.7 };
 const ESTIMATED = { color: '#e9c49e', width: 2, dash: 2, gap: 5 };
 const ROUTE = { color: '#c2f6ff', width: 2.8, dash: 7, gap: 4 };
 
-const FORCE_NAMES = { pretor: 'Exército do pretor', patrulha: 'Patrulha', comboio: 'Coluna de abastecimento', cacadores: 'Caçadores' };
-
 /** Batch all trees into one mesh for trunks and one for crowns. */
 export function makeForest(trees, projection) {
   const forest = new THREE.Group();
@@ -44,7 +42,7 @@ export function makeIntelligence({ forces, zones }, terrain, projection) {
     const center = projection.toScene(zone, terrain.heightAt(zone.x, zone.y));
     annotations.push({
       position: new THREE.Vector3(center.x, center.y, center.z),
-      userData: { key: `zone:${zone.id}`, label: recon ? 'Reconhecimento' : zone.src === 'rumor' ? 'Rumor' : 'Relato aproximado',
+      userData: { key: `zone:${zone.id}`, labelKey: recon ? 'map.scouted' : zone.src === 'rumor' ? 'map.rumor' : 'map.approximate',
         className: recon ? 'scouted-zone' : 'rumor-zone', priority: 3, lift: 4.5 },
     });
   }
@@ -55,9 +53,8 @@ export function makeIntelligence({ forces, zones }, terrain, projection) {
     const point = projection.toScene(force, terrain.heightAt(force.x, force.y));
     marker.position.set(point.x, point.y, point.z);
     const selection = { type: 'force', id: force.id };
-    const name = force.name ?? FORCE_NAMES[force.kind] ?? 'Força romana';
     marker.userData = {
-      selection, name, label: estimated ? `${name} · há ${force.age} d` : name,
+      selection, force,
       className: estimated ? 'estimated' : 'confirmed', priority: 6, lift: 21,
     };
     const base = new THREE.Mesh(new THREE.CylinderGeometry(6, 7, 3.5, 8),

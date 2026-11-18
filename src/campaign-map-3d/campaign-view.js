@@ -2,25 +2,26 @@ import { createCampaignMapScene } from './scene.js';
 import { strategicView } from './strategic.js';
 
 /** Bind a presentation-only map to the campaign UI callbacks. */
-export function createCampaignMapView(stage, { window, onPick, onHover, onError }) {
+export function createCampaignMapView(stage, { window, i18n, onPick, onHover, onError }) {
   const canvas = stage.querySelector('canvas');
   const labels = stage.querySelector('.map-labels');
   const error = stage.querySelector('.map-error');
   const preview = stage.querySelector('.map-preview');
   const controls = stage.querySelector('.map-controls');
-  let scene, world, seed, drag, frame, pendingFrame = 0, pendingHover = 0, live = false;
+  let scene, world, seed, drag, frame, pendingFrame = 0, pendingHover = 0, live = false, errorKey;
 
-  function fail(message) {
+  function fail(key) {
+    errorKey = key;
     stage.dataset.status = 'error';
     error.hidden = false;
-    error.textContent = message;
+    localize();
     canvas.hidden = labels.hidden = controls.hidden = preview.hidden = true;
     suspend();
     onError();
   }
 
   canvas.addEventListener('webglcontextlost', () =>
-    fail('Perdeu-se a ligação ao WebGL. Recarrega a página para continuar a campanha.'));
+    fail('map.webglLost'));
 
   function coordinates(event) {
     const rect = canvas.getBoundingClientRect();
@@ -89,9 +90,9 @@ export function createCampaignMapView(stage, { window, onPick, onHover, onError 
     live = true;
     if (!scene) {
       try {
-        scene = createCampaignMapScene(canvas, labels, (selection, _label, event) => { if (live) onPick(selection, event); });
+        scene = createCampaignMapScene(canvas, labels, (selection, _label, event) => { if (live) onPick(selection, event); }, i18n);
       } catch {
-        fail('O mapa da campanha precisa de WebGL. Ativa a aceleração gráfica ou abre o jogo num navegador compatível.');
+        fail('map.webglRequired');
         return;
       }
     }
@@ -115,10 +116,14 @@ export function createCampaignMapView(stage, { window, onPick, onHover, onError 
         stage.dataset.status = 'ready';
       } catch (cause) {
         window.console.error('Erro ao desenhar o mapa da campanha', cause);
-        fail('Não foi possível desenhar o mapa estratégico 3D. Recarrega a página para tentar novamente.');
+        fail('map.drawingFailed');
       }
     });
   }
 
-  return { paint, suspend, get failed() { return stage.dataset.status === 'error'; } };
+  function localize() {
+    if (errorKey) error.textContent = i18n.t(errorKey);
+  }
+
+  return { paint, suspend, localize, get failed() { return stage.dataset.status === 'error'; } };
 }

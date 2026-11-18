@@ -33,7 +33,7 @@ const NAMES = { ribeira: 'Aldeia da Ribeira', penedo: 'Castro do Penedo', souto:
 
 for (const vp of [{ width: 1366, height: 768 }, { width: 844, height: 390 }]) {
   const tag = `${vp.width}x${vp.height}`, narrow = vp.width <= 900;
-  const page = await browser.newPage({ viewport: vp });
+  const page = await browser.newPage({ locale: 'pt-PT', viewport: vp });
   const errors = []; page.on('pageerror', e => errors.push(String(e)));
   await openMap(page);
 
@@ -171,7 +171,7 @@ for (const vp of [{ width: 1366, height: 768 }, { width: 844, height: 390 }]) {
 
 // revisão do PR 5: no dia 10, com «Os Cativos» por viver, recrutar não promete homens: diz que não se cumpre
 {
-  const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+  const page = await browser.newPage({ locale: 'pt-PT', viewport: { width: 1366, height: 768 } });
   const errors = []; page.on('pageerror', e => errors.push(String(e)));
   await openMap(page);
   const r = await page.evaluate(() => {
@@ -189,7 +189,7 @@ for (const vp of [{ width: 1366, height: 768 }, { width: 844, height: 390 }]) {
 
 // 6: a velocidade escolhida sobrevive a recarregar a página
 {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  const page = await browser.newPage({ locale: 'pt-PT', viewport: { width: 1280, height: 800 } });
   await openMap(page);
   await page.click('[data-speed="2"]'); await page.click('#m-pause');
   await page.reload(); await page.waitForFunction(() => !!window.__game, null, { timeout: 60000 });

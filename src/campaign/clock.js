@@ -42,6 +42,12 @@ export const dateLabel = day => {
   return `${dayOfMonth} de ${month.name} de 147 a.C.`;
 };
 
+/** Calendar fields for the localized presentation layer. */
+export function campaignDateParts(day) {
+  const { month, dayOfMonth } = locate(day);
+  return { month: month.name, dayOfMonth, year: 147 };
+}
+
 /** Dias que faltam até ao fim do ano da campanha; nunca negativo. */
 export const daysLeft = day => Math.max(0, YEAR_DAYS - day);
 
