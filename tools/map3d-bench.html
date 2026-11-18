@@ -7,6 +7,9 @@
 <title>Banco de ensaio — peças do mapa 3D</title>
 <!-- Página isolada: não faz parte do jogo. Mostra uma peça do mapa com a luz e a câmara previstas para o mapa 3D.
      ?vista=perto (uma casa, três quartos) · ?vista=zoom (zoom máximo do mapa) · ?vista=longe (três casais, câmara do mapa)
+     ?vista=obliquo|lateral|topo|porta (vistas de validação da casa inteira)
+     ?peca=<id> (peça de assets/map/models/<id>.glb.js; por omissão casa_redonda)
+     ?lod=0|1|auto (auto troca aos 55 m, a distância de troca prevista) · ?dist=<metros> põe a câmara a essa distância
      Arrastar roda a câmara; a roda aproxima. -->
 <style>
   html,body{margin:0;height:100%;background:#1b1a17;overflow:hidden;font-family:Georgia,serif}
@@ -23,7 +26,9 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 
-const VIEW = new URLSearchParams(location.search).get('vista') || 'perto';
+const Q = new URLSearchParams(location.search);
+const VIEW = Q.get('vista') || 'perto';
+const PECA = Q.get('peca') || 'casa_redonda';
 const info = document.getElementById('info');
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)); renderer.setSize(innerWidth, innerHeight);
@@ -56,7 +61,7 @@ const ground = new THREE.Mesh(gGeo, new THREE.MeshStandardMaterial({ map: tex('.
 ground.receiveShadow = true; scene.add(ground);
 
 // a peça: GLB embalado em base64 (.glb.js), como no jogo
-const { default: b64 } = await import('../assets/map/models/casa_redonda.glb.js');
+const { default: b64 } = await import(`../assets/map/models/${PECA}.glb.js`);
 const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
 const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
 const gltf = await new Promise((ok, ko) => loader.parse(bytes.buffer, '', ok, ko));
@@ -79,7 +84,9 @@ const trisOf = node => { let t = 0; node.traverse(m => { if (m.isMesh) t += (m.g
 const place = (x, z, rot, s = 1) => new THREE.Matrix4().compose(new THREE.Vector3(x, 0, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rot), new THREE.Vector3(s, s, s));
 
 const camera = new THREE.PerspectiveCamera(28, innerWidth / innerHeight, 0.3, 1200);
-let target = new THREE.Vector3(0, 2.3, 0), count = 1;
+let target = new THREE.Vector3(0, 2.3, 0), count = 1, dist = 0;
+const LODP = Q.get('lod') || 'auto';
+const pick = d => (LODP === 'auto' ? (d > 55 ? LOD1 : LOD0) : LODP === '1' ? LOD1 : LOD0);
 if (VIEW === 'longe') {
   // três casais: perto (LOD0) e dois mais longe (LOD1); posições e rodagens fixas, por semente
   let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
@@ -88,10 +95,20 @@ if (VIEW === 'longe') {
   instanced(LOD0, near); instanced(LOD1, far); count = near.length + far.length;
   camera.position.set(0, 150, 140); target.set(0, 0, -30); camera.fov = 34;
 } else {
-  instanced(LOD0, [place(0, 0, 0)]);
   if (VIEW === 'zoom') { camera.position.set(0, 18, 13); target.set(0, 1.5, 0); camera.fov = 31; }
+  else if (VIEW === 'obliquo') { camera.position.set(9.4, 4.6, 9.8); target.set(0, 2.2, 0); camera.fov = 30; }
+  else if (VIEW === 'lateral') { camera.position.set(13.0, 3.0, 0.4); target.set(0, 2.1, 0); camera.fov = 30; }
+  else if (VIEW === 'topo') { camera.position.set(0.8, 16.5, 5.6); target.set(0, 2.0, 0); camera.fov = 32; }
+  else if (VIEW === 'porta') { camera.position.set(1.9, 1.8, 6.6); target.set(0, 1.6, 2.4); camera.fov = 32; }
   else { camera.position.set(7.5, 3.2, 11.5); camera.fov = 28; }   // a câmara «perto» do Blender
+  if (Q.get('dist')) {   // à distância pedida, com o LOD que a essa distância se usaria
+    const d = Number(Q.get('dist')), a = 0.62;
+    camera.position.set(Math.sin(a) * d, 2.2 + d * 0.06, Math.cos(a) * d); camera.fov = 30;
+  }
+  dist = camera.position.distanceTo(target);
+  instanced(pick(dist), [place(0, 0, 0)]);
 }
+dist = camera.position.distanceTo(target);
 camera.updateProjectionMatrix(); camera.lookAt(target);
 
 // rodar com o rato, aproximar com a roda (só para avaliar à mão)
@@ -111,9 +128,10 @@ function frame() {
   renderer.render(scene, camera); frames++;
   const now = performance.now(); if (now - t0 > 1000) { fps = Math.round(frames * 1000 / (now - t0)); frames = 0; t0 = now; }
   const r = renderer.info.render;
-  info.innerHTML = `<b>Casa redonda lusitana</b> · LOD0 ${trisOf(LOD0)} tri · LOD1 ${trisOf(LOD1)} tri · 2 materiais · ${(bytes.length / 1024).toFixed(0)} KB<br>`
-    + `${count} casa${count > 1 ? 's' : ''} · ${r.calls} chamadas de desenho · ${r.triangles.toLocaleString('pt-PT')} triângulos · ${fps} fps`;
-  window.__bench = { ready: true, calls: r.calls, triangles: r.triangles, houses: count, fps };
+  const usado = VIEW === 'longe' ? 'LOD0 + LOD1' : (pick(dist) === LOD1 ? 'LOD1' : 'LOD0');
+  info.innerHTML = `<b>Casa redonda lusitana</b> — peça <code>${PECA}</code> · LOD0 ${trisOf(LOD0)} tri · LOD1 ${trisOf(LOD1)} tri · 2 materiais · ${(bytes.length / 1024).toFixed(0)} KB<br>`
+    + `LOD em uso ${usado} · câmara a ${dist.toFixed(1)} m · ${count} casa${count > 1 ? 's' : ''} · ${r.calls} chamadas de desenho · ${r.triangles.toLocaleString('pt-PT')} triângulos · ${fps} fps`;
+  window.__bench = { ready: true, peca: PECA, lod: usado, dist: +dist.toFixed(1), calls: r.calls, triangles: r.triangles, houses: count, fps, kb: Math.round(bytes.length / 1024) };
   requestAnimationFrame(frame);
 }
 frame();

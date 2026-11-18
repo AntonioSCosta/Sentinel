@@ -1,10 +1,49 @@
 # Fontes Blender do mapa 3D
 
-- `*.blend` e `texturas/*` vão para **Git LFS** (`.gitattributes`); os modelos exportados (`assets/map/models/`) vão em Git normal.
-- `src/` guarda o registo de como cada peça foi construída e renderizada (Blender 5.3, Python `bpy`). Depois de construído, o `.blend` é a fonte e edita-se no Blender.
-- Exportar: `blender -b art/blender/<peça>.blend -P tools/blender/export_kit.py -- /tmp/<peça>.glb`, depois
-  `node tools/export-map-assets.mjs /tmp/<peça>.glb assets/map/models/<peça>.glb` e `node tools/check-map-assets.mjs`.
+- `*.blend` e `texturas/*` vão para **Git LFS** (`.gitattributes`); os modelos exportados (`assets/map/models/`) vão em Git
+  normal — é isso que o jogo carrega.
+- `src/` guarda o registo de como cada peça foi construída e renderizada (Blender 5.3, Python `bpy`). Depois de
+  construído, o `.blend` é a fonte e edita-se no Blender.
 
-**Pendente (casa redonda):** o ambiente na nuvem onde a peça foi feita não consegue enviar objetos LFS. O
-`casa_redonda.blend` e as 4 texturas de `texturas/` foram entregues à parte; adicionam-se a partir de um PC com
-`git lfs install` e depois `git add art/blender/casa_redonda.blend art/blender/texturas && git commit && git push`.
+## Casa redonda — reprodução completa
+
+Só precisa do repositório e do Blender 5.3; não depende de ficheiros temporários nem do `.blend` entregue à parte.
+
+```sh
+# 1. gera art/blender/casa_redonda.blend e as 4 texturas em art/blender/texturas/
+blender -b --factory-startup -P art/blender/src/casa_redonda_build.py -- \
+        art/blender/casa_redonda.blend art/blender/texturas
+# 2. exporta os nós «mapa_…» da coleção «export»
+blender -b art/blender/casa_redonda.blend -P tools/blender/export_kit.py -- /tmp/casa_redonda.glb
+# 3. pós-processa para o GLB do jogo (+ .glb.js) e verifica
+node tools/export-map-assets.mjs /tmp/casa_redonda.glb assets/map/models/casa_redonda.glb
+node tools/check-map-assets.mjs
+```
+
+As texturas de `texturas/` são **saídas** do passo 1 (geradas em numpy dentro do próprio script: fibras quebradas,
+molhos e manchas periódicas em u e v), não entradas — por isso não são precisas para reproduzir. O único ficheiro
+externo é `assets/textures/terrain_rock/color.jpg` (Poly Haven, CC0, já no repositório), de onde sai o grão da pedra.
+
+Reprodutibilidade: duas corridas seguidas dão o mesmo ficheiro — `sha256 b7971eaa…81f3` para a versão aprovada
+(Fase C, 986 KB, LOD0 1962 tri, LOD1 524 tri).
+
+## Versão anterior (PR #18) — recuperável
+
+A peça original do PR #18 fica no histórico do Git e recupera-se sem tocar na versão atual:
+
+```sh
+git cat-file blob c10d440baa942ec65f4a2923053abc19e95ee1da > /tmp/casa_redonda_pr18.glb      # GLB (1036 KB)
+git cat-file blob cd337eb5d1af516a6265da690c0c9da443f6075f > /tmp/casa_redonda_pr18.glb.js   # o .glb.js empacotado
+```
+
+`sha256` do GLB do PR #18: `63ca0fb5173c6428a131485b329edf913964a108222d9e537fe0844d23342ce2`.
+O banco de ensaio (`tools/map3d-bench.html`) aceita `?peca=<id>` para carregar qualquer peça de `assets/map/models/`.
+
+## Estado do Git LFS
+
+- `.gitattributes` já marca `art/blender/**/*.blend` e `art/blender/texturas/*.jpg|png` para LFS, e `git lfs install`
+  está aplicado neste ambiente (`filter.lfs.clean`/`smudge` configurados).
+- **Ainda não há nenhum objeto LFS no repositório** (`git lfs ls-files` vazio): o `.blend` e as texturas continuam fora
+  do índice, entregues à parte. Só vale a pena adicioná-los a partir de um PC com `git lfs install` e credenciais para o
+  `origin`, num commit próprio — não se assume que o envio LFS funcione.
+- Nada disto bloqueia o jogo: o que é carregado é `assets/map/models/casa_redonda.glb.js`, em Git normal.

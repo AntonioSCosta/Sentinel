@@ -39,4 +39,4 @@ Todas as texturas abaixo são do Poly Haven e estão sob licença **CC0** (domí
 
 ## Mapa 3D (peças do Blender)
 
-- **Casa redonda lusitana** (`assets/map/models/casa_redonda.glb`): modelada no Blender para o projeto; a cor da pedra cozida a partir da textura stone_wall_04 do Poly Haven (CC0). Fontes e licenças em `art/LICENSES.md`.
+- **Casa redonda lusitana** (`assets/map/models/casa_redonda.glb`): modelada no Blender para o projeto; colmo gerado em numpy no próprio gerador e o grão da pedra cozido a partir da textura rock_boulder_dry do Poly Haven (CC0). Fontes, reprodução e licenças em `art/LICENSES.md` e `art/blender/README.md`.
