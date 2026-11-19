@@ -9,7 +9,7 @@ const captures = process.argv[2];
 if (captures) await mkdir(captures, { recursive: true });
 
 async function open(legacy = false, init) {
-  const page = await browser.newPage({ viewport: { width: 1366, height: 768 }, reducedMotion: 'reduce' });
+  const page = await browser.newPage({ viewport: { width: 1366, height: 768 }, reducedMotion: 'reduce', locale: 'pt-PT' });
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   if (init) await page.addInitScript(init);

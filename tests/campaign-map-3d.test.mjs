@@ -110,7 +110,7 @@ test('only intelView entries can become selectable forces, with rumours and expi
   const { group, targets, annotations } = makeIntelligence(view, { ...world, heightAt: () => 0 }, projection);
   group.updateMatrixWorld(true);
   assert.deepEqual(targets.map(marker => marker.userData.selection.id), ['seen', 'last']);
-  assert.deepEqual(annotations.map(({ userData }) => [userData.label, userData.selection]), [['Rumor', undefined]]);
+  assert.deepEqual(annotations.map(({ userData }) => [userData.labelKey, userData.selection]), [['map.rumor', undefined]]);
   assert.equal(group.children.length, 4);
 
   const camera = new THREE.OrthographicCamera(-500, 500, 350, -350, 1, 1000);

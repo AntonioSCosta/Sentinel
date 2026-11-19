@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="pt">
+<html lang="pt-PT">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Viriato — A Guerra dos Montes Hermínios</title>
+<title>Sentinel</title>
 <link rel="stylesheet" href="./vendor/fonts/fonts.css">
 <style>
   :root{--gold:#e0a64a;--ink:#efe4d2;--dim:#b9ab96;--bg:#0d0b09;--red:#c8382a}
@@ -216,6 +216,7 @@
   .stats span:nth-child(even){color:var(--gold);text-align:right}
   #loaderr{color:#ff8a70}
 </style>
+  <link rel="stylesheet" href="./src/i18n/language.css">
   <link rel="stylesheet" href="./src/campaign-map-3d/campaign-view.css">
   <link rel="stylesheet" href="./src/campaign-map-3d/tactical-labels.css">
 </head>
@@ -249,45 +250,45 @@
 <div id="menu" class="screen">
   <div class="card">
     <p class="kicker" id="kicker">LUSITÂNIA · 147 A.C.</p>
-    <h1>VIRIATO</h1>
-    <h2>A Guerra dos Montes Hermínios</h2>
+    <h1>Sentinel</h1>
     <p class="brief" id="brief">Três anos depois da traição de Galba, Roma volta a marchar pelos vales. Uma patrulha desce a estrada do vale. Viriato e os seus esperam-na escondidos no mato.</p>
-    <div class="row"><span class="lbl">CAPÍTULO</span>
-      <button type="button" data-ch="prologo" aria-pressed="true">Prólogo · A traição de Galba</button>
-      <button type="button" data-ch="cativos" aria-pressed="false">I · Os Cativos</button>
-      <button type="button" data-ch="emboscada" aria-pressed="false">II · A Emboscada</button>
-      <button type="button" data-ch="acampamento" aria-pressed="false">III · O Acampamento</button>
+    <div class="row"><span class="lbl" data-i18n="interface.chapter">CAPÍTULO</span>
+      <button type="button" data-ch="prologo" aria-pressed="true" data-i18n="interface.prologue">Prólogo · A traição de Galba</button>
+      <button type="button" data-ch="cativos" aria-pressed="false" data-i18n="interface.captives">I · Os Cativos</button>
+      <button type="button" data-ch="emboscada" aria-pressed="false" data-i18n="interface.ambush">II · A Emboscada</button>
+      <button type="button" data-ch="acampamento" aria-pressed="false" data-i18n="interface.camp">III · O Acampamento</button>
     </div>
-    <div class="row"><span class="lbl">DIFICULDADE</span>
-      <button type="button" data-diff="0" aria-pressed="false">Fácil</button>
-      <button type="button" data-diff="1" aria-pressed="true">Normal</button>
-      <button type="button" data-diff="2" aria-pressed="false">Difícil</button>
+    <div class="row"><span class="lbl" data-i18n="interface.difficulty">DIFICULDADE</span>
+      <button type="button" data-diff="0" aria-pressed="false" data-i18n="interface.easy">Fácil</button>
+      <button type="button" data-diff="1" aria-pressed="true" data-i18n="interface.normal">Normal</button>
+      <button type="button" data-diff="2" aria-pressed="false" data-i18n="interface.hard">Difícil</button>
     </div>
-    <div class="row"><span class="lbl">GRÁFICOS</span>
-      <button type="button" data-q="low" aria-pressed="false">Baixa</button>
-      <button type="button" data-q="medium" aria-pressed="true">Média</button>
-      <button type="button" data-q="high" aria-pressed="false">Alta</button>
+    <div class="row"><span class="lbl" data-i18n="interface.graphics">GRÁFICOS</span>
+      <button type="button" data-q="low" aria-pressed="false" data-i18n="interface.low">Baixa</button>
+      <button type="button" data-q="medium" aria-pressed="true" data-i18n="interface.medium">Média</button>
+      <button type="button" data-q="high" aria-pressed="false" data-i18n="interface.high">Alta</button>
     </div>
-    <div class="row"><label class="lbl" for="sens">RATO</label><input id="sens" type="range" min="1" max="10" value="5"></div>
+    <div class="row"><label class="lbl" for="sens" data-i18n="interface.mouse">RATO</label><input id="sens" type="range" min="1" max="10" value="5"></div>
+    <div class="row"><label class="language-option" for="menu-language"><span data-i18n="interface.language">Idioma</span> <select id="menu-language" data-language><option value="en" lang="en">English</option><option value="pt-PT" lang="pt-PT">Português (Portugal)</option></select></label></div>
     <div class="keys">
-      <b>W A S D</b><span>mover</span><b>RATO</b><span>olhar</span>
-      <b>CLIQUE</b><span>atacar ou lançar — segura para mais força</span><b>CLIQUE DIR.</b><span>escudo</span>
-      <b>Q</b><span>aparar com a falcata</span><b>Z</b><span>companheiros: sigam-me</span><b>X</b><span>companheiros: bandeira (aponta e clica)</span><b>T</b><span>companheiros: ao ataque</span>
-      <b>R</b><span>arrancar dardos do escudo</span><b>G</b><span>campanha: retirada, se houver serra perto</span>
-      <b>1 2 3 / RODA</b><span>armas</span><b>SHIFT</b><span>correr</span>
-      <b>ESPAÇO</b><span>saltar</span><b>C</b><span>agachar</span>
-      <b>E</b><span>usar</span><b>ESC</b><span>pausa</span>
-      <b>V</b><span>1.ª / 3.ª pessoa</span><span></span><span></span>
+      <b>W A S D</b><span data-i18n="interface.move">mover</span><b data-i18n="interface.mouse">RATO</b><span data-i18n="interface.look">olhar</span>
+      <b data-i18n="interface.click">CLIQUE</b><span data-i18n="interface.attack">atacar ou lançar — segura para mais força</span><b data-i18n="interface.rightClick">CLIQUE DIR.</b><span data-i18n="interface.shield">escudo</span>
+      <b>Q</b><span data-i18n="interface.parry">aparar com a falcata</span><b>Z</b><span data-i18n="interface.follow">companheiros: sigam-me</span><b>X</b><span data-i18n="interface.flag">companheiros: bandeira (aponta e clica)</span><b>T</b><span data-i18n="interface.charge">companheiros: ao ataque</span>
+      <b>R</b><span data-i18n="interface.clearShield">arrancar dardos do escudo</span><b>G</b><span data-i18n="interface.retreatHint">campanha: retirada, se houver serra perto</span>
+      <b data-i18n="interface.weaponKeys">1 2 3 / RODA</b><span data-i18n="interface.weapons">armas</span><b>SHIFT</b><span data-i18n="interface.sprint">correr</span>
+      <b data-i18n="interface.space">ESPAÇO</b><span data-i18n="interface.jump">saltar</span><b>C</b><span data-i18n="interface.crouch">agachar</span>
+      <b>E</b><span data-i18n="interface.use">usar</span><b>ESC</b><span data-i18n="interface.pauseKey">pausa</span>
+      <b>V</b><span data-i18n="interface.perspective">1.ª / 3.ª pessoa</span><span></span><span></span>
     </div>
-    <p id="physnote" class="hidden" style="font-size:15px;color:var(--dim)">Física simplificada: o motor de física não carregou, o jogo continua jogável.</p>
-    <p id="loaderr" class="hidden">Não foi possível iniciar o motor 3D. Verifica se o navegador suporta WebGL, ativa a aceleração gráfica e recarrega a página.</p>
+    <p id="physnote" class="hidden" style="font-size:15px;color:var(--dim)" data-i18n="interface.physics">Física simplificada: o motor de física não carregou, o jogo continua jogável.</p>
+    <p id="loaderr" class="hidden" data-i18n="interface.loadError">Não foi possível iniciar o motor 3D. Verifica se o navegador suporta WebGL, ativa a aceleração gráfica e recarrega a página.</p>
     <div class="menu-foot">
-      <button type="button" class="go" id="start" disabled>A CARREGAR…</button>
-      <div class="row"><button type="button" id="camp-new">CAMPANHA — Um Ano de Guerra</button>
-        <button type="button" id="camp-cont" class="hidden">Continuar campanha</button></div>
+      <button type="button" class="go" id="start" disabled data-i18n="interface.loading">A CARREGAR…</button>
+      <div class="row"><button type="button" id="camp-new" data-i18n="interface.campaign">CAMPANHA — Um Ano de Guerra</button>
+        <button type="button" id="camp-cont" class="hidden" data-i18n="interface.continueCampaign">Continuar campanha</button></div>
       <div id="camp-confirm" class="hidden" role="alertdialog" aria-modal="true" aria-labelledby="camp-confirm-t">
-        <p id="camp-confirm-t">Há uma campanha a meio. Começar de novo apaga-a.</p>
-        <div class="row"><button type="button" id="camp-confirm-yes">Começar de novo</button><button type="button" id="camp-confirm-no">Voltar</button></div>
+        <p id="camp-confirm-t" data-i18n="interface.confirmReset">Há uma campanha a meio. Começar de novo apaga-a.</p>
+        <div class="row"><button type="button" id="camp-confirm-yes" data-i18n="interface.startOver">Começar de novo</button><button type="button" id="camp-confirm-no" data-i18n="interface.back">Voltar</button></div>
       </div>
     </div>
   </div>
@@ -296,54 +297,55 @@
 <div id="map" class="hidden">
   <header id="mtop">
     <div class="when"><b id="m-date"></b><span id="m-season"></span><span id="m-left"></span></div>
-    <div id="m-time" role="group" aria-label="Tempo (Espaço: pausa e retoma)" data-state="pause">
-      <button type="button" id="m-pause" aria-pressed="true" aria-label="Pausa"><span aria-hidden="true">❚❚</span></button>
-      <button type="button" data-speed="1" aria-pressed="false" aria-label="Velocidade 1×">1×</button>
-      <button type="button" data-speed="2" aria-pressed="false" aria-label="Velocidade 2×">2×</button>
-      <button type="button" data-speed="4" aria-pressed="false" aria-label="Velocidade 4×">4×</button>
+    <div id="m-time" role="group" aria-label="Tempo (Espaço: pausa e retoma)" data-i18n-aria="map.a11y.time" data-state="pause">
+      <button type="button" id="m-pause" aria-pressed="true" aria-label="Pausa" data-i18n-aria="map.a11y.pause"><span aria-hidden="true">❚❚</span></button>
+      <button type="button" data-speed="1" aria-pressed="false" aria-label="Velocidade 1×" data-i18n-aria="map.a11y.speed1">1×</button>
+      <button type="button" data-speed="2" aria-pressed="false" aria-label="Velocidade 2×" data-i18n-aria="map.a11y.speed2">2×</button>
+      <button type="button" data-speed="4" aria-pressed="false" aria-label="Velocidade 4×" data-i18n-aria="map.a11y.speed4">4×</button>
     </div>
-    <div class="res" role="group" aria-label="O bando">
-      <span class="r"><b>Homens</b><span id="m-men"></span></span>
-      <span class="r" id="m-food-box"><b>Comida</b><span id="m-food"></span><small id="m-food-raw"></small></span>
-      <span class="r"><b>Armas</b><span id="m-arms"></span></span>
+    <div class="res" role="group" aria-label="O bando" data-i18n-aria="map.a11y.band">
+      <span class="r"><b data-i18n="map.men">Homens</b><span id="m-men"></span></span>
+      <span class="r" id="m-food-box"><b data-i18n="map.food">Comida</b><span id="m-food"></span><small id="m-food-raw"></small></span>
+      <span class="r"><b data-i18n="map.arms">Armas</b><span id="m-arms"></span></span>
     </div>
-    <button type="button" id="m-side-toggle" aria-controls="mside" aria-expanded="true">Assuntos</button>
+    <button type="button" id="m-side-toggle" aria-controls="mside" aria-expanded="true" data-i18n="map.issues">Assuntos</button>
+    <label class="language-option map-language" for="map-language"><span data-i18n="interface.language">Idioma</span> <select id="map-language" data-language><option value="en" lang="en">English</option><option value="pt-PT" lang="pt-PT">Português (Portugal)</option></select></label>
   </header>
   <canvas id="mapcv" class="hidden" tabindex="0" aria-label="Mapa do vale. Clica numa povoação para a ver, ou num ponto vazio para lá ir. O Diário tem a lista dos lugares para o teclado."></canvas>
   <div id="campaign-map-3d">
-    <canvas id="m-scene" tabindex="0" aria-label="Mapa do vale em 3D. Seleciona uma povoação ou clica no terreno para marchar. O Diário lista os lugares."></canvas>
-    <div class="map-labels" aria-label="Locais e forças conhecidas"></div>
-    <div class="map-controls" role="group" aria-label="Câmara do mapa" data-reserve-labels>
-      <button type="button" data-camera="left" aria-label="Rodar para a esquerda">↶</button>
-      <button type="button" data-camera="right" aria-label="Rodar para a direita">↷</button>
-      <button type="button" data-camera="out" aria-label="Afastar">−</button>
-      <button type="button" data-camera="in" aria-label="Aproximar">+</button>
-      <button type="button" data-camera="reset">Centrar</button>
+    <canvas id="m-scene" tabindex="0" aria-label="Mapa do vale em 3D. Seleciona uma povoação ou clica no terreno para marchar. O Diário lista os lugares." data-i18n-aria="map.a11y.canvas"></canvas>
+    <div class="map-labels" aria-label="Locais e forças conhecidas" data-i18n-aria="map.a11y.labels"></div>
+    <div class="map-controls" role="group" aria-label="Câmara do mapa" data-i18n-aria="map.a11y.camera" data-reserve-labels>
+      <button type="button" data-camera="left" aria-label="Rodar para a esquerda" data-i18n-aria="map.a11y.left">↶</button>
+      <button type="button" data-camera="right" aria-label="Rodar para a direita" data-i18n-aria="map.a11y.right">↷</button>
+      <button type="button" data-camera="out" aria-label="Afastar" data-i18n-aria="map.a11y.out">−</button>
+      <button type="button" data-camera="in" aria-label="Aproximar" data-i18n-aria="map.a11y.in">+</button>
+      <button type="button" data-camera="reset" data-i18n="map.center">Centrar</button>
     </div>
     <p class="map-preview" data-reserve-labels></p>
     <p class="map-error" role="alert" hidden></p>
   </div>
   <div id="mtip" class="hidden" role="tooltip"></div>
-  <ul id="mlog" role="status" aria-live="polite" aria-label="Últimos acontecimentos" data-reserve-labels></ul>
-  <aside id="mside" aria-label="Assuntos e povoação" data-reserve-labels>
+  <ul id="mlog" role="status" aria-live="polite" aria-label="Últimos acontecimentos" data-i18n-aria="map.a11y.recent" data-reserve-labels></ul>
+  <aside id="mside" aria-label="Assuntos e povoação" data-i18n-aria="map.a11y.sidebar" data-reserve-labels>
     <section id="missues" aria-labelledby="missues-h">
       <div id="m-int" class="hidden" role="alert">
-        <h2>O tempo parou</h2>
+        <h2 data-i18n="map.timeStopped">O tempo parou</h2>
         <ul id="m-int-list"></ul>
-        <button type="button" id="m-int-go" class="go">Continuar</button>
+        <button type="button" id="m-int-go" class="go" data-i18n="map.resumeTime">Continuar</button>
       </div>
-      <h2 id="missues-h">Assuntos</h2>
+      <h2 id="missues-h" data-i18n="map.issues">Assuntos</h2>
       <ol id="missues-list"></ol>
     </section>
-    <section id="mctx" class="hidden" role="region" aria-label="Povoação"></section>
+    <section id="mctx" class="hidden" role="region" aria-label="Povoação" data-i18n-aria="map.a11y.settlement"></section>
   </aside>
   <footer id="mbot">
-    <button type="button" data-act="ir" id="m-go" aria-pressed="false">Ir</button>
-    <button type="button" data-act="esperar" id="m-ambush" aria-pressed="false">Emboscar</button>
-    <button type="button" data-act="esconder" id="m-hide" aria-pressed="false">Esconder</button>
-    <button type="button" data-act="reconhecer" id="m-recon" aria-pressed="false">Reconhecer</button>
+    <button type="button" data-act="ir" id="m-go" aria-pressed="false" data-i18n="map.go">Ir</button>
+    <button type="button" data-act="esperar" id="m-ambush" aria-pressed="false" data-i18n="map.ambush">Emboscar</button>
+    <button type="button" data-act="esconder" id="m-hide" aria-pressed="false" data-i18n="map.hide">Esconder</button>
+    <button type="button" data-act="reconhecer" id="m-recon" aria-pressed="false" data-i18n="map.scout">Reconhecer</button>
     <span id="m-status" class="hint" role="status"></span>
-    <button type="button" id="m-diary" aria-haspopup="dialog">Diário</button>
+    <button type="button" id="m-diary" aria-haspopup="dialog" data-i18n="map.diary">Diário</button>
   </footer>
   <div id="mdiary" class="hidden" role="dialog" aria-modal="true" aria-labelledby="mdiary-title"><div class="card">
     <p class="kicker">A CAMPANHA DE 147 A.C.</p><h2 id="mdiary-title">Diário</h2>
@@ -382,17 +384,18 @@
 
 <div id="pause" class="screen hidden">
   <div class="card">
-    <p class="kicker">PAUSA</p>
+    <p class="kicker" data-i18n="interface.pause">PAUSA</p>
     <h2 style="margin-top:10px" id="pauseobj"></h2>
-    <div class="row"><span class="lbl">GRÁFICOS</span>
-      <button type="button" data-q="low" aria-pressed="false">Baixa</button>
-      <button type="button" data-q="medium" aria-pressed="true">Média</button>
-      <button type="button" data-q="high" aria-pressed="false">Alta</button>
+    <div class="row"><span class="lbl" data-i18n="interface.graphics">GRÁFICOS</span>
+      <button type="button" data-q="low" aria-pressed="false" data-i18n="interface.low">Baixa</button>
+      <button type="button" data-q="medium" aria-pressed="true" data-i18n="interface.medium">Média</button>
+      <button type="button" data-q="high" aria-pressed="false" data-i18n="interface.high">Alta</button>
     </div>
-    <div class="row"><label class="lbl" for="sens2">RATO</label><input id="sens2" type="range" min="1" max="10" value="5"></div>
+    <div class="row"><label class="lbl" for="sens2" data-i18n="interface.mouse">RATO</label><input id="sens2" type="range" min="1" max="10" value="5"></div>
+    <div class="row"><label class="language-option" for="pause-language"><span data-i18n="interface.language">Idioma</span> <select id="pause-language" data-language><option value="en" lang="en">English</option><option value="pt-PT" lang="pt-PT">Português (Portugal)</option></select></label></div>
     <p id="fps" role="status" style="font-size:15px;opacity:.7;margin-top:6px"></p>
     <p id="pausehint" role="status" style="font-size:16px;color:var(--gold)"></p>
-    <div class="row"><button type="button" class="go" id="resume">CONTINUAR</button><button type="button" id="restart">RECOMEÇAR</button><button type="button" id="pretreat" class="hidden">RETIRAR</button><button type="button" id="abandon" class="hidden">ABANDONAR (DERROTA)</button></div>
+    <div class="row"><button type="button" class="go" id="resume" data-i18n="interface.resume">CONTINUAR</button><button type="button" id="restart" data-i18n="interface.restart">RECOMEÇAR</button><button type="button" id="pretreat" class="hidden" data-i18n="interface.retreat">RETIRAR</button><button type="button" id="abandon" class="hidden" data-i18n="interface.abandon">ABANDONAR (DERROTA)</button></div>
   </div>
 </div>
 
@@ -403,7 +406,7 @@
     <p class="brief" id="endp" style="margin-top:14px"></p>
     <div class="stats" id="ends"></div>
     <button type="button" class="go hidden" id="next">CONTINUAR · A EMBOSCADA</button>
-    <button type="button" class="go" id="again">JOGAR OUTRA VEZ</button>
+    <button type="button" class="go" id="again" data-i18n="interface.playAgain">JOGAR OUTRA VEZ</button>
   </div>
 </div>
 

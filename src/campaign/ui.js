@@ -1,9 +1,11 @@
+import { createI18n } from '../i18n/index.js';
+import { mapDate, mapForceName, mapPlaceName } from '../i18n/map-text.js';
 import { createCampaignMapView } from '../campaign-map-3d/campaign-view.js';
-// Ecrã do mapa da campanha: HUD em HTML + canvas 2D. Liga o DOM ao Flow; não conhece Three.js nem as batalhas 3D.
+// Ecrã da campanha: liga o HUD e o mapa ao Flow.
 import { makeView, drawMap, hitTest, toWorld, toScreen, agoLabel } from './map-view.js';
 import { intelView, estimateMen, SCOUTS, RECON_RANGE, RECON_RADIUS } from './intel.js';
 import { createFlow, loadFlow, clearSave, WIN_MEN, WIN_FAME } from './flow.js';
-import { dateLabel, season, daysLeft, YEAR_DAYS } from './clock.js';
+import { campaignDateParts, dateLabel, season, daysLeft, YEAR_DAYS } from './clock.js';
 import { entryFor, CHRONICLE, SOURCE_LABELS, isUnlocked } from './chronicle.js';
 import { isBridged, isStory } from './bridge.js';
 import { START, foodPerDay } from './state.js';
@@ -232,7 +234,7 @@ export function battleBrief(b, state) {
  * dias inteiros da simulação (flow.order); a interface só escolhe quando dar o passo seguinte. Nada aqui decide regras:
  * o que uma ação daria vem de flow.preview / flow.previewTribute, os assuntos de issues.js.
  */
-export function createCampaignUI({ document: doc, window: win, storage, onClose = () => {}, startBattle = () => false, legacyMapForTests = false }) {
+export function createCampaignUI({ document: doc, window: win, storage, onClose = () => {}, startBattle = () => false, legacyMapForTests = false, i18n = createI18n() }) {
   const $ = id => doc.getElementById(id);
   const el = (tag, cls, text) => { const e = doc.createElement(tag); if (cls) e.className = cls; if (text !== undefined && text !== null) e.textContent = text; return e; };
   let flow = null, view = null, active = false, selected = null, logDirty = true;
@@ -251,12 +253,18 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   stage.classList.toggle('hidden', legacyMapForTests);
   $('mapcv').classList.toggle('hidden', !legacyMapForTests);
   const map3d = legacyMapForTests ? null : createCampaignMapView(stage, {
-    window: win,
+    window: win, i18n,
     onPick: (hit, event) => mapAction(hit, pointAt(hit), event),
     onHover: hit => updateHover(hit, pointAt(hit)),
     onError: () => { pause(); },
   });
   const name = id => placeName(flow.state, id) ?? '';
+  const displayName = id => mapPlaceName(i18n, name(id), settlement(id)?.kind);
+  const mapActions = new Set(['ir', 'reconhecer', 'recrutar', 'pedir-ajuda', 'atacar']);
+  const placeDescription = (place, community) => community ? tMap(`community.${community.id}`)
+    : KIND_NAMES[place.kind] ? tMap(`kind.${place.kind}`) : place.kind;
+  const tMap = (key, params) => i18n.t(`map.${key}`, params);
+  const duration = count => tMap('days', { count });
   const settlement = id => flow.state.world.settlements.find(x => x.id === id);
   const communityAt = id => { const k = communityOf(flow.state, id); return k ? flow.state.communities[k] : null; };
   /** Dias até estar no lugar: 0 se já se pode agir nele (REACH); senão os dias reais da marcha (simulation.marchDays). */
@@ -282,7 +290,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   function route() {
     if (!dest) return null;
     const days = marchDays(dest), food = days * foodPerDay(flow.state.men);
-    return { to: dest, label: `${daysText(days)} · −${food} comida` };
+    return { to: dest, label: tMap('route', { duration: duration(days), food }) };
   }
   function paint() {
     if (!active || !flow) return;
@@ -347,20 +355,20 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   // --- barra de cima ---
   function renderTop() {
     const s = flow.state;
-    $('m-date').textContent = dateLabel(s.day);
-    $('m-season').textContent = season(s.day);
-    $('m-left').textContent = UI.left(daysLeft(s.day));
-    $('m-men').textContent = s.men; $('m-arms').textContent = s.arms;
+    $('m-date').textContent = mapDate(i18n, campaignDateParts(s.day));
+    $('m-season').textContent = tMap(`season.${season(s.day)}`);
+    $('m-left').textContent = tMap('remaining', { duration: duration(daysLeft(s.day)) });
+    $('m-men').textContent = i18n.number(s.men); $('m-arms').textContent = i18n.number(s.arms);
     const fd = foodDays(s);
-    $('m-food').textContent = UI.foodDays(fd);
-    $('m-food-raw').textContent = `(${s.food})`;
-    $('m-food-box').title = UI.foodTip(s.food, foodPerDay(s.men));
+    $('m-food').textContent = duration(fd);
+    $('m-food-raw').textContent = `(${i18n.number(s.food)})`;
+    $('m-food-box').title = tMap('foodTip', { food: s.food, daily: foodPerDay(s.men) });
     $('m-food-box').classList.toggle('low', fd < LOW_FOOD_DAYS);
     $('m-pause').setAttribute('aria-pressed', running ? 'false' : 'true');
     for (const b of $('m-time').querySelectorAll('[data-speed]')) b.setAttribute('aria-pressed', running && Number(b.dataset.speed) === speed ? 'true' : 'false');
     $('m-time').dataset.state = running ? 'run' : 'pause';
     const n = currentIssues().filter(i => i.kind === 'decisao').length;
-    $('m-side-toggle').textContent = `${UI.issues}${n ? ` (${n})` : ''}`;
+    $('m-side-toggle').textContent = n ? tMap('countIssues', { name: tMap('issues'), count: n }) : tMap('issues');
   }
 
   // --- barra de baixo: ordem permanente do bando ---
@@ -369,15 +377,20 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     $('m-ambush').setAttribute('aria-pressed', stance === 'esperar' ? 'true' : 'false');
     $('m-hide').setAttribute('aria-pressed', stance === 'esconder' ? 'true' : 'false');
     $('m-recon').setAttribute('aria-pressed', mode === 'reconhecer' ? 'true' : 'false');
-    let t = UI.idle;
-    if (mode === 'ir') t = UI.goPick;
-    else if (mode === 'reconhecer') t = `Clica na zona a reconhecer, dentro do círculo: ${SCOUTS} batedores, 1 dia · ESC desiste`;
-    else if (dest) { const d = marchDays(dest), at = destName(); t = UI.goingTo(at, d, d * foodPerDay(flow.state.men)); }
-    else if (stance === 'esperar') t = nearRoadNow() ? UI.waiting : UI.waitingFar;
-    else if (stance === 'esconder') t = UI.hiding;
-    $('m-status').textContent = t;
+    let message = tMap('idle');
+    if (mode === 'ir') message = tMap('goPick');
+    else if (mode === 'reconhecer') message = tMap('reconMode', { scouts: SCOUTS });
+    else if (dest) {
+      const days = marchDays(dest);
+      message = tMap('going', { name: destName(), duration: duration(days), food: days * foodPerDay(flow.state.men) });
+    } else if (stance === 'esperar') message = tMap(nearRoadNow() ? 'waiting' : 'waitingFar');
+    else if (stance === 'esconder') message = tMap('hiding');
+    $('m-status').textContent = message;
   }
-  const destName = () => { const s = flow.state.world.settlements.find(x => Math.hypot(x.x - dest.x, x.y - dest.y) < 1); return s ? name(s.id) : 'o ponto marcado'; };
+  const destName = (point = dest) => {
+    const place = flow.state.world.settlements.find(x => Math.hypot(x.x - point.x, x.y - point.y) < 1);
+    return place ? displayName(place.id) : tMap('markedPoint');
+  };
   const nearRoadNow = () => nearRoad(flow.state.world, flow.state.party);
 
   function setDest(p) { dest = p ? { x: p.x, y: p.y } : null; if (dest) stance = null; mode = null; if (dest) play(); else render(); }
@@ -406,7 +419,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   function step(o) {
     const r = order(o);
     if (!r) return r;
-    if (dest && !r.refused && Math.hypot(flow.state.party.x - dest.x, flow.state.party.y - dest.y) < ARRIVAL) { say([]); log.push(UI.arrived(destName())); logDirty = true; dest = null; }
+    if (dest && !r.refused && Math.hypot(flow.state.party.x - dest.x, flow.state.party.y - dest.y) < ARRIVAL) { const arrived = dest; log.push(() => tMap('arrived', { name: destName(arrived) })); logDirty = true; dest = null; }
     if (r.refused && o.kind === 'marchar') dest = null;
     const reasons = r.refused ? [] : detectInterruptions({ state: flow.state, events: r.events, memory, battle: r.battle });
     if (reasons.length || flow.phase !== 'mapa') { interrupt = reasons.filter(x => x.type !== 'batalha'); running = false; if (timer) win.clearTimeout?.(timer); timer = 0; }
@@ -477,7 +490,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     list.dataset.key = key;
     const keep = list.contains(doc.activeElement) ? doc.activeElement.dataset.issue : null;
     list.textContent = '';
-    if (!items.length) { list.append(el('li', 'none', UI.noIssues)); return; }
+    if (!items.length) { list.append(el('li', 'none', tMap('noIssues'))); return; }
     for (const i of items) list.append(issueCard(i));
     if (keep) list.querySelector(`[data-issue="${CSS_ESC(keep)}"]`)?.focus?.();
   }
@@ -560,11 +573,11 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const had = box.contains(doc.activeElement) ? doc.activeElement.dataset.act : null;
     box.textContent = '';
     const top = el('div', 'ctx-top');
-    const back = el('button', 'back', UI.back); back.type = 'button'; back.addEventListener('click', unpick);
+    const back = el('button', 'back', tMap('backIssues')); back.type = 'button'; back.addEventListener('click', unpick);
     top.append(back); box.append(top);
-    const h = el('h3', null, name(s.id)); h.tabIndex = -1; box.append(h);
+    const h = el('h3', null, displayName(s.id)); h.tabIndex = -1; box.append(h);
     if (c) {
-      box.append(el('p', 'sub', `${IDENTITY[c.id].place} · ${officeLine(c.id)}`));
+      box.append(el('p', 'sub', placeDescription(s, c)));
       const chips = el('div', 'chips');
       const pc = el('span', `chip p-${c.posture}`, POSTURE_LABEL[c.posture]); pc.title = POSTURE_HINT[c.posture]; chips.append(pc);
       const sc = el('span', `chip s-${c.situation}`, SITUATION_LABEL[c.situation]); if (SITUATION_HINT[c.situation]) sc.title = SITUATION_HINT[c.situation]; chips.append(sc);
@@ -587,15 +600,15 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
       if (!mot.length) box.append(el('p', 'dim', UI.panel.noMotives));
       else { const ul = el('ul', 'motives'); for (const m of mot) { const li = el('li', m.v > 0 ? 'up' : m.v < 0 ? 'down' : ''); li.append(el('span', 'sign', m.v > 0 ? '▲' : m.v < 0 ? '▼' : '•'), el('span', null, `${m.text} `), el('small', null, m.day === st.day ? 'hoje' : agoLabel(st.day - m.day))); ul.append(li); } box.append(ul); }
     } else {
-      box.append(el('p', 'sub', KIND_NAMES[s.kind] || s.kind));
+      box.append(el('p', 'sub', placeDescription(s)));
       const ps = placeState(s, st);
       if (ps) box.append(el('p', 'line', ps === 'tomado' ? UI.panel.taken : ps === 'queimada' ? UI.panel.burnt : UI.panel.attacked));
     }
-    box.append(el('h4', null, UI.panel.actions));
+    box.append(el('h4', 'map-actions-heading', tMap('panelActions')));
     const acts = el('div', 'actions'); box.append(acts);
     for (const a of actionsFor(s, c)) acts.append(actionRow(a));
     if (c) { box.append(el('p', 'later', UI.panel.later)); }
-    if (flow.phase === 'mapa') box.append(el('p', 'risk dim', UI.panel.risk));   // sempre o mesmo texto: não diz se há ou não algo escondido
+    if (flow.phase === 'mapa') box.append(el('p', 'risk dim', tMap('panelRisk')));   // sempre o mesmo texto: não diz se há ou não algo escondido
     if (had) box.querySelector(`[data-act="${CSS_ESC(had)}"]`)?.focus?.();
   }
   /** As ações que existem para este lugar, cada uma com o que daria (pré-visualização) ou porque não se pode. */
@@ -641,13 +654,13 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (s.kind === 'aldeia' || (c && s.kind === 'castro')) add('recrutar', UI.panel.recruit, { kind: 'recrutar', id: s.id });
     if (s.kind === 'castro') add('pedir-ajuda', UI.panel.help, { kind: 'pedir-ajuda', id: s.id });
     if (s.kind === 'posto' && !placeState(s, flow.state)) add('atacar', UI.panel.attack, { kind: 'atacar', id: s.id });
-    if (!here) { const d = marchDays(s); out.push({ id: 'ir', label: UI.panel.goHere, info: `${daysText(d)} · −${d * foodPerDay(flow.state.men)} comida`, run: () => setDest(s) }); }
+    if (!here) { const d = marchDays(s); out.push({ id: 'ir', label: UI.panel.goHere, info: tMap('route', { duration: duration(d), food: d * foodPerDay(flow.state.men) }), run: () => setDest(s) }); }
     add('reconhecer', UI.panel.reconHere, { kind: 'reconhecer', to: { x: s.x, y: s.y } });
     return out;
   }
   function actionRow(a) {
     const row = el('div', `act${a.run ? '' : ' off'}`);
-    const b = el('button', null, a.label); b.type = 'button'; b.dataset.act = a.id;
+    const b = el('button', null, mapActions.has(a.id) ? tMap(`action.${a.id}`) : a.label); b.type = 'button'; b.dataset.act = a.id;
     const small = el('small', null, a.run ? a.info : a.why); small.id = `mctx-${a.id}-info`;
     b.setAttribute('aria-describedby', small.id);
     if (a.run) b.addEventListener('click', () => { if (active && flow.phase === 'mapa') a.run(); });
@@ -669,6 +682,11 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     tip.style.left = `${Math.max(4, x)}px`; tip.style.top = `${y}px`;
   }
 
+  function renderLog() {
+    const ul = $('mlog');
+    ul.replaceChildren(...log.slice(-LOG_LINES).map(line => el('li', null, typeof line === 'function' ? line() : line)));
+  }
+
   // --- render ---
   function render() {
     if (!active || !flow) return;
@@ -676,8 +694,8 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     renderTop(); renderStatus();
     if (logDirty) {   // confirmação curta: as últimas linhas, que se apagam sozinhas (o Diário guarda a história)
       logDirty = false;
-      const ul = $('mlog'); ul.textContent = ''; ul.classList.remove('faded');
-      for (const line of log.slice(-LOG_LINES)) ul.append(el('li', null, line));
+      const ul = $('mlog'); ul.classList.remove('faded');
+      renderLog();
       if (logTimer) win.clearTimeout?.(logTimer);
       logTimer = win.setTimeout?.(() => { logTimer = 0; $('mlog').classList.add('faded'); }, LOG_MS) ?? 0;
     }
@@ -811,21 +829,28 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   function hoverLabel(hit, at) {
     const s = flow.state;
     const days = inReach(s.party, at) ? 0 : marchDaysTo(s.world, s.party, at);
-    if (mode === 'reconhecer') return inRecon(at) ? `Reconhecer · ${SCOUTS} batedores, 1 dia` : 'Longe de mais para os batedores';
-    const when = days ? `${daysText(days)} · −${days * foodPerDay(s.men)} comida` : 'aqui';
-    if (hit?.type === 'settlement') return `${name(hit.id)} · ${when}`;
-    if (hit?.type === 'patrol' || hit?.type === 'praetor' || hit?.type === 'force') {
-      const f = intelView(s).forces.find(x => x.id === hit.id);
-      if (!f) return when;
-      const what = f.kind === 'pretor' ? `${f.name || 'Pretor'} · pretor` : `${FORCE_NAMES[f.kind] || 'Força romana'}${f.men ? ` · ${menText(estimateMen(f.men))}` : ''}${f.dir ? ` · para ${f.dir}` : ''}`;
-      return f.status === 'confirmada' ? `${what} · à vista` : `${what} · visto ${agoLabel(f.age)}`;
+    if (mode === 'reconhecer') return inRecon(at) ? tMap('reconHover', { scouts: SCOUTS }) : tMap('reconFar');
+    const when = days ? tMap('route', { duration: duration(days), food: days * foodPerDay(s.men) }) : tMap('here');
+    if (hit?.type === 'settlement') return tMap('placePreview', { name: displayName(hit.id), when });
+    if (hit && hit.type !== 'terrain') {
+      const force = intelView(s).forces.find(x => x.id === hit.id);
+      if (!force) return when;
+      let title = force.kind === 'pretor'
+        ? tMap('namedPraetor', { name: force.name || tMap('praetorTitle') })
+        : mapForceName(i18n, force);
+      if (force.kind !== 'pretor' && force.men) title = tMap('forceSize', {
+        name: title, men: tMap('forceMen', { count: estimateMen(force.men) }),
+      });
+      if (force.kind !== 'pretor' && force.dir) title = tMap('forceDirection', { name: title, direction: tMap(`directions.${force.dir}`) });
+      return force.status === 'confirmada' ? tMap('confirmed', { name: title })
+        : tMap('estimated', { name: title, duration: duration(force.age) });
     }
     return when;
   }
   function updateHover(hit, at) {
     if (!active || !flow || flow.phase !== 'mapa') return;
     const tipShown = !map3d && hit?.type === 'settlement' && !mode && !!communityAt(hit.id);
-    const next = at ? { x: at.x, y: at.y, id: hit?.type === 'settlement' ? hit.id : null, label: tipShown ? null : hoverLabel(hit, at) } : null;
+    const next = at ? { x: at.x, y: at.y, id: hit?.type === 'settlement' ? hit.id : null, hit, label: tipShown ? null : hoverLabel(hit, at) } : null;
     if (!next && !hover) return;
     hover = next;
     renderTip(); schedulePaint();
@@ -1016,7 +1041,8 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     memory = {}; interrupt = []; dismissed = new Set(); flash = {}; focus = null; issuesKey = ''; ctxKey = '';
     detectInterruptions({ state: flow.state, events: [], memory });   // o que já se sabe ao abrir não interrompe
     $('mcron').classList.add('hidden'); cronOpener = null; $('mdiary').classList.add('hidden'); setSide(!narrow());
-    log.push(flow.state.day ? 'A marcha continua.' : `Um ano de guerra começa nos montes: aguenta com ${WIN_MEN}+ homens e ${WIN_FAME}+ de fama. O tempo está em pausa: clica no mapa para ir, ou carrega em Espaço.`);
+    const welcome = flow.state.day ? 'continued' : 'welcome';
+    log.push(() => tMap(welcome, { men: WIN_MEN, fame: WIN_FAME }));
     if (!flow.state.day) {
       const initial = flow.state.intel?.reports?.find(r => r.src === 'inicio' && r.got <= flow.state.day);
       if (initial) log.push(reportText(initial, flow.state));
@@ -1031,6 +1057,35 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     active = false; $('map').classList.add('hidden');
     onClose();
   }
+  i18n.subscribe(() => {
+    map3d?.localize();
+    if (!active || !flow) return;
+    if (hover) hover.label = hoverLabel(hover.hit, hover);
+    renderTop();
+    renderStatus();
+    renderLog();
+    const title = $('mctx').querySelector('h3');
+    const back = $('mctx').querySelector('.back');
+    if (title && selected) {
+      const box = $('mctx');
+      title.textContent = displayName(selected);
+      box.querySelector('.sub').textContent = placeDescription(settlement(selected), communityAt(selected));
+      box.querySelector('.map-actions-heading').textContent = tMap('panelActions');
+      box.querySelector('.risk').textContent = tMap('panelRisk');
+      for (const button of box.querySelectorAll('button[data-act]')) {
+        if (mapActions.has(button.dataset.act)) button.textContent = tMap(`action.${button.dataset.act}`);
+      }
+      const march = box.querySelector('#mctx-ir-info');
+      if (march) {
+        const days = marchDays(settlement(selected));
+        march.textContent = tMap('route', { duration: duration(days), food: days * foodPerDay(flow.state.men) });
+      }
+    }
+    if (back) back.textContent = tMap('backIssues');
+    const empty = $('missues-list').querySelector('.none');
+    if (empty) empty.textContent = tMap('noIssues');
+    schedulePaint();
+  });
   return {
     open, close, render, order, openChronicle, closeChronicle, openDiary, closeDiary, simulateBattle, suspend, battleDone,
     select: id => { if (id) pick(id); else { selected = null; render(); } }, view: () => view,

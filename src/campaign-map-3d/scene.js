@@ -1,3 +1,4 @@
+import { mapForceName, mapPlaceName } from '../i18n/map-text.js';
 import * as THREE from 'three';
 import { createMapProjection, createCampaignTerrain, subdivideLine } from './terrain.js';
 import { generateVegetation } from './strategic.js';
@@ -102,7 +103,7 @@ function makeMarkers(places, terrain, projection) {
     const { x, y, z } = projection.toScene(place, terrain.heightAt(place.x, place.y));
     marker.position.set(x, y, z);
     marker.userData = {
-      selection: { type: 'settlement', id: place.id }, name: place.name, label: place.name,
+      selection: { type: 'settlement', id: place.id }, place,
       priority: place.community ? 5 : place.kind === 'castro' || place.kind === 'posto' ? 4 : 2,
       className: place.community ? 'community' : 'place', lift: 16,
     };
@@ -124,7 +125,7 @@ function makeMarkers(places, terrain, projection) {
 }
 
 /** Mount a self-contained Three.js scene on the supplied canvas. */
-export function createCampaignMapScene(canvas, labelLayer, onSelect) {
+export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setClearColor('#1b2622', 0);
@@ -146,10 +147,10 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect) {
   leaders.setAttribute('aria-hidden', 'true');
   const partyMarker = {
     position: new THREE.Vector3(),
-    userData: { key: 'party', label: 'Bando', className: 'party-label', priority: 12, lift: 17 },
+    userData: { key: 'party', labelKey: 'map.band', className: 'party-label', priority: 12, lift: 17 },
   };
   let model, terrain, relief, edge, projection, markers, intelligence, planning, targets, labels = [], selected;
-  let placesKey, intelKey, planningKey, focusedPlace, issues, partyLabel;
+  let placesKey, intelKey, planningKey, focusedPlace, issues, partyLabel, labelLocale;
   let surfaceWidth = 0, surfaceHeight = 0;
   let zoom = 1, angle = defaultAngle, treeCount = 0;
   let screenWidth = 1, screenHeight = 1, halfHeight = 1;
@@ -174,6 +175,21 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect) {
     fitTargetY = (top + bottom) / (2 * up.y);
   }
 
+  function markerLabel({ userData }) {
+    if (userData.place) return mapPlaceName(i18n, userData.place.name, userData.place.kind);
+    if (userData.force) {
+      const name = mapForceName(i18n, userData.force);
+      return userData.force.status === 'estimada' ? i18n.t('map.seenAgo', { name, count: userData.force.age }) : name;
+    }
+    return i18n.t(userData.labelKey);
+  }
+
+  function labelFor(selection) {
+    const marker = targets?.find(({ userData }) =>
+      userData.selection.type === selection?.type && userData.selection.id === selection?.id);
+    return marker ? markerLabel(marker) : '';
+  }
+
   function layoutLabels() {
     const area = canvas.getBoundingClientRect();
     const scope = canvas.closest('#map') || canvas.parentElement;
@@ -183,6 +199,10 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect) {
     }).filter(box => box.w && box.h && box.x < screenWidth && box.y < screenHeight &&
       box.x + box.w > 0 && box.y + box.h > 0);
     const visibleLabels = partyLabel ? [...labels, partyLabel] : labels;
+    if (labelLocale !== i18n.locale) {
+      labelLocale = i18n.locale;
+      for (const { marker, element } of visibleLabels) element.textContent = markerLabel(marker);
+    }
     for (const { marker, element } of visibleLabels) {
       const { selection } = marker.userData;
       element.classList.toggle('has-issue', selection?.type === 'settlement' && !!issues?.[selection.id]);
@@ -216,8 +236,7 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect) {
 
   function select(selection, event) {
     selected = selection;
-    const target = targets.find(marker => marker.userData.selection === selection);
-    onSelect(selection, target?.userData.label, event);
+    onSelect(selection, labelFor(selection), event);
     draw();
   }
 
@@ -260,10 +279,10 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect) {
   }
 
   function makeLabel(marker, connect = false) {
-    const { selection, label, className, key } = marker.userData;
+    const { selection, className, key } = marker.userData;
     const element = document.createElement(selection ? 'button' : 'span');
     element.className = `map-label ${className}`;
-    element.textContent = label;
+    element.textContent = markerLabel(marker);
     if (selection) {
       element.type = 'button';
       element.dataset.kind = selection.type;
@@ -388,5 +407,5 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect) {
       trees: treeCount, instances: treeCount * 2 };
   }
 
-  return { load, present, resize, reset, pan, zoomBy, rotate, pick, hit, measure };
+  return { load, present, resize, reset, pan, zoomBy, rotate, pick, hit, measure, labelFor, redraw: draw };
 }

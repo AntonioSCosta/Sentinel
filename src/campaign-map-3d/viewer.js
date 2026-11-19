@@ -1,9 +1,11 @@
+import { bindDocumentLanguage } from '../i18n/dom.js';
 import { generateWorld } from '../campaign/worldgen.js';
 import { readPrototypeSave } from './terrain.js';
 import { createCampaignMapScene } from './scene.js';
 import { strategicView } from './strategic.js';
 import { newCommunities } from '../campaign/communities.js';
 
+const i18n = bindDocumentLanguage(window);
 const canvas = document.querySelector('#map-scene');
 const status = document.querySelector('#status');
 const seedField = document.querySelector('#seed');
@@ -11,25 +13,52 @@ const fileInput = document.querySelector('#save-file');
 
 function start() {
   const output = document.querySelector('#selection');
+  let current, selected, statusKey = 'map.preparing', statusParams;
+  function setStatus(key, params) {
+    statusKey = key;
+    statusParams = params;
+    status.textContent = i18n.t(key, params);
+  }
+  function renderSelection(label) {
+    if (selected?.type === 'terrain') {
+      output.textContent = i18n.t('map.terrain', {
+        x: i18n.number(selected.x, true), y: i18n.number(selected.y, true),
+      });
+    } else output.textContent = label ? `${label} · ${selected.id}` : '';
+  }
   const map = createCampaignMapScene(canvas, document.querySelector('#map-labels'), (detail, label) => {
-    output.textContent = detail?.type === 'terrain' ? `Terreno · ${detail.x.toFixed(1)}, ${detail.y.toFixed(1)}`
-      : label ? `${label} · ${detail.id}` : '';
+    selected = detail;
+    renderSelection(label);
     canvas.dispatchEvent(new CustomEvent('strategic-select', { detail, bubbles: true }));
-  });
+  }, i18n);
   new ResizeObserver(() => map.resize()).observe(canvas);
   map.resize();
+
+  function renderCounts() {
+    if (!current) return;
+    for (const kind of ['aldeia', 'castro', 'serra', 'posto']) {
+      document.getElementById(`${kind}-count`).textContent = i18n.number(current.world.settlements.filter(place => place.kind === kind).length);
+    }
+    document.querySelector('#known-count').textContent = i18n.number(current.known);
+  }
+
+  i18n.subscribe(() => {
+    setStatus(statusKey, statusParams);
+    renderCounts();
+    renderSelection(map.labelFor(selected));
+    map.redraw();
+  });
 
   function show(snapshot, name) {
     const { seed, world } = snapshot;
     const view = strategicView(snapshot);
     map.load(seed, world, view);
-    output.textContent = '';
+    current = { world, known: view.forces.length };
+    selected = null;
+    renderSelection('');
     seedField.value = String(seed);
-    for (const kind of ['aldeia', 'castro', 'serra', 'posto']) {
-      document.getElementById(`${kind}-count`).textContent = world.settlements.filter(place => place.kind === kind).length;
-    }
-    document.querySelector('#known-count').textContent = view.forces.length;
-    status.textContent = name ? `${name} · Seed ${seed}` : `Seed ${seed} · Mundo gerado`;
+    renderCounts();
+    setStatus(name ? 'map.imported' : 'map.generated', { name, seed: String(seed) });
   }
 
   function showGenerated(seed) {
@@ -41,10 +70,10 @@ function start() {
     event.preventDefault();
     try {
       const seed = Number(seedField.value);
-      if (!Number.isSafeInteger(seed)) throw new Error('Indica uma seed inteira válida.');
+      if (!Number.isSafeInteger(seed)) { setStatus('map.invalidSeed'); return; }
       showGenerated(seed);
-    } catch (error) {
-      status.textContent = error.message;
+    } catch {
+      setStatus('map.generateFailed');
     }
   });
 
@@ -53,8 +82,8 @@ function start() {
     if (!file) return;
     try {
       show(readPrototypeSave(await file.text()), file.name);
-    } catch (error) {
-      status.textContent = `Erro ao abrir a gravação: ${error.message}`;
+    } catch {
+      setStatus('map.invalidSave');
     } finally {
       fileInput.value = '';
     }
@@ -106,7 +135,7 @@ function start() {
   });
 
   canvas.addEventListener('webglcontextlost', () => {
-    status.textContent = 'A ligação ao WebGL perdeu-se. Recarrega a página para voltar ao mapa.';
+    setStatus('map.viewerLost');
   });
   const requestedSeed = Number(new URLSearchParams(location.search).get('seed') ?? 1);
   const seed = Number.isSafeInteger(requestedSeed) ? requestedSeed : 1;
@@ -121,5 +150,7 @@ function start() {
 try {
   start();
 } catch (error) {
-  status.textContent = `Não foi possível iniciar o mapa 3D: ${error.message}`;
+  console.error(error);
+  status.textContent = i18n.t('map.viewerFailed');
+  i18n.subscribe(() => { status.textContent = i18n.t('map.viewerFailed'); });
 }
