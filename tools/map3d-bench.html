@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Banco de ensaio — peças do mapa 3D</title>
+<!-- Página isolada: não faz parte do jogo. Mostra uma peça do mapa com a luz e a câmara previstas para o mapa 3D.
+     ?vista=perto (uma casa, três quartos) · ?vista=zoom (zoom máximo do mapa) · ?vista=longe (três casais, câmara do mapa)
+     Arrastar roda a câmara; a roda aproxima. -->
+<style>
+  html,body{margin:0;height:100%;background:#1b1a17;overflow:hidden;font-family:Georgia,serif}
+  canvas{display:block}
+  #info{position:fixed;left:12px;bottom:10px;color:#e8dcc0;font-size:13px;line-height:1.45;background:rgba(20,16,10,.62);padding:7px 10px;border-radius:3px;pointer-events:none}
+  #info b{color:#f2c46a;font-weight:normal}
+</style>
+<script type="importmap">{"imports":{"three":"../vendor/three/three.module.js","three/addons/":"../vendor/three/addons/"}}</script>
+</head>
+<body>
+<div id="info">a carregar…</div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+
+const VIEW = new URLSearchParams(location.search).get('vista') || 'perto';
+const info = document.getElementById('info');
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)); renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.AgXToneMapping; renderer.toneMappingExposure = 1.15;   // o mesmo AgX das renderizações do Blender
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.append(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x8fa6b8);
+scene.fog = new THREE.Fog(0x9fb0bb, VIEW === 'longe' ? 120 : 40, VIEW === 'longe' ? 420 : 160);
+
+// luz: sol baixo da manhã, à esquerda e à frente da câmara (a mesma direção do Blender: (x, y, z)Blender → (x, z, -y))
+const toSun = new THREE.Vector3(-0.55, 0.42, 0.72).normalize();
+const sun = new THREE.DirectionalLight(0xffe2b8, 3.1); sun.position.copy(toSun).multiplyScalar(80); sun.castShadow = true;
+const S = VIEW === 'longe' ? 45 : 12;
+Object.assign(sun.shadow.camera, { left: -S, right: S, top: S, bottom: -S, near: 1, far: 220 });
+sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.04;
+scene.add(sun, sun.target, new THREE.HemisphereLight(0xb9cde0, 0x5a4a36, 0.9));
+
+// chão: a terra seca do projeto (Poly Haven, CC0), com ondulação suave longe da casa
+const tl = new THREE.TextureLoader();
+const tex = (f, srgb) => { const t = tl.load(f); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(60, 60); t.anisotropy = 8; if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t; };
+const gGeo = new THREE.PlaneGeometry(500, 500, 160, 160); gGeo.rotateX(-Math.PI / 2);
+const P = gGeo.attributes.position;
+for (let i = 0; i < P.count; i++) {
+  const x = P.getX(i), z = P.getZ(i), d = Math.hypot(x, z);
+  P.setY(i, (Math.sin(x * 0.045) * Math.cos(z * 0.038) + Math.sin(x * 0.11 + z * 0.07) * 0.4) * 2.2 * Math.min(1, Math.max(0, (d - 60) / 80)));
+}
+gGeo.computeVertexNormals();
+const ground = new THREE.Mesh(gGeo, new THREE.MeshStandardMaterial({ map: tex('../assets/textures/terrain_dry/color_1k.jpg', true), normalMap: tex('../assets/textures/terrain_dry/normal_1k.jpg'), roughness: 0.95, color: 0xcbbfa8 }));
+ground.receiveShadow = true; scene.add(ground);
+
+// a peça: GLB embalado em base64 (.glb.js), como no jogo
+const { default: b64 } = await import('../assets/map/models/casa_redonda.glb.js');
+const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
+const gltf = await new Promise((ok, ko) => loader.parse(bytes.buffer, '', ok, ko));
+gltf.scene.updateMatrixWorld(true);
+const lod = name => gltf.scene.getObjectByName(name);
+const LOD0 = lod('mapa_casa_redonda_a_LOD0'), LOD1 = lod('mapa_casa_redonda_a_LOD1');
+
+/** Uma InstancedMesh por primitiva (material) da peça: uma chamada de desenho por material, seja qual for o nº de casas. */
+function instanced(node, mats) {
+  const out = [];
+  node.traverse(m => {
+    if (!m.isMesh) return;
+    const im = new THREE.InstancedMesh(m.geometry, m.material, mats.length);
+    mats.forEach((M, i) => im.setMatrixAt(i, M.clone().multiply(m.matrixWorld)));   // matrixWorld traz a desquantização
+    im.castShadow = im.receiveShadow = true; out.push(im); scene.add(im);
+  });
+  return out;
+}
+const trisOf = node => { let t = 0; node.traverse(m => { if (m.isMesh) t += (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3; }); return t; };
+const place = (x, z, rot, s = 1) => new THREE.Matrix4().compose(new THREE.Vector3(x, 0, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rot), new THREE.Vector3(s, s, s));
+
+const camera = new THREE.PerspectiveCamera(28, innerWidth / innerHeight, 0.3, 1200);
+let target = new THREE.Vector3(0, 2.3, 0), count = 1;
+if (VIEW === 'longe') {
+  // três casais: perto (LOD0) e dois mais longe (LOD1); posições e rodagens fixas, por semente
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const hamlet = (cx, cz, n) => { const pts = []; while (pts.length < n) { const p = [cx + (rnd() - .5) * 46, cz + (rnd() - .5) * 34]; if (pts.every(q => Math.hypot(q[0] - p[0], q[1] - p[1]) > 9)) pts.push(p); } return pts.map(([x, z]) => place(x, z, rnd() * Math.PI * 2, 0.92 + rnd() * 0.16)); };
+  const near = hamlet(0, 0, 14), far = [...hamlet(-70, -60, 12), ...hamlet(75, -70, 12)];
+  instanced(LOD0, near); instanced(LOD1, far); count = near.length + far.length;
+  camera.position.set(0, 150, 140); target.set(0, 0, -30); camera.fov = 34;
+} else {
+  instanced(LOD0, [place(0, 0, 0)]);
+  if (VIEW === 'zoom') { camera.position.set(0, 18, 13); target.set(0, 1.5, 0); camera.fov = 31; }
+  else { camera.position.set(7.5, 3.2, 11.5); camera.fov = 28; }   // a câmara «perto» do Blender
+}
+camera.updateProjectionMatrix(); camera.lookAt(target);
+
+// rodar com o rato, aproximar com a roda (só para avaliar à mão)
+let drag = null;
+addEventListener('pointerdown', e => drag = { x: e.clientX, y: e.clientY });
+addEventListener('pointerup', () => drag = null);
+addEventListener('pointermove', e => {
+  if (!drag) return; const off = camera.position.clone().sub(target);
+  off.applyAxisAngle(new THREE.Vector3(0, 1, 0), -(e.clientX - drag.x) * 0.006); drag = { x: e.clientX, y: e.clientY };
+  camera.position.copy(target).add(off); camera.lookAt(target);
+});
+addEventListener('wheel', e => { const off = camera.position.clone().sub(target).multiplyScalar(e.deltaY > 0 ? 1.1 : 0.9); camera.position.copy(target).add(off); camera.lookAt(target); });
+addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+
+let frames = 0, t0 = performance.now(), fps = 0;
+function frame() {
+  renderer.render(scene, camera); frames++;
+  const now = performance.now(); if (now - t0 > 1000) { fps = Math.round(frames * 1000 / (now - t0)); frames = 0; t0 = now; }
+  const r = renderer.info.render;
+  info.innerHTML = `<b>Casa redonda lusitana</b> · LOD0 ${trisOf(LOD0)} tri · LOD1 ${trisOf(LOD1)} tri · 2 materiais · ${(bytes.length / 1024).toFixed(0)} KB<br>`
+    + `${count} casa${count > 1 ? 's' : ''} · ${r.calls} chamadas de desenho · ${r.triangles.toLocaleString('pt-PT')} triângulos · ${fps} fps`;
+  window.__bench = { ready: true, calls: r.calls, triangles: r.triangles, houses: count, fps };
+  requestAnimationFrame(frame);
+}
+frame();
+</script>
+</body>
+</html>

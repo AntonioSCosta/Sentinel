@@ -18,6 +18,7 @@ const ENTRIES = [
   'loaders/GLTFLoader.js', 'utils/SkeletonUtils.js',
   'postprocessing/EffectComposer.js', 'postprocessing/RenderPass.js', 'postprocessing/ShaderPass.js',
   'postprocessing/OutputPass.js', 'postprocessing/SSAOPass.js', 'postprocessing/UnrealBloomPass.js',
+  'libs/meshopt_decoder.module.js',   // peças do mapa 3D (EXT_meshopt_compression)
 ];
 
 const specifiers = code => [...code.matchAll(/(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g)].map(m => m[1]);
