@@ -2,7 +2,34 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { newCampaign, serialize } from '../src/campaign/state.js';
 import { generateWorld } from '../src/campaign/worldgen.js';
-import { createCampaignTerrain, createMapProjection, readPrototypeSave } from '../src/campaign-map-3d/terrain.js';
+import { createCampaignTerrain, createMapProjection, distanceToLine, readPrototypeSave } from '../src/campaign-map-3d/terrain.js';
+
+import { levelRoundhouseSite, roundhousePlacement } from '../src/campaign-map-3d/roundhouse.js';
+import { strategicView } from '../src/campaign-map-3d/strategic.js';
+
+test('the Ribeira house has a level visual footprint without moving the settlement or changing the save', () => {
+  for (const seed of [1, 2, 3]) {
+    const state = newCampaign(seed);
+    const save = serialize(state);
+    const view = strategicView(state);
+    const [ribeira] = view.places.filter(place => place.roundhouse);
+    assert.equal(view.places.filter(place => place.roundhouse).length, 1);
+    assert.equal(ribeira.id, state.communities.ribeira.settlement);
+
+    const terrain = createCampaignTerrain(seed, state.world);
+    const markerElevation = terrain.heightAt(ribeira.x, ribeira.y);
+    const site = roundhousePlacement(ribeira, terrain, view.places);
+    assert.ok(site, `expected a site for seed ${seed}`);
+    assert.ok(distanceToLine(site.x, site.y, terrain.road) > 22);
+    assert.ok(distanceToLine(site.x, site.y, terrain.river) > 24);
+    levelRoundhouseSite(terrain, site);
+    for (const [x, y] of [[0, 0], [7.4, 0], [0, 7.4], [-7.4, 0], [0, -7.4]]) {
+      assert.ok(Math.abs(terrain.heightAt(site.x + x, site.y + y) - site.elevation) < 1e-4);
+    }
+    assert.equal(terrain.heightAt(ribeira.x, ribeira.y), markerElevation);
+    assert.deepEqual(serialize(state), save);
+  }
+});
 
 test('strategic coordinates round-trip independently of elevation', () => {
   const world = generateWorld(1);
@@ -88,7 +115,6 @@ test('vegetation is deterministic and stays clear of roads, river and places', a
 test('only intelView entries can become selectable forces, with rumours and expired records excluded', async () => {
   const THREE = await import('three');
   const { intelView } = await import('../src/campaign/intel.js');
-  const { strategicView } = await import('../src/campaign-map-3d/strategic.js');
   const { makeIntelligence } = await import('../src/campaign-map-3d/overlays.js');
   const { pickStrategicPoint } = await import('../src/campaign-map-3d/interaction.js');
   const world = generateWorld(1), day = 12;
