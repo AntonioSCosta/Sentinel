@@ -28,25 +28,69 @@ const nearest = (from, list) => list.reduce((best, g) => (!best || dist(from, g)
  * @returns {object} estado da batalha (dados simples; `env` guarda as funções do terreno)
  */
 export function createBattle({ seed, groups, exits, coverAt = () => 0, los = () => true, maxTime = TUNING.maxTime }) {
+  const bad = why => { throw new Error(why); };
+  const finite = Number.isFinite;
+  if (!Array.isArray(groups)) bad('grupos: é preciso uma lista');
+  if (typeof coverAt !== 'function') bad('coverAt: é preciso uma função');
+  if (typeof los !== 'function') bad('los: é preciso uma função');
+  if (!(finite(maxTime) && maxTime > 0)) bad('maxTime: é preciso um número positivo');
+  for (const side of SIDES) {
+    const list = exits?.[side];
+    if (!Array.isArray(list) || !list.length || !list.every(p => finite(p?.x) && finite(p?.y))) bad(`saídas de ${side}: é preciso pelo menos um ponto {x, y} finito`);
+  }
   const ids = new Set();
   const list = groups.map(s => {
-    const role = ROLES[s.role];
-    if (!role) throw new Error(`papel desconhecido: ${s.role}`);
-    if (ids.has(s.id)) throw new Error(`grupo repetido: ${s.id}`);
+    const role = ROLES[s?.role];
+    if (!role) bad(`papel desconhecido: ${s?.role}`);
+    if (typeof s.id !== 'string' || !s.id) bad('id do grupo: é preciso um texto não vazio');
+    if (ids.has(s.id)) bad(`grupo repetido: ${s.id}`);
     ids.add(s.id);
-    const men = Math.max(1, Math.floor(s.men));
+    if (!(typeof s.men === 'number' && finite(s.men) && s.men >= 1)) bad(`homens de ${s.id}: é preciso um número ≥ 1`);
+    if (!finite(s.x) || !finite(s.y)) bad(`posição de ${s.id}: x e y têm de ser números finitos`);
+    if (s.facing !== undefined && !finite(s.facing)) bad(`frente de ${s.id}: tem de ser um número finito`);
+    const men = Math.floor(s.men);
     return {
       id: s.id, side: role.side, role: s.role, men, start: men, dead: 0, wounds: 0,
       x: s.x, y: s.y, facing: s.facing ?? 0,
       hidden: !!s.hidden, alerted: role.side === 'lusitanos',   // os romanos começam em marcha, sem alerta
       state: 'ativo', left: null, disorderT: 0, chargeT: 0, run: 0, engaged: false, target: null,
       reloadT: 0, ammo: role.ranged ? role.ranged.ammo : 0,
-      order: s.order ? structuredClone(s.order) : { type: 'manter' },   // cópia: o caminho é consumido ao andar
+      order: { type: 'manter' },
     };
   });
-  for (const side of SIDES) if (!exits?.[side]?.length) throw new Error(`sem saídas para ${side}`);
-  return { seed, t: 0, tick: 0, groups: list, exits, signals: [], over: null, log: [], maxTime,
+  const battle = { seed, t: 0, tick: 0, groups: list, exits: structuredClone(exits), signals: [], over: null, log: [], maxTime,
     rng: makeRng(Math.max(1, Math.floor(seed) || 1)), env: { coverAt, los } };
+  groups.forEach((s, i) => {   // as ordens iniciais passam pelas mesmas regras das ordens dadas depois
+    if (!s.order) return;
+    const r = parseOrder(battle, list[i], s.order);
+    if (r.why) bad(`ordem inicial de ${s.id}: ${r.why}`);
+    list[i].order = r.order;
+  });
+  return battle;
+}
+
+/**
+ * Lê uma ordem para o grupo `g`: devolve { order } normalizada (cópia) ou { why } com o motivo da recusa.
+ * Só se ataca um grupo inimigo que está em campo e que o lado vê (os escondidos não se veem).
+ */
+function parseOrder(battle, g, cmd) {
+  if (!ORDERS.includes(cmd?.type)) return { why: 'ordem' };
+  const finite = Number.isFinite;
+  if (cmd.type === 'atacar') {
+    if (cmd.target !== undefined) {
+      const t = groupOf(battle, cmd.target);
+      if (!t || t.side === g.side || !onField(t) || t.hidden) return { why: 'alvo' };
+      return { order: { type: 'atacar', target: t.id } };
+    }
+    if (finite(cmd.x) && finite(cmd.y)) return { order: { type: 'atacar', x: cmd.x, y: cmd.y } };
+    return { why: 'alvo' };
+  }
+  if (cmd.type === 'mover') {
+    const path = cmd.path;
+    if (!Array.isArray(path) || !path.length || !path.every(p => finite(p?.x) && finite(p?.y))) return { why: 'caminho' };
+    return { order: { type: 'mover', path: path.map(p => ({ x: p.x, y: p.y })), pace: cmd.pace === 'marcha' ? 'marcha' : 'corrida', leave: !!cmd.leave } };
+  }
+  return { order: { type: cmd.type } };
 }
 
 /** Procura um grupo pelo id. */
@@ -73,19 +117,8 @@ export function command(battle, side, cmd) {
   const g = groupOf(battle, cmd.group);
   if (!g || g.side !== side) return no('grupo');
   if (!able(g)) return no('indisponivel');
-  let order;
-  if (cmd.type === 'atacar') {
-    if (cmd.target !== undefined) {
-      const t = groupOf(battle, cmd.target);
-      if (!t || t.side === side || !onField(t)) return no('alvo');
-      order = { type: 'atacar', target: t.id };
-    } else if (Number.isFinite(cmd.x) && Number.isFinite(cmd.y)) order = { type: 'atacar', x: cmd.x, y: cmd.y };
-    else return no('alvo');
-  } else if (cmd.type === 'mover') {
-    const path = Array.isArray(cmd.path) ? cmd.path.filter(p => Number.isFinite(p?.x) && Number.isFinite(p?.y)).map(p => ({ x: p.x, y: p.y })) : [];
-    if (!path.length) return no('caminho');
-    order = { type: 'mover', path, pace: cmd.pace === 'marcha' ? 'marcha' : 'corrida', leave: !!cmd.leave };
-  } else order = { type: cmd.type };
+  const { order, why } = parseOrder(battle, g, cmd);
+  if (why) return no(why);
   g.order = order;
   battle.log.push({ t: battle.t, side, ...cmd });
   return { ok: true };
@@ -151,8 +184,9 @@ function act(battle, g, events) {
   const touching = foes.filter(o => inContact(g, o));
   const wasEngaged = g.engaged;
   g.engaged = touching.some(able);
-  if (touching.length) {   // em corpo a corpo: pára e luta contra o alvo que tinha, se o tem à mão, senão o mais perto
-    const t = touching.find(o => o.id === g.target) || nearest(g, touching.filter(able).length ? touching.filter(able) : touching);
+  if (touching.length) {   // em corpo a corpo: pára e luta; primeiro contra quem ainda luta (o alvo que tinha, se é um deles), só depois contra quem foge
+    const fighting = touching.filter(able), pool = fighting.length ? fighting : touching;
+    const t = pool.find(o => o.id === g.target) || nearest(g, pool);
     if (!wasEngaged && g.run >= TUNING.charge.minRun) { g.chargeT = TUNING.charge.time; events.push({ type: 'carga', group: g.id, target: t.id }); }
     g.run = 0;
     g.target = t.id;
@@ -165,7 +199,7 @@ function act(battle, g, events) {
     if (!t || !onField(t)) { g.order = { type: 'manter' }; return fire(battle, g, foes); }
     if (t.hidden) return fire(battle, g, foes);
     g.target = t.id;
-    if (role.ranged && g.ammo > 0 && dist(g, t) <= role.ranged.range * 0.95) { turnTo(g, t); return fire(battle, g, [t]); }
+    if (role.ranged && g.ammo > 0 && dist(g, t) <= role.ranged.range * 0.95 && battle.env.los(g, t)) { turnTo(g, t); return fire(battle, g, [t]); }   // sem linha de vista, aproxima-se
     const stop = contactDistance(g, t) - 0.05, d = dist(g, t);
     if (d > stop) moveTo(g, { x: t.x + (g.x - t.x) / d * stop, y: t.y + (g.y - t.y) / d * stop }, role.speed);
     return null;
@@ -238,7 +272,7 @@ export function step(battle) {
   }
   for (const g of battle.groups) {
     const dmg = hits.get(g.id);
-    if (!dmg || !onField(g)) continue;
+    if (!(dmg > 0) || !Number.isFinite(dmg) || !onField(g)) continue;   // nunca deixar um NaN entrar nas contas
     const hp = ROLES[g.role].hp;
     g.wounds += dmg;
     const deaths = Math.min(g.men, Math.floor(g.wounds / hp));

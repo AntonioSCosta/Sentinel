@@ -58,9 +58,9 @@ export const routThreshold = g => TUNING.rout[g.side][g.disorderT > 0 ? 'disorde
 /** Dano corpo a corpo de `g` em `target` num passo de `dt` segundos, antes da variação aleatória. */
 export const meleeDamage = (g, target, dt) => g.men * ROLES[g.role].melee * dt * dealtMult(g) * takenMult(target, g, false);
 
-/** Dano de uma salva de `g` em `target`, com `cover` ∈ [0, 1] no sítio do alvo, antes da variação aleatória. */
+/** Dano de uma salva de `g` em `target`, com `cover` ∈ [0, 1] no sítio do alvo (inválida = 0), antes da variação aleatória. */
 export function volleyDamage(g, target, cover = 0) {
   const r = ROLES[g.role].ranged;
-  const c = Math.min(1, Math.max(0, cover));
+  const c = Number.isFinite(cover) ? Math.min(1, Math.max(0, cover)) : 0;   // uma cobertura inválida conta como nenhuma
   return g.men * r.damage * takenMult(target, g, true) * (1 - c * TUNING.coverMissile);
 }
