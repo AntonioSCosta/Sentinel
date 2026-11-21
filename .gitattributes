@@ -27,3 +27,7 @@
 # .gitattributes governs the INDEX. It does not retro-fix a working tree that
 # predates the rule -- run `git add --renormalize .` for that.
 .claude/**/*.md text eol=lf
+# Fontes de arte do mapa 3D (Blender) em Git LFS; os modelos exportados que o jogo carrega ficam em Git normal.
+art/blender/**/*.blend filter=lfs diff=lfs merge=lfs -text
+art/blender/texturas/*.jpg filter=lfs diff=lfs merge=lfs -text
+art/blender/texturas/*.png filter=lfs diff=lfs merge=lfs -text

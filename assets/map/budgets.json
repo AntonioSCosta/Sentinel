@@ -1,0 +1,27 @@
+{
+  "_": "Orçamentos e convenções das peças do mapa 3D. Verificados por tools/check-map-assets.mjs.",
+  "conventions": {
+    "units": "metro",
+    "up": "+Y (glTF)",
+    "front": "+Z (glTF) = -Y no Blender",
+    "pivot": "centro da base, no chão (y = 0)",
+    "maxTexture": 1024,
+    "maxMaterials": 2,
+    "extensionsAllowed": ["EXT_meshopt_compression", "KHR_mesh_quantization", "KHR_texture_transform"]
+  },
+  "pieces": {
+    "casa_redonda": {
+      "file": "casa_redonda.glb",
+      "lods": { "LOD0": 2000, "LOD1": 600 },
+      "height": [4.5, 7.0],
+      "footprint": [6.5, 8.0],
+      "maxKB": 1100,
+      "final": {
+        "_": "O que a peça gasta na versão aprovada (Fase C, 2026-11-18); os tectos acima continuam a ser os limites. Serve para ver a folga e para detectar deriva num commit futuro.",
+        "LOD0": 1962,
+        "LOD1": 524,
+        "kb": 986
+      }
+    }
+  }
+}
