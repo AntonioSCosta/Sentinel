@@ -1,6 +1,7 @@
 import { mapForceName, mapPlaceName } from '../i18n/map-text.js';
 import * as THREE from 'three';
 import { createMapProjection, createCampaignTerrain, subdivideLine } from './terrain.js';
+import { levelRoundhouseSite, loadRoundhouse, roundhousePlacement } from './roundhouse.js';
 import { generateVegetation } from './strategic.js';
 import { disposeGroup, makeForest, makeIntelligence, makePlanning } from './overlays.js';
 import { labelLeader, pickStrategicPoint, positionLabels } from './interaction.js';
@@ -141,6 +142,9 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
   const horizontal = Math.hypot(0.18, 0.82);
   const offset = new THREE.Vector3(), right = new THREE.Vector3(), down = new THREE.Vector3();
   const projected = new THREE.Vector3();
+  const house = new THREE.Group();
+  scene.add(house);
+  let houseSite, houseAvailable, houseRequest, houseLods;
   const svg = 'http://www.w3.org/2000/svg';
   const leaders = document.createElementNS(svg, 'svg');
   leaders.setAttribute('class', 'map-leaders');
@@ -247,6 +251,22 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
 
   function pick(x, y, event) { select(hit(x, y), event); }
 
+  function updateRoundhouse() {
+    house.visible = false;
+    if (!houseSite || !houseAvailable || zoom < 2) return;
+    projected.copy(house.position).project(camera);
+    if (Math.abs(projected.x) > 1.08 || Math.abs(projected.y) > 1.08) return;
+    houseRequest ??= loadRoundhouse().then(lods => {
+      houseLods = lods;
+      house.add(...lods);
+      draw();
+    }).catch(error => console.warn('Could not load the Ribeira roundhouse.', error));
+    if (!houseLods) return;
+    house.visible = true;
+    houseLods[0].visible = zoom >= 3.3;
+    houseLods[1].visible = !houseLods[0].visible;
+  }
+
   function draw() {
     if (!terrain) return;
     camera.position.copy(target).addScaledVector(offset, Math.max(terrain.w, terrain.h) + 400);
@@ -256,6 +276,8 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
     camera.left = -halfHeight * aspect; camera.right = halfHeight * aspect;
     camera.top = halfHeight; camera.bottom = -halfHeight;
     camera.updateProjectionMatrix();
+    camera.updateMatrixWorld();
+    updateRoundhouse();
     renderer.render(scene, camera);
     layoutLabels();
   }
@@ -308,6 +330,7 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
       markers = makeMarkers(view.places, terrain, projection);
       model.add(markers);
       placesKey = nextPlacesKey;
+      houseAvailable = view.places.some(place => place.roundhouse && !place.burnt);
     }
     if (nextIntelKey !== intelKey) {
       if (intelligence) { model.remove(intelligence.group); disposeGroup(intelligence.group); }
@@ -346,10 +369,18 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
   function load(seed, world, view) {
     const nextTerrain = createCampaignTerrain(seed, world);
     projection = createMapProjection(world);
+    const ribeira = view.places.find(place => place.roundhouse);
+    houseSite = ribeira && roundhousePlacement(ribeira, nextTerrain, view.places);
+    const trees = generateVegetation(seed, world, nextTerrain).filter(tree =>
+      !houseSite || Math.hypot(tree.x - houseSite.x, tree.y - houseSite.y) >= 12);
+    if (houseSite) {
+      levelRoundhouseSite(nextTerrain, houseSite);
+      const point = projection.toScene(houseSite, houseSite.elevation);
+      house.position.set(point.x, point.y, point.z);
+    }
     const group = new THREE.Group();
     relief = makeRelief(nextTerrain, projection);
     edge = makeEdge(nextTerrain, projection);
-    const trees = generateVegetation(seed, world, nextTerrain);
     treeCount = trees.length;
     group.add(relief, edge, makeForest(trees, projection));
     const river = makeRibbon(nextTerrain.river, 9, () => 1.1, nextTerrain, projection, '#65a4a8');

@@ -10,11 +10,15 @@ export function strategicView({ world, day, intel, communities, villages, posts 
   const names = { world, communities };
   const knowledge = Number.isFinite(day) && validIntel(intel) ? intelView({ day, intel }) : intelView({});
   return {
-    places: world.settlements.map(place => ({
-      ...place, name: placeName(names, place.id), community: !!communityOf(names, place.id),
-      burnt: !!(villages?.[place.id]?.burnt || posts?.[place.id]?.taken ||
-        ['queimada', 'abandonada'].includes(communities?.[communityOf(names, place.id)]?.situation)),
-    })),
+    places: world.settlements.map(place => {
+      const community = communityOf(names, place.id);
+      return {
+        ...place, name: placeName(names, place.id), community: !!community,
+        roundhouse: community === 'ribeira',
+        burnt: !!(villages?.[place.id]?.burnt || posts?.[place.id]?.taken ||
+          ['queimada', 'abandonada'].includes(communities?.[community]?.situation)),
+      };
+    }),
     forces: knowledge.forces,
     zones: knowledge.zones,
   };
