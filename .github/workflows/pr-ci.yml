@@ -28,7 +28,13 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
       - name: Check JavaScript syntax
-        run: git ls-files -z -- 'src/*.js' 'tests/*.mjs' 'tools/*.mjs' | xargs -0 -r -n 1 node --check
+        run: >-
+          git ls-files --cached -z --
+          ':(glob)src/**/*.js' ':(glob)src/**/*.mjs'
+          ':(glob)tests/**/*.js' ':(glob)tests/**/*.mjs'
+          ':(glob)tools/**/*.js' ':(glob)tools/**/*.mjs'
+          ':(exclude,glob)**/node_modules/**' ':(exclude,glob)**/vendor/**'
+          | xargs -0 -r -n 1 node --check --
       - name: Run unit tests and catalogue checks
         run: npm test
       - name: Run smoke tests
