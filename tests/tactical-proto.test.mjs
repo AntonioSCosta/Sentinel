@@ -230,9 +230,18 @@ test('jogabilidade: esperar no mato sem combater não ganha — a coluna segue c
   assert.ok((out.escapou || 0) >= 15, JSON.stringify(out));
 });
 
-test('jogabilidade: duas estratégias diferentes ganham na maioria das sementes; frontal e à vista perdem mais do que ganham', () => {
+test('jogabilidade: duas estratégias diferentes ganham na maioria das sementes; a frontal perde mais do que ganha', () => {
   for (const make of [pincer, rear]) assert.ok((tally(make).vitoria || 0) >= 12);
-  for (const make of [frontal, exposed]) { const out = tally(make); assert.ok((out.vitoria || 0) < (out.derrota || 0) + (out.escapou || 0), JSON.stringify(out)); }
+  const out = tally(frontal);
+  assert.ok((out.vitoria || 0) < (out.derrota || 0) + (out.escapou || 0), JSON.stringify(out));
+});
+
+// M1.2: com os vélites corrigidos (já não abandonam a coluna a meio da luta), «à vista» deixou de perder pelo desfecho
+// «escapou» e passou a ganhar parte das vezes — mas a um custo muito maior do que esconder-se. É isso que se exige aqui.
+test('jogabilidade: jogar à vista custa muito mais homens e ganha menos do que a tenaz escondida', () => {
+  const losses = make => SEEDS20.reduce((n, seed) => { const s = make(seed); runToEnd(s); return n + s.report().data.lusitanians.dead; }, 0);
+  assert.ok(losses(exposed) >= 1.5 * losses(pincer), `baixas à vista ${losses(exposed)} contra ${losses(pincer)} na tenaz`);
+  assert.ok((tally(exposed).vitoria || 0) < (tally(pincer).vitoria || 0));
 });
 
 test('jogabilidade: o combate de uma boa emboscada dura entre 30 s e 4 min', () => {

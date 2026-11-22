@@ -208,6 +208,21 @@ export function createView(canvas) {
   }
   scene.add(prepLayer);
 
+  // --- anéis do alcance de deteção romana (preparação e espera): tracejado no chão, sem preencher nada ---
+  const rangeGeo = new THREE.BufferGeometry().setFromPoints(Array.from({ length: 97 }, (_, i) => { const a = i / 96 * Math.PI * 2; return new THREE.Vector3(Math.cos(a), 0, Math.sin(a)); }));
+  const rangeMats = {
+    exposed: new THREE.LineDashedMaterial({ color: '#ff7a5c', dashSize: 0.05, gapSize: 0.035, transparent: true, opacity: 0.85, depthTest: false }),
+    hidden: new THREE.LineDashedMaterial({ color: '#f3dd8c', dashSize: 0.08, gapSize: 0.06, transparent: true, opacity: 0.5, depthTest: false }),
+  };
+  const rangeRings = [];
+  function rangeRing(i) {
+    if (!rangeRings[i]) {
+      const l = new THREE.Line(rangeGeo, rangeMats.exposed); l.computeLineDistances(); l.renderOrder = 4; l.frustumCulled = false;
+      scene.add(l); rangeRings[i] = l;
+    }
+    return rangeRings[i];
+  }
+
   // --- setas de retirada nas orlas ---
   {
     const mat = new THREE.MeshBasicMaterial({ color: '#efe0b0', transparent: true, opacity: 0.35, depthWrite: false });
@@ -309,6 +324,12 @@ export function createView(canvas) {
     /** Mostra ou esconde a camada da preparação. */
     setPrep(on) { prepLayer.visible = on; },
 
+    /** Anéis de alcance de deteção: `rings` = [{ x, y, r, kind: 'exposed' | 'hidden' }]; os que faltam escondem-se. */
+    setRanges(rings) {
+      rings.forEach((g, i) => { const l = rangeRing(i); l.visible = true; l.material = rangeMats[g.kind] || rangeMats.hidden; l.position.set(g.x, 0.3, g.y); l.scale.setScalar(g.r); });
+      for (let i = rings.length; i < rangeRings.length; i++) rangeRings[i].visible = false;
+    },
+
     /** Esquece todos os grupos e mortos (nova partida). */
     reset() { for (const v of visuals.values()) dropVisual(v); visuals.clear(); corpses.length = 0; shots.length = 0; parts.length = 0; },
 
@@ -358,7 +379,8 @@ export function createView(canvas) {
         v.ring.scale.setScalar(r * (sel ? 1 + Math.sin(clock * 6) * 0.05 : 1));
         const threat = opts.threats?.has(g.id);
         v.ring.material.color.copy(sel ? COLORS.sel : threat ? COLORS.threat : g.side === 'lusitanos' ? COLORS.lus : g.rough ? COLORS.broken : COLORS.rom);
-        v.ring.material.opacity = g.hidden ? 0.45 : g.state === 'debandada' ? 0.35 : threat ? 0.6 + Math.abs(Math.sin(clock * 7)) * 0.4 : 0.9;
+        // em corpo a corpo os anéis romanos ficam discretos: o que tem de saltar à vista é o anel do grupo lusitano em perigo
+        v.ring.material.opacity = g.hidden ? 0.45 : g.state === 'debandada' ? 0.35 : threat ? 0.6 + Math.abs(Math.sin(clock * 7)) * 0.4 : g.side === 'romanos' && g.engaged && !sel ? 0.4 : 0.9;
         if (threat && !sel) v.ring.scale.setScalar(r * (1.05 + Math.abs(Math.sin(clock * 7)) * 0.12));
         if (g.side === 'romanos' && g.order?.type === 'atacar' && g.order.target !== undefined && !g.engaged && g.state === 'ativo') {   // ameaça romana visível
           const to = opts.lookup?.(g.order.target);

@@ -31,18 +31,25 @@ kbd { font: 11px ui-monospace, monospace; color: var(--dim); border: 1px solid #
 #top h1 { font: 700 20px/1 Cinzel, Georgia, serif; margin: 0; letter-spacing: .03em; color: var(--bronze); white-space: nowrap; }
 #top .sub { font-size: 12px; color: var(--dim); white-space: nowrap; }
 #phase { font: 600 13px system-ui; color: var(--ink); white-space: nowrap; }
+#march { font-size: 12px; color: var(--dim); white-space: nowrap; padding: 2px 8px; border: 1px solid #5c4a32; border-radius: 10px; }
+#march[data-mode="halted"] { color: #ffd59a; border-color: #a7834a; }
+#march[data-mode="fighting"] { color: #ffb4a6; border-color: #8f3a2c; }
 #progress { flex: 1; min-width: 120px; position: relative; height: 22px; }
 #progress .track { position: absolute; left: 0; right: 0; top: 10px; height: 3px; background: #6b5a3c; border-radius: 2px; }
 #progress .done { position: absolute; left: 0; top: 10px; height: 3px; background: var(--rome); border-radius: 2px; width: 0; }
 #progress .mark { position: absolute; top: 3px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: var(--rome); border: 2px solid #f3d1c8; left: 0; transition: left .2s linear; }
 #progress .sig { position: absolute; top: 0; width: 2px; height: 22px; background: var(--bronze); display: none; }
+#progress .sig.late { background: #8a7a5e; }
 #progress .label { position: absolute; right: 0; top: -2px; font-size: 11px; color: var(--dim); }
 #top .right { display: flex; gap: 8px; align-items: center; }
 
 #prep { position: fixed; left: 12px; top: 74px; width: min(330px, calc(100vw - 24px)); padding: 14px; }
 #prep p { margin: 0 0 12px; color: var(--ink); }
 #prep .row { display: flex; gap: 8px; }
+#prep-warn { font-size: 13px; color: var(--ok); }
+#prep-warn.bad { color: #ffb19c; }
 #start { background: #7a4f22; border-color: var(--bronze); font-weight: 700; flex: 1; }
+#hint.bad { color: #ffcdbf; border-color: #8f3a2c; }
 #hint { position: fixed; left: 50%; transform: translateX(-50%); bottom: 132px; padding: 6px 12px; font-size: 13px; color: var(--dim); max-width: min(680px, calc(100vw - 24px)); text-align: center; }
 
 #bar { position: fixed; left: 12px; right: 12px; bottom: 10px; display: flex; align-items: center; gap: 10px; padding: 8px 10px; flex-wrap: wrap; }
@@ -52,11 +59,15 @@ kbd { font: 11px ui-monospace, monospace; color: var(--dim); border: 1px solid #
 .card.gone { opacity: .5; }
 .card.threat { border-color: #e2553f; box-shadow: 0 0 0 1px #e2553f inset; animation: threat 0.9s ease-in-out infinite; }
 .card.threat .state { color: #ff9b84; font-weight: 700; }
+.card.exposed .state { color: #ffb19c; }
+.card.exposed:not(.threat) { border-color: #a0573f; }
 @keyframes threat { 50% { background: #4a231b; } }
 #hurt { position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 90px 20px rgba(190, 30, 20, .55); opacity: 0; transition: opacity .25s; }
 #r-why { margin: -6px 0 16px; font-size: 13px; color: var(--ink); }
 #r-why b { color: var(--bronze); font-weight: 700; }
-#r-why ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+#r-why ul { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+#r-why li { display: grid; grid-template-columns: 38px 1fr; gap: 6px; }
+#r-why .at { color: var(--dim); font: 600 12px ui-monospace, monospace; padding-top: 1px; }
 .card .n { display: flex; justify-content: space-between; font-weight: 700; }
 .card .role { font-size: 12px; color: var(--dim); font-weight: 400; }
 .pips { letter-spacing: 1px; font-size: 13px; color: var(--ink); }
@@ -66,6 +77,7 @@ kbd { font: 11px ui-monospace, monospace; color: var(--dim); border: 1px solid #
 #orders button:not(#signal) { padding: 7px 10px; }
 #signal { font: 700 17px Cinzel, Georgia, serif; letter-spacing: .04em; padding: 10px 22px; background: #8f2d1c; border-color: #e0a36b; min-height: 52px; }
 #signal.ready { animation: pulse 1.6s ease-in-out infinite; }
+#signal.late { background: #5a3326; border-color: #8a6a4e; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(224,163,107,.25); } }
 #time { display: flex; gap: 4px; align-items: center; }
 #clock { font: 600 14px ui-monospace, monospace; color: var(--dim); min-width: 52px; text-align: right; }
@@ -81,7 +93,13 @@ kbd { font: 11px ui-monospace, monospace; color: var(--dim); border: 1px solid #
 
 .lbl { position: absolute; transform: translate(-50%, -100%); text-align: center; white-space: nowrap; font-size: 12px; line-height: 1.2; text-shadow: 0 1px 3px #000, 0 0 2px #000; }
 .lbl b { font-weight: 700; }
-.lbl .p { letter-spacing: 1px; font-size: 11px; }
+.lbl .p { letter-spacing: 1px; font-size: 10px; }
+.lbl.danger b { color: #ff9b84; }
+.lbl.danger .s { color: #ffb19c; font-weight: 700; }
+.lbl.fight { font-size: 11px; }
+#leaders { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+#leaders line { stroke: rgba(241, 230, 200, .55); stroke-width: 1; }
+#leaders line.rom { stroke: rgba(255, 180, 166, .45); }
 .lbl .p i { font-style: normal; opacity: .4; }
 .lbl .s { font-size: 11px; color: var(--bronze); }
 .lbl.rom { color: #ffd0c8; }
@@ -119,6 +137,7 @@ kbd { font: 11px ui-monospace, monospace; color: var(--dim); border: 1px solid #
 <header id="top" class="panel">
   <div><h1 data-t="title">The Ambush</h1><div class="sub"><span data-t="subtitle">Prototype</span> · <span id="seed"></span></div></div>
   <div id="phase"></div>
+  <div id="march" hidden></div>
   <div id="progress" aria-hidden="true"><div class="track"></div><div class="done"></div><div class="sig"></div><div class="mark"></div><div class="label" data-t="progress">Column</div></div>
   <div class="right">
     <select id="lang" aria-label="Language"><option value="en">English</option><option value="pt-PT">Português</option></select>
@@ -129,6 +148,7 @@ kbd { font: 11px ui-monospace, monospace; color: var(--dim); border: 1px solid #
 
 <aside id="prep" class="panel">
   <p data-t="prep.hint"></p>
+  <p id="prep-warn" aria-live="polite"></p>
   <div class="row"><button id="start" data-t="prep.start">Start</button><button id="reset" data-t="prep.reset">Reset</button></div>
 </aside>
 

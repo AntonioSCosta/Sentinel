@@ -23,9 +23,22 @@ export const STUB = {
   aggressive: 0.5,   // probabilidade (por semente) de um grupo de legionários ser agressivo
   holdFor: 15,       // os cautelosos seguram a estrada no máximo este tempo sem combate; depois retomam a marcha
   closeRanks: 0.5,   // probabilidade (por semente) de a coluna cerrar fileiras ao ser atacada (vélites atrás dos legionários)
+  sortieFor: 8,      // abrigados, os vélites saem a lançar dardos: a surtida dura até dispararem ou, no máximo, estes segundos
+  sortieRest: 5,     // … e depois ficam abrigados pelo menos este tempo antes de voltarem a sair (a recarga dos dardos)
+  coverHysteresis: 1.25,   // abrigados, só deixam o abrigo com o inimigo a mais de halt × isto
 };
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+/**
+ * Distância (m) a que a coluna vê um grupo lusitano nesta posição: à vista, `spotOpen`; escondido, entre `spotOpen`
+ * (campo aberto) e `spotCover` (miolo do mato), conforme a ocultação; romanos já alerta veem `alertedSpot` vezes mais longe.
+ * É a mesma conta que decide a descoberta, para o ecrã mostrar exatamente o alcance que conta.
+ */
+export function spotRange(x, y, hidden, alerted = false, tuning = STUB) {
+  if (!hidden) return tuning.spotOpen;
+  return (tuning.spotOpen + (tuning.spotCover - tuning.spotOpen) * concealAt(x, y)) * (alerted ? tuning.alertedSpot : 1);
+}
 const onField = g => g.left === null;
 const able = g => onField(g) && g.state === 'ativo';
 const nearestOf = (g, list) => list.reduce((b, t) => (!b || dist(g, t) < dist(g, b) ? t : b), null);
@@ -39,6 +52,7 @@ const inRough = g => coverAt(g.x, g.y) >= TUNING.roughCover;
  */
 export function createRomanStub(tuning = STUB) {
   const last = new Map(), tempers = new Map(), holding = new Map(), waited = new Set(), chasing = new Map(), intents = new Map();
+  const sorties = new Map(), rested = new Map(), sheltered = new Set(), covering = new Set();   // vélites: surtida em curso, fim da última, já anunciaram o abrigo, estão abrigados agora
   let rng = null, doctrine = null;
   /** Dá a ordem se for nova; devolve true se a deu. */
   const give = (battle, g, cmd) => {
@@ -53,18 +67,20 @@ export function createRomanStub(tuning = STUB) {
   function spot(battle, romans, events) {
     const warn = () => { for (const r of romans) alert(battle, r.id); };   // a coluna inteira fica de sobreaviso (sem surpresa)
     for (const h of battle.groups) {   // quem está à vista e perto da coluna estraga a surpresa
-      if (h.side !== 'lusitanos' || !able(h) || h.hidden) continue;
-      if (romans.some(r => !r.alerted) && romans.some(r => dist(r, h) <= tuning.spotOpen)) {
+      if (h.side !== 'lusitanos' || !able(h) || h.hidden || !romans.some(r => !r.alerted)) continue;
+      const seer = nearestOf(h, romans);
+      if (seer && dist(seer, h) <= tuning.spotOpen) {
         warn();
-        events.push({ type: 'avistado', group: h.id });
+        events.push({ type: 'avistado', group: h.id, by: seer.id, d: Math.round(dist(seer, h)) });
       }
     }
     for (const h of battle.groups) {
       if (h.side !== 'lusitanos' || !onField(h) || !h.hidden) continue;
-      const range = tuning.spotOpen + (tuning.spotCover - tuning.spotOpen) * concealAt(h.x, h.y);
-      const seer = romans.find(r => dist(r, h) <= range * (r.alerted ? tuning.alertedSpot : 1));
-      if (!seer || !reveal(battle, h.id, seer.id)) continue;
-      events.push({ type: 'descoberto', group: h.id, by: seer.id });
+      const seer = romans.find(r => dist(r, h) <= spotRange(h.x, h.y, true, r.alerted, tuning));
+      if (!seer) continue;
+      const d = Math.round(dist(seer, h));
+      if (!reveal(battle, h.id, seer.id)) continue;
+      events.push({ type: 'descoberto', group: h.id, by: seer.id, d, cover: Math.round(concealAt(h.x, h.y) * 100) / 100 });
       warn();
     }
   }
@@ -89,14 +105,34 @@ export function createRomanStub(tuning = STUB) {
     const d = near ? dist(g, near) : Infinity;
     if (g.role === 'velite') {
       if (!legions.length) return give(battle, g, { type: 'retirar' });   // sem legionários, os vélites fogem
-      if (doctrine === 'cerrar' && near && d <= tuning.halt) {   // a coluna cerra fileiras: os vélites abrigam-se atrás dos legionários
+      // histerese: quem já está abrigado só sai do abrigo com o inimigo bem mais longe (senão alterna no limite dos `halt` metros)
+      const zone = covering.has(g.id) ? tuning.halt * tuning.coverHysteresis : tuning.halt;
+      if (doctrine === 'cerrar' && near && d <= zone) {   // a coluna cerra fileiras: os vélites abrigam-se atrás dos legionários
+        covering.add(g.id);
+        // e saem em surtidas curtas para lançar dardos. Cada surtida vai até ao fim (disparar ou desistir), para não alternarem
+        // a cada decisão entre o abrigo e o ataque (o bug do M1.1: dezenas de ordens e nenhum dardo).
+        const out = sorties.get(g.id);
+        if (out) {
+          const prey = battle.groups.find(l => l.id === out.target);
+          if (g.ammo < out.ammo || battle.t - out.t >= tuning.sortieFor || !prey || !able(prey) || prey.hidden) { sorties.delete(g.id); rested.set(g.id, battle.t); }
+          else return give(battle, g, { type: 'atacar', target: out.target });
+        }
+        if (g.ammo > 0 && d <= tuning.skirmish && battle.t - (rested.get(g.id) ?? -Infinity) >= tuning.sortieRest) {
+          sorties.set(g.id, { target: near.id, t: battle.t, ammo: g.ammo });
+          if (give(battle, g, { type: 'atacar', target: near.id })) intents.set(g.id, 'skirmish');
+          return;
+        }
         const shield = nearestOf(g, legions), away = Math.atan2(shield.y - near.y, shield.x - near.x);
         const spot = { x: shield.x + Math.cos(away) * 3, y: shield.y + Math.sin(away) * 3 };
         if (dist(g, spot) > 3) {
-          if (give(battle, g, { type: 'retirar', x: Math.round(spot.x), y: Math.round(spot.y) })) { intents.set(g.id, 'shelter'); events.push({ type: 'cerra', group: g.id, behind: shield.id }); }
-          return;
+          if (give(battle, g, { type: 'retirar', x: Math.round(spot.x), y: Math.round(spot.y) })) {
+            intents.set(g.id, 'shelter');
+            if (!sheltered.has(g.id)) { sheltered.add(g.id); events.push({ type: 'cerra', group: g.id, behind: shield.id }); }
+          }
         }
+        return;   // abrigados: parados, lançam a quem chegar ao alcance (a simulação dispara sozinha)
       }
+      covering.delete(g.id); sorties.delete(g.id);
       if (g.ammo > 0 && d <= tuning.skirmish) return give(battle, g, { type: 'atacar', target: near.id });
       const busy = legions.find(l => l.engaged && l.target);
       if (busy) return give(battle, g, { type: 'atacar', target: busy.target });   // ajudar quem está a lutar
@@ -158,7 +194,21 @@ export function createRomanStub(tuning = STUB) {
       for (const g of romans) decide(battle, g, threats, romans, legions, events);
       return events;
     },
-    /** Intenção atual de um grupo romano para o ecrã: 'support' | 'pursue' | 'hold' | 'shelter' | null. */
+    /**
+     * Estado da marcha da coluna, para o ecrã: 'marching' (em marcha, sem alerta), 'halted' (parada a segurar a estrada;
+     * `resumeIn` = segundos até o primeiro grupo retomar a marcha), 'fighting' (algum grupo em corpo a corpo),
+     * 'moving' (alerta, em movimento: a marchar outra vez, a apoiar ou a perseguir), 'gone' (ninguém em campo).
+     */
+    march(battle) {
+      const romans = battle.groups.filter(g => g.side === 'romanos' && able(g));
+      if (!romans.length) return { mode: 'gone', resumeIn: null };
+      if (romans.some(g => g.engaged)) return { mode: 'fighting', resumeIn: null };
+      if (!romans.some(g => g.alerted)) return { mode: 'marching', resumeIn: null };
+      const holds = romans.filter(g => holding.has(g.id) && !waited.has(g.id) && g.order.type === 'manter');
+      if (holds.length) return { mode: 'halted', resumeIn: Math.max(0, Math.ceil(Math.min(...holds.map(g => tuning.holdFor - (battle.t - holding.get(g.id)))))) };
+      return { mode: romans.some(g => g.order.type !== 'manter') ? 'moving' : 'halted', resumeIn: null };
+    },
+    /** Intenção atual de um grupo romano para o ecrã: 'support' | 'pursue' | 'hold' | 'shelter' | 'skirmish' | null. */
     intentOf: id => intents.get(id) ?? null,
     /** Doutrina da coluna: 'cerrar' ou 'espalhar' (null antes do primeiro passo). */
     get doctrine() { return doctrine; },

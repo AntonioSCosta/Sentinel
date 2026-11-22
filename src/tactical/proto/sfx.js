@@ -66,6 +66,12 @@ export function createSfx() {
       for (const [f, d] of [[110, 0], [110 * 1.5, 6], [220, -5]]) tone(t, 1.5, { type: 'sawtooth', freq: f * 0.94, to: f, peak: 0.16, a: 0.18, lp: 1100, detune: d });
       noise(t, 0.9, { type: 'lowpass', freq: 300, peak: 0.25, a: 0.25 });   // o grito do bando
     },
+    /** Sinal sem surpresa: a mesma corneta, curta, mais baixa e abafada, sem o grito do bando. Roma já estava pronta. */
+    signalLate() {
+      if (!ctx) return; const t = ctx.currentTime;
+      for (const [f, d] of [[110, 0], [110 * 1.5, 6]]) tone(t, 0.7, { type: 'sawtooth', freq: f * 0.94, to: f * 0.9, peak: 0.08, a: 0.12, lp: 600, detune: d });
+      tone(t + 0.45, 0.35, { type: 'square', freq: 330, peak: 0.05, lp: 1400 });   // e uma resposta romana curta
+    },
     /** Corneta romana curta: fomos vistos. */
     alarm() {
       if (!throttle('alarm', 1.5)) return; const t = ctx.currentTime;
