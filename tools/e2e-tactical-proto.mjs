@@ -1,0 +1,56 @@
+// E2E do protótipo M1 (tactical-proto.html) em Chrome real: preparação → ordens → sinal → combate → resultado → cópia.
+// Guarda as capturas em production/qa/evidence/tactical-proto-m1/. Uso: node tools/e2e-tactical-proto.mjs
+import fs from 'node:fs';
+import path from 'node:path';
+import { startE2E, ROOT } from './e2e-lib.mjs';
+
+const OUT = path.join(ROOT, 'production/qa/evidence/tactical-proto-m1');
+fs.mkdirSync(OUT, { recursive: true });
+const { url, browser, check, finish } = await startE2E();
+const context = await browser.newContext({ viewport: { width: 1440, height: 860 }, permissions: ['clipboard-read', 'clipboard-write'] });
+const page = await context.newPage();
+const errors = [];
+page.on('console', m => { if (m.type() === 'error' || (m.type() === 'warning' && !/GL Driver|GPU stall/.test(m.text()))) errors.push(m.text()); });
+page.on('pageerror', e => errors.push(String(e)));
+const shot = name => page.screenshot({ path: path.join(OUT, `${name}.jpg`), type: 'jpeg', quality: 82 });
+
+await page.goto(url.replace('index.html?manual=1', 'tactical-proto.html'));
+await page.waitForFunction(() => !!window.__proto, null, { timeout: 60000 });
+await page.waitForTimeout(1200);
+check('a página abre em inglês por omissão', await page.textContent('h1') === 'The Ambush');
+check('preparação visível', await page.isVisible('#prep'));
+await shot('01-preparation');
+
+await page.evaluate(() => { const p = window.__proto; p.place('lobos', 82, 35); p.place('javalis', 70, 73); p.place('corvos', 100, 79); p.place('fundeiros', 110, 42); });
+check('grupos no mato ficam escondidos', await page.evaluate(() => window.__proto.ui.placement.every(g => g.x > 0)) && (await page.textContent('#cards')).includes('Hidden'));
+await page.click('#start');
+await page.evaluate(() => { const p = window.__proto; p.order('lobos', { type: 'atacar', target: 'velites' }); p.order('javalis', { type: 'atacar', target: 'retaguarda' }); p.order('corvos', { type: 'atacar', target: 'retaguarda' }); p.order('fundeiros', { type: 'atacar', target: 'vanguarda' }); });
+check('a batalha começou e as ordens ficam à espera do sinal', await page.evaluate(() => window.__proto.ui.phase === 'waiting' && window.__proto.ui.session.battle.groups.filter(g => g.side === 'lusitanos').every(g => g.hidden && g.order.type === 'atacar')));
+await page.evaluate(() => { const p = window.__proto; while (p.ui.session.battle.groups.find(g => g.id === 'velites').x < 76) p.run(0.5); });
+await page.waitForTimeout(900);
+await shot('02-column-approaches');
+await page.keyboard.press('Space');
+check('o sinal pela tecla Espaço', await page.evaluate(() => window.__proto.ui.session.battle.signals.includes('lusitanos')));
+await page.waitForTimeout(400);
+await shot('03-signal');
+await page.evaluate(() => { const p = window.__proto; p.run(7); Object.assign(p.view.camera, { dist: 58, tx: 74, ty: 56 }); });
+await page.waitForTimeout(2200);
+await shot('04-melee');
+await page.evaluate(() => window.__proto.run(600));
+await page.waitForSelector('#result:not([hidden])', { timeout: 15000 });
+const outcome = await page.evaluate(() => window.__proto.ui.session.report().data.outcome);
+check('a batalha acaba e mostra o resultado', ['vitoria', 'derrota', 'retirada', 'escapou', 'tempo'].includes(outcome), outcome);
+await shot('05-result');
+await page.click('#copy');
+await page.waitForTimeout(300);
+const copied = await page.evaluate(async () => (await navigator.clipboard.readText().catch(() => '')) || document.getElementById('copy-text').value);
+check('copiar resultados dá o relatório do playtest', copied.includes('Outcome:') && copied.includes('"version"'), copied.split('\n')[1]);
+await page.selectOption('#lang', 'pt-PT');
+await page.waitForTimeout(300);
+check('português de Portugal disponível', await page.textContent('h1') === 'A Emboscada');
+await shot('06-result-pt');
+await page.click('#plan');
+check('«Mudar o plano» volta à preparação', await page.isVisible('#prep'));
+await page.selectOption('#lang', 'en');
+check('sem erros na consola', errors.length === 0, errors.slice(0, 3).join(' | '));
+await finish();

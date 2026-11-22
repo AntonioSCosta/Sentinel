@@ -1,13 +1,15 @@
 import interfacePT from './catalogs/pt-PT/interface.js';
 import mapPT from './catalogs/pt-PT/map.js';
+import tacticalPT from './catalogs/pt-PT/tactical.js';
 import interfaceEN from './catalogs/en/interface.js';
 import mapEN from './catalogs/en/map.js';
+import tacticalEN from './catalogs/en/tactical.js';
 
 export const LANGUAGE_KEY = 'viriato.language';
 export const REFERENCE_LOCALE = 'pt-PT';
 export const catalogs = {
-  'pt-PT': { interface: interfacePT, map: mapPT },
-  en: { interface: interfaceEN, map: mapEN },
+  'pt-PT': { interface: interfacePT, map: mapPT, tactical: tacticalPT },
+  en: { interface: interfaceEN, map: mapEN, tactical: tacticalEN },
 };
 
 const placeholder = /\{([A-Za-z][\w]*)\}/g;

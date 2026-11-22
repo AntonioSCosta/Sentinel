@@ -140,6 +140,27 @@ function surprise(battle, g) {
   g.disorderT = TUNING.surprise;
 }
 
+/**
+ * Revela um grupo escondido que o inimigo descobriu (por exemplo, a IA romana a ver alguém fora do mato).
+ * `by`: id do grupo inimigo que o viu, que fica alerta sem surpresa. Devolve true se o grupo estava escondido.
+ */
+export function reveal(battle, id, by = null) {
+  const g = groupOf(battle, id);
+  if (!g || !onField(g) || !g.hidden) return false;
+  g.hidden = false;
+  const finder = by === null ? null : groupOf(battle, by);
+  if (finder && finder.side !== g.side && onField(finder)) finder.alerted = true;
+  return true;
+}
+
+/** Põe um grupo em alerta sem o desordenar (viu o inimigo antes de ser atacado). Devolve true se mudou. */
+export function alert(battle, id) {
+  const g = groupOf(battle, id);
+  if (!g || !onField(g) || g.alerted) return false;
+  g.alerted = true;
+  return true;
+}
+
 /** Saída mais próxima do lado do grupo. */
 const exitOf = (battle, g) => nearest(g, battle.exits[g.side]);
 
