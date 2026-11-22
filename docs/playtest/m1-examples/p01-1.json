@@ -1,0 +1,29 @@
+{
+  "version": "m1.1-proto-2",
+  "seed": 1,
+  "columnOrder": 0,
+  "outcome": "derrota",
+  "time": 96,
+  "combatSeconds": 46,
+  "signalAt": 50,
+  "signalColumnProgress": 0.5,
+  "orders": 4,
+  "refusedOrders": 1,
+  "fallBacks": 0,
+  "flanks": { "lusitanos": 1, "romanos": 3 },
+  "discovered": [{ "group": "lobos", "t": 35 }, { "group": "corvos", "t": 55 }],
+  "romanResponses": [{ "type": "apoio", "group": "retaguarda", "t": 61, "target": "lobos", "ally": "vanguarda" }],
+  "keyMoments": [{ "code": "signal", "percent": 50, "count": 2 }],
+  "lusitanians": { "start": 15, "alive": 0, "dead": 9, "fled": 6, "withdrawn": 0, "escaped": 0 },
+  "romans": { "start": 13, "alive": 10, "dead": 3, "fled": 0, "withdrawn": 0, "escaped": 0 },
+  "playerId": "P01",
+  "battleNumber": 1,
+  "feedback": {
+    "wouldPlayAgain": "yes",
+    "controlsClarity": 3,
+    "combatClarity": 2,
+    "ambushSatisfaction": 3,
+    "tacticalDecisions": 4,
+    "notes": "Quis perceber melhor quando devia dar o Sinal."
+  }
+}
