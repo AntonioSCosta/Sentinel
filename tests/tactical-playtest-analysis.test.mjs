@@ -58,8 +58,14 @@ test('signal evidence, discovery time, zero and absent data retain distinct mean
   }));
   await write(input, '02-absent.json', report({ discovered: [] }));
   await write(input, '03-no-signal.json', report({ signalAt: null, discovered: [] }));
+  await write(input, '04-no-sightings-log.json', report({ version: 'm1.2-proto-1', signalAt: 10,
+    discovered: [{ group: 'lobos', t: 2 }] }));
+  await write(input, '05-empty-sightings-log.json', report({ version: 'm1.2-proto-1', signalAt: 10, seen: [] }));
+  await write(input, '06-invalid-sighting.json', report({ version: 'm1.2-proto-1', signalAt: 10,
+    seen: [{ group: 'lobos', t: 2, cause: 'unknown', d: 8 }] }));
   assert.equal(run(input, output).status, 0);
-  const [cohort] = (await summary(output)).versions;
+  const data = await summary(output);
+  const [cohort, m12] = data.versions;
   const [given, absent, noSignal] = cohort.battles.map(battle => battle.calculated);
   assert.equal(given.surprisedRomanGroups, 0);
   assert.deepEqual(given.groupsDiscoveredBeforeSignal, ['lobos']);
@@ -68,6 +74,13 @@ test('signal evidence, discovery time, zero and absent data retain distinct mean
   assert.equal(noSignal.signalStatus, 'not-given');
   assert.equal(noSignal.groupsDiscoveredBeforeSignalCount, null);
   assert.deepEqual(cohort.metrics.acceptedOrders, { available: 1, sum: 0, mean: 0 });
+  const [missingSightings, emptySightings, invalidSightings] = m12.battles.map(battle => battle.calculated);
+  assert.equal(missingSightings.groupsDiscoveredBeforeSignalCount, 1);
+  assert.equal(missingSightings.groupsSeenBeforeSignalCount, null);
+  assert.equal(emptySightings.groupsSeenBeforeSignalCount, 0);
+  assert.equal(invalidSightings.groupsSeenBeforeSignalCount, null);
+  assert.deepEqual(m12.metrics.groupsSeenBeforeSignalCount, { available: 1, sum: 0, mean: 0 });
+  assert.ok(data.issues.some(issue => issue.file === '06-invalid-sighting.json' && issue.field === 'seen'));
 });
 
 test('unsupported versions and invalid JSON are reported without discarding valid battles', async t => {
