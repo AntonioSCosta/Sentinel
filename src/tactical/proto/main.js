@@ -4,7 +4,7 @@ import { DT } from '../data.js';
 import { groupOf } from '../sim.js';
 import { createView } from './view.js';
 import { createSfx } from './sfx.js';
-import { createSession, defaultPlacement, placeGroup, toggleRole, startsHidden, clockText } from './session.js';
+import { createSession, defaultPlacement, placeGroup, toggleRole, startsHidden, clockText, PROTO_VERSION } from './session.js';
 import { spotRange, STUB } from './roman-stub.js';
 import { radius } from '../combat.js';
 import { COLUMN, WOODS } from './field.js';
@@ -29,6 +29,7 @@ function applyTexts() {
   for (const el of document.querySelectorAll('[data-t]')) el.textContent = t(el.dataset.t);
   $('lang').value = i18n.locale;
   $('seed').textContent = t('battleNo', { seed: ui.seed });
+  $('ver').textContent = PROTO_VERSION;   // discreto, para não misturar resultados de versões diferentes no playtest
   $('pause').setAttribute('aria-label', ui.paused ? t('time.play') : t('time.pause'));
   if (!$('result').hidden) showResult();
 }
@@ -309,6 +310,7 @@ function showResult() {
   $('r-stats').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
   const why = r.keyMoments.map(k => `<li><span class="at">${clockText(k.t)}</span>${t(`why.${whyKey(k)}`, { ...k, group: k.group ? nameOf(k.group) : '', ally: k.ally ? nameOf(k.ally) : '' })}</li>`).join('');
   $('r-why').innerHTML = why ? `<b>${t('why.title')}</b><ul>${why}</ul>` : '';
+  $('r-ver').textContent = `${PROTO_VERSION} · seed ${r.seed}`;
   $('result').hidden = false;
   $('banner').classList.remove('show'); ui.bannerT = 0;
   $('replay').focus();
