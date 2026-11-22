@@ -164,7 +164,7 @@ test('sessão: determinista — mesma semente, colocação e ordens dão o mesmo
 });
 
 test('sessão: o relatório traz desfecho, sinal, contas que fecham e um JSON legível', () => {
-  const r = runToEnd(pincer(3));
+  const r = runToEnd(pincer(1));
   assert.match(r.text, /Outcome: vitoria/);
   assert.match(r.text, /Signal: [\d.]+s \(column at \d+%\)/);
   const json = JSON.parse(r.text.slice(r.text.indexOf('{')));
@@ -176,20 +176,68 @@ test('sessão: o relatório traz desfecho, sinal, contas que fecham e um JSON le
   assert.ok(r.data.signalAt > 0 && r.data.combatSeconds > 0);
 });
 
-// --- jogabilidade (afinação do protótipo) ---
+// --- jogabilidade (afinação do protótipo M1.1) ---
 
-test('jogabilidade: duas estratégias diferentes vencem; frontal e à vista perdem', () => {
-  for (const seed of SEEDS) {
-    assert.equal(runToEnd(pincer(seed)).data.outcome, 'vitoria', `tenaz, semente ${seed}`);
-    assert.equal(runToEnd(rear(seed)).data.outcome, 'vitoria', `retaguarda, semente ${seed}`);
-    assert.equal(runToEnd(frontal(seed)).data.outcome, 'derrota', `frontal, semente ${seed}`);
-    assert.equal(runToEnd(exposed(seed)).data.outcome, 'derrota', `à vista, semente ${seed}`);
-  }
+const SEEDS20 = Array.from({ length: 20 }, (_, i) => i + 1);
+const tally = (make, after = runToEnd) => {
+  const out = {};
+  for (const seed of SEEDS20) { const s = make(seed); after(s); while (!s.battle.over) s.tick(); const o = s.report().data.outcome; out[o] = (out[o] || 0) + 1; }
+  return out;
+};
+const nearestWood = g => WOODS.reduce((b, w) => (!b || Math.hypot(g.x - w.x, g.y - w.y) < Math.hypot(g.x - b.x, g.y - b.y) ? w : b), null);
+/** Recuar todos os grupos para o bosque w2 aos `secs` segundos e esperar lá; quem estiver livre ataca um romano que entre no mato, sem o perseguir para fora. */
+function fallBackToWoods(secs) {
+  return s => {
+    const t0 = s.battle.t, w = WOODS[1];
+    until(s, () => s.battle.t >= t0 + secs);
+    const mine = () => s.battle.groups.filter(g => g.side === 'lusitanos' && g.left === null && g.state === 'ativo' && !g.hidden);
+    for (const g of mine()) s.order({ group: g.id, type: 'retirar', x: w.x, y: w.y });
+    while (!s.battle.over) {
+      const t1 = s.battle.t; until(s, () => s.battle.t >= t1 + 1);
+      const inWoods = s.battle.groups.find(g => g.side === 'romanos' && g.left === null && g.state === 'ativo' && g.rough);
+      for (const g of mine()) {
+        if (g.engaged || g.order.type === 'retirar') continue;
+        if (inWoods) s.order({ group: g.id, type: 'atacar', target: inWoods.id });
+        else if (g.order.type === 'atacar' && g.order.target) s.order({ group: g.id, type: 'retirar', x: w.x, y: w.y });   // não perseguir para fora do mato
+      }
+    }
+  };
+}
+
+test('jogabilidade: a tenaz é forte mas não é uma vitória automática', () => {
+  const out = tally(pincer);
+  assert.ok((out.vitoria || 0) >= 12, JSON.stringify(out));
+  assert.ok((out.vitoria || 0) < 20, `a tenaz sem ordens depois do sinal não pode ganhar sempre: ${JSON.stringify(out)}`);
 });
 
-test('jogabilidade: uma boa emboscada dura entre 30 s e 4 min de combate', () => {
+test('jogabilidade: uma decisão a meio do combate (recuar para o bosque) salva uma carga frontal falhada', () => {
+  const stay = tally(frontal), back = tally(frontal, fallBackToWoods(10));
+  assert.ok((stay.derrota || 0) >= 18, `sem decisão: ${JSON.stringify(stay)}`);
+  assert.ok((back.derrota || 0) <= 3, `com a decisão: ${JSON.stringify(back)}`);
+  assert.ok((back.vitoria || 0) >= 5, `com a decisão há vitórias: ${JSON.stringify(back)}`);
+});
+
+test('jogabilidade: esperar no mato sem combater não ganha — a coluna segue caminho', () => {
+  const turtle = seed => {
+    const p = defaultPlacement();
+    placeGroup(p, 'lobos', 82, 35); placeGroup(p, 'javalis', 78, 30); placeGroup(p, 'corvos', 86, 38); placeGroup(p, 'fundeiros', 80, 40);
+    const s = createSession({ seed, placement: p });
+    until(s, () => groupOf(s.battle, 'velites').x >= 76);
+    s.order({ type: 'sinal' });
+    return s;
+  };
+  const out = tally(turtle);
+  assert.ok((out.escapou || 0) >= 15, JSON.stringify(out));
+});
+
+test('jogabilidade: duas estratégias diferentes ganham na maioria das sementes; frontal e à vista perdem mais do que ganham', () => {
+  for (const make of [pincer, rear]) assert.ok((tally(make).vitoria || 0) >= 12);
+  for (const make of [frontal, exposed]) { const out = tally(make); assert.ok((out.vitoria || 0) < (out.derrota || 0) + (out.escapou || 0), JSON.stringify(out)); }
+});
+
+test('jogabilidade: o combate de uma boa emboscada dura entre 30 s e 4 min', () => {
   for (const seed of SEEDS) {
-    const r = runToEnd(pincer(seed)).data;
+    const r = runToEnd(rear(seed)).data;
     assert.ok(r.combatSeconds >= 30 && r.combatSeconds <= 240, `semente ${seed}: ${r.combatSeconds}s`);
   }
 });

@@ -97,6 +97,16 @@ export const COLUMN = [
   { id: 'retaguarda', role: 'legionario', men: 5, along: 2 },
 ];
 
+/**
+ * Ordens de marcha possíveis (uma por semente): a mesma força, arrumada de outra maneira.
+ * O jogador vê a ordem da coluna a chegar e tem de adaptar o plano; um plano fixo não serve sempre.
+ */
+export const COLUMN_VARIANTS = [
+  COLUMN,
+  [{ id: 'velites', role: 'velite', men: 3, along: 30 }, { id: 'vanguarda', role: 'legionario', men: 5, along: 16 }, { id: 'retaguarda', role: 'legionario', men: 5, along: 4 }],
+  [{ id: 'vanguarda', role: 'legionario', men: 5, along: 26 }, { id: 'retaguarda', role: 'legionario', men: 5, along: 16 }, { id: 'velites', role: 'velite', men: 3, along: 3 }],
+];
+
 /** O bando: até quatro grupos. A posição inicial é a orla norte, à vista; o jogador esconde-os. */
 export const BAND = [
   { id: 'lobos', role: 'guerreiro', men: 4, x: 52, y: 9 },

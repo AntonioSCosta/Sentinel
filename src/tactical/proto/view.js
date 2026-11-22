@@ -8,7 +8,7 @@ import { radius } from '../combat.js';
 const FIG = 1.45;            // as figuras são desenhadas maiores do que o real, para se lerem de longe
 const SPACING = 1.25;        // distância visual entre homens de um grupo
 const COLORS = {
-  lus: new THREE.Color('#efe0b0'), rom: new THREE.Color('#d8483c'), sel: new THREE.Color('#ffcf4a'),
+  lus: new THREE.Color('#efe0b0'), rom: new THREE.Color('#d8483c'), sel: new THREE.Color('#ffcf4a'), threat: new THREE.Color('#ff5a3c'), broken: new THREE.Color('#f0a23a'),
   ground: new THREE.Color('#6d7444'), groundDark: new THREE.Color('#4f5a30'), road: new THREE.Color('#a48a5a'), water: new THREE.Color('#58767c'),
 };
 
@@ -356,18 +356,29 @@ export function createView(canvas) {
         const sel = opts.selected === g.id;
         v.ring.position.set(g.x, heightAt(g.x, g.y) + 0.12, g.y);
         v.ring.scale.setScalar(r * (sel ? 1 + Math.sin(clock * 6) * 0.05 : 1));
-        v.ring.material.color.copy(sel ? COLORS.sel : g.side === 'lusitanos' ? COLORS.lus : COLORS.rom);
-        v.ring.material.opacity = g.hidden ? 0.45 : g.state === 'debandada' ? 0.35 : 0.9;
+        const threat = opts.threats?.has(g.id);
+        v.ring.material.color.copy(sel ? COLORS.sel : threat ? COLORS.threat : g.side === 'lusitanos' ? COLORS.lus : g.rough ? COLORS.broken : COLORS.rom);
+        v.ring.material.opacity = g.hidden ? 0.45 : g.state === 'debandada' ? 0.35 : threat ? 0.6 + Math.abs(Math.sin(clock * 7)) * 0.4 : 0.9;
+        if (threat && !sel) v.ring.scale.setScalar(r * (1.05 + Math.abs(Math.sin(clock * 7)) * 0.12));
+        if (g.side === 'romanos' && g.order?.type === 'atacar' && g.order.target !== undefined && !g.engaged && g.state === 'ativo') {   // ameaça romana visível
+          const to = opts.lookup?.(g.order.target);
+          if (to && to.left == null && !to.hidden) {
+            const a = v.line.geometry.attributes.position;
+            a.setXYZ(0, g.x, 0.3, g.y); a.setXYZ(1, to.x, 0.3, to.y); a.needsUpdate = true;
+            v.line.computeLineDistances(); v.line.visible = true; v.line.material.color.set('#ff4a33'); v.line.material.opacity = 0.75;
+          }
+        }
         if (g.side === 'lusitanos' && (sel || opts.showPlans) && g.order && ['atacar', 'mover', 'retirar'].includes(g.order.type)) {
           let to = null;
           if (g.order.type === 'atacar') to = g.order.target !== undefined ? opts.lookup?.(g.order.target) : { x: g.order.x, y: g.order.y };
           else if (g.order.type === 'mover') to = g.order.path[g.order.path.length - 1];
+          else if (g.order.type === 'retirar' && g.order.x !== undefined) to = { x: g.order.x, y: g.order.y };
           else if (g.order.type === 'retirar') to = EXITS.lusitanos.reduce((b, e) => (!b || Math.hypot(e.x - g.x, e.y - g.y) < Math.hypot(b.x - g.x, b.y - g.y) ? e : b), null);
           if (to && to.left == null) {
             const a = v.line.geometry.attributes.position;
             a.setXYZ(0, g.x, 0.3, g.y); a.setXYZ(1, to.x, 0.3, to.y); a.needsUpdate = true;
             v.line.computeLineDistances(); v.line.visible = true;
-            v.line.material.color.set(g.order.type === 'retirar' ? '#9fc3d6' : g.order.type === 'atacar' && g.order.target !== undefined ? '#ff8a6a' : '#f4e7c0');
+            v.line.material.color.set(g.order.type === 'retirar' ? (g.order.x !== undefined ? '#8fd0a8' : '#9fc3d6') : g.order.type === 'atacar' && g.order.target !== undefined ? '#ff8a6a' : '#f4e7c0');
             v.line.material.opacity = g.hidden ? 0.55 : 0.9;
           }
         }
@@ -462,7 +473,7 @@ export function createView(canvas) {
       for (const s of v.soldiers) if (s.alive) s.flash = 1;
     },
     /** Pó de uma carga. */
-    charge(id) { const v = visuals.get(id); if (v) { burst(v.x, v.y, 30, '#b59b6a', 7, 2, 1.5); cam.shake = Math.max(cam.shake, 0.5); } },
+    charge(id) { const v = visuals.get(id); if (v) { burst(v.x, v.y, 45, '#b59b6a', 8, 2.2, 1.6); cam.shake = Math.max(cam.shake, 0.8); } },
     /** Abanão de câmara (sinal, rotura). */
     shake(s) { cam.shake = Math.max(cam.shake, s); },
     /** Posição atual de um grupo desenhado (para os textos que flutuam). */

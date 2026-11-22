@@ -94,11 +94,26 @@ export function createSfx() {
       noise(t, 0.18, { type: 'lowpass', freq: ours ? 260 : 420, peak: 0.35 });
       tone(t, 0.25, { freq: ours ? 62 : 85, to: ours ? 40 : 55, peak: ours ? 0.3 : 0.2 });
     },
-    /** Carga: rugido do bando. */
+    /** Carga: rugido do bando e o choque das linhas. */
     charge() {
-      if (!throttle('charge', 0.5)) return; const t = ctx.currentTime;
-      noise(t, 0.9, { type: 'lowpass', freq: 500, peak: 0.3, a: 0.15 });
-      for (const f of [130, 165, 196]) tone(t, 0.7, { type: 'sawtooth', freq: f, to: f * 1.08, peak: 0.05, a: 0.12, lp: 800 });
+      if (!throttle('charge', 0.4)) return; const t = ctx.currentTime;
+      noise(t, 0.9, { type: 'lowpass', freq: 520, peak: 0.36, a: 0.12 });
+      for (const f of [130, 165, 196]) tone(t, 0.7, { type: 'sawtooth', freq: f, to: f * 1.08, peak: 0.06, a: 0.1, lp: 850 });
+      tone(t + 0.35, 0.3, { freq: 75, to: 42, peak: 0.4 });   // o embate
+      noise(t + 0.35, 0.18, { freq: 2200, q: 1.5, peak: 0.3 });
+    },
+    /** Golpe pelo flanco ou pelas costas: um estalo metálico mais forte. */
+    flank() {
+      if (!throttle('flank', 0.25)) return; const t = ctx.currentTime;
+      noise(t, 0.12, { freq: 3200, q: 2.5, peak: 0.35 });
+      tone(t, 0.3, { type: 'triangle', freq: 980, to: 620, peak: 0.12 });
+      tone(t, 0.25, { freq: 90, to: 55, peak: 0.25 });
+    },
+    /** Confirmação de uma ordem: um toque curto de corneta, diferente por ordem. */
+    order(kind) {
+      if (!throttle('order', 0.08)) return; const t = ctx.currentTime;
+      const notes = { atacar: [220, 330], manter: [262, 262], recuar: [330, 220], retirar: [294, 196] }[kind] || [262, 330];
+      notes.forEach((f, i) => tone(t + i * 0.09, 0.1, { type: 'sawtooth', freq: f, peak: 0.07, lp: 1400 }));
     },
     /** Um grupo quebra: corneta descendente (boa notícia se forem romanos). */
     broken(ours) {

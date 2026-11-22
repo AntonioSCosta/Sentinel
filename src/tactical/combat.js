@@ -35,13 +35,16 @@ export function sideOf(target, from) {
   return off >= TUNING.rearArc ? 'costas' : 'flanco';
 }
 
-/** Multiplicador de dano recebido por `target`, atingido a partir de `from` (corpo a corpo ou à distância). */
+/**
+ * Multiplicador de dano recebido por `target`, atingido a partir de `from` (corpo a corpo ou à distância).
+ * Uma unidade em formação (`formation`) dentro de terreno difícil (`target.rough`) não conta com o escudo da frente.
+ */
 export function takenMult(target, from, ranged) {
   const role = ROLES[target.role], side = sideOf(target, from);
   let m = side === 'flanco' ? TUNING.flankMult : side === 'costas' ? TUNING.rearMult : 1;
   if (target.state === 'debandada') m *= TUNING.routed.taken;
   else if (target.disorderT > 0) m *= TUNING.disorder.taken;
-  else if (side === 'frente') m *= ranged ? role.missileFront : role.shieldFront;   // só em ordem e pela frente
+  else if (side === 'frente' && !(role.formation && target.rough)) m *= ranged ? role.missileFront : role.shieldFront;   // só em ordem, pela frente e fora do mato
   return m;
 }
 
@@ -55,8 +58,8 @@ export function dealtMult(g) {
 /** Fração de mortos que quebra o grupo, conforme o lado e a ordem em que está. */
 export const routThreshold = g => TUNING.rout[g.side][g.disorderT > 0 ? 'disordered' : 'formed'];
 
-/** Dano corpo a corpo de `g` em `target` num passo de `dt` segundos, antes da variação aleatória. */
-export const meleeDamage = (g, target, dt) => g.men * ROLES[g.role].melee * dt * dealtMult(g) * takenMult(target, g, false);
+/** Dano corpo a corpo de `g` em `target` num passo de `dt` segundos, antes da variação aleatória. Os bónus juntos nunca passam de TUNING.maxMult. */
+export const meleeDamage = (g, target, dt) => g.men * ROLES[g.role].melee * dt * Math.min(TUNING.maxMult, dealtMult(g) * takenMult(target, g, false));
 
 /** Dano de uma salva de `g` em `target`, com `cover` ∈ [0, 1] no sítio do alvo (inválida = 0), antes da variação aleatória. */
 export function volleyDamage(g, target, cover = 0) {

@@ -6,7 +6,7 @@ import { createView } from './view.js';
 import { createSfx } from './sfx.js';
 import { createSession, defaultPlacement, placeGroup, toggleRole, startsHidden } from './session.js';
 import { radius } from '../combat.js';
-import { COLUMN } from './field.js';
+import { COLUMN, WOODS } from './field.js';
 
 const $ = id => document.getElementById(id);
 let storage; try { storage = window.localStorage; } catch { /* sem armazenamento */ }
@@ -18,7 +18,7 @@ const sfx = createSfx();
 
 const ui = {
   phase: 'prep', seed: 1, placement: defaultPlacement(), session: null, selected: null,
-  speed: 1, paused: false, slow: 0, acc: 0, drag: null, endShown: false, bannerT: 0, spottedShown: false,
+  speed: 1, paused: false, slow: 0, acc: 0, drag: null, endShown: false, bannerT: 0, spottedShown: false, flankedAt: new Map(),
 };
 const BAND_IDS = ui.placement.map(p => p.id);
 
@@ -39,16 +39,35 @@ const groupsNow = () => ui.session ? ui.session.battle.groups
     ...COLUMN.map(c => ({ id: c.id, role: c.role, men: c.men, side: 'romanos', x: -20 - (22 - c.along), y: 58, facing: 0, state: 'ativo', left: null, order: { type: 'mover', pace: 'marcha', path: [] } }))];
 const lookup = id => groupsNow().find(g => g.id === id) || null;
 
+/** Um grupo lusitano está ameaçado? (um romano vem direito a ele, dois lutam com ele, ou foi flanqueado há pouco) */
+function threatOf(g) {
+  if (!ui.session || g.side !== 'lusitanos' || g.left || g.state !== 'ativo' || g.hidden) return null;
+  const b = ui.session.battle;
+  if (b.t - (ui.flankedAt.get(g.id) ?? -99) < 3) return 'flanked';
+  const foes = b.groups.filter(r => r.side === 'romanos' && r.left === null && r.state === 'ativo');
+  if (foes.filter(r => r.engaged && r.target === g.id).length >= 2) return 'flanked';
+  if (foes.some(r => r.order.type === 'atacar' && r.order.target === g.id && !r.engaged && Math.hypot(r.x - g.x, r.y - g.y) < 30)) return 'threatened';
+  return null;
+}
 function stateOf(g) {
   if (g.left === 'morto' || g.left === 'fugiu' || g.left === 'retirou' || g.left === 'escapou') return t(`state.${g.left}`);
   if (ui.phase === 'prep') return g.side === 'lusitanos' ? t(g.hidden ? 'state.hidden' : 'state.exposed') : t('state.marching');
   if (ui.phase === 'over') return '';
   if (g.state === 'debandada') return t('state.routing');
-  if (g.side === 'lusitanos' && g.order?.type === 'retirar') return t('state.retreating');
+  const threat = threatOf(g);
+  if (threat) return t(`state.${threat}`);
+  if (g.side === 'lusitanos' && g.order?.type === 'retirar') return g.order.x !== undefined ? t('cmd.fallBack') : t('state.retreating');
+  if (g.side === 'romanos' && g.rough && g.role === 'legionario') return t('state.noFormation');
   if (g.engaged) return t('state.fighting');
   if (g.disorderT > 0) return t('state.surprised');
   if (g.hidden) return g.order?.type === 'atacar' || g.order?.type === 'mover' ? t('state.planned') : t('state.hidden');
-  if (g.side === 'romanos') return g.alerted ? t('state.alert') : t('state.marching');
+  if (g.side === 'romanos') {
+    const intent = ui.session?.intentOf(g.id);
+    const label = { support: 'state.supporting', pursue: 'state.pursuing', hold: 'state.holdingRoad', shelter: 'state.sheltering' }[intent];
+    if (!g.alerted) return t('state.marching');
+    const temper = ui.session?.temperOf(g.id);
+    return [label && g.order.type !== 'mover' ? t(label) : t('state.alert'), temper ? t(`temper.${temper}`) : ''].filter(Boolean).join(' · ');
+  }
   return '';
 }
 const pips = g => {
@@ -59,7 +78,7 @@ const pips = g => {
 // --- cartões dos grupos e botões ---
 function renderCards() {
   const gs = groupsNow().filter(g => g.side === 'lusitanos');
-  $('cards').innerHTML = gs.map((g, i) => `<button class="card${ui.selected === g.id ? ' sel' : ''}${g.left ? ' gone' : ''}" data-id="${g.id}">
+  $('cards').innerHTML = gs.map((g, i) => `<button class="card${ui.selected === g.id ? ' sel' : ''}${g.left ? ' gone' : ''}${threatOf(g) ? ' threat' : ''}" data-id="${g.id}">
     <span class="n">${t(`group.${g.id}`)} <span class="role">${t(`role.${g.role}`)}</span></span>
     <span class="pips">${pips(g)}</span><span class="state">${stateOf(g)}</span><kbd style="justify-self:end;margin:0">${i + 1}</kbd></button>`).join('');
 }
@@ -72,8 +91,8 @@ function renderOrders() {
     $('role').disabled = !sel;
     $('role').textContent = sel && sel.role === 'fundeiro' ? t('prep.toWarriors') : t('prep.toSlingers');
   }
-  $('hold').hidden = $('retreat').hidden = ui.phase === 'prep';
-  $('hold').disabled = $('retreat').disabled = !usable;
+  $('hold').hidden = $('retreat').hidden = $('fallback').hidden = ui.phase === 'prep';
+  $('hold').disabled = $('retreat').disabled = $('fallback').disabled = !usable;
   const given = ui.session?.battle.signals.includes('lusitanos');
   $('signal').hidden = ui.phase === 'prep';
   $('signal').disabled = !live || given;
@@ -116,12 +135,37 @@ function onEvents(events) {
       case 'baixas':
         view.hit(e.group, e.n);
         sfx.play.death(g.side === 'lusitanos');
+        if (g.side === 'lusitanos') { $('hurt').style.opacity = 1; setTimeout(() => { $('hurt').style.opacity = 0; }, 140); }
         pop(e.group, `−${e.n}`, g.side === 'lusitanos' ? 'loss' : 'kill');
         if (ui.phase === 'waiting') ui.phase = 'battle';
         break;
       case 'carga':
         view.charge(e.group); sfx.play.charge();
-        if (g.side === 'lusitanos') pop(e.group, t('pop.charge'), 'good');
+        pop(e.group, t('pop.charge'), g.side === 'lusitanos' ? 'good' : 'bad');
+        break;
+      case 'flanco': {
+        const ours = g.side === 'lusitanos';
+        pop(e.target, t(e.side === 'costas' ? 'pop.rear' : 'pop.flank'), ours ? 'good' : 'bad');
+        sfx.play.flank(); view.shake(0.35);
+        if (!ours) ui.flankedAt.set(e.target, b.t);
+        break;
+      }
+      case 'terreno':
+        if (e.rough && g.side === 'romanos') { pop(e.group, t('pop.formationBroken'), 'good'); feed(t('feed.woods', { group: nameOf(e.group) })); }
+        break;
+      case 'apoio':
+        pop(e.group, t('pop.support'), 'bad'); sfx.play.alarm();
+        banner(t('banner.support', { group: nameOf(e.group), ally: nameOf(e.ally) }), true, 1.8);
+        break;
+      case 'persegue':
+        pop(e.group, t('pop.pursuing'), 'bad');
+        feed(t('feed.pursue', { group: nameOf(e.group), target: nameOf(e.target) }));
+        break;
+      case 'segura':
+        feed(t('feed.hold', { group: nameOf(e.group) }));
+        break;
+      case 'cerra':
+        if (!ui.closeShown) { ui.closeShown = true; banner(t('banner.closeRanks'), true, 1.6); }
         break;
       case 'quebrou':
         sfx.play.broken(g.side === 'lusitanos'); view.shake(0.4);
@@ -152,7 +196,7 @@ function onEvents(events) {
 function startBattle() {
   sfx.unlock();
   ui.session = createSession({ seed: ui.seed, placement: ui.placement });
-  ui.phase = 'waiting'; ui.acc = 0; ui.endShown = false; ui.spottedShown = false; ui.slow = 0;
+  ui.phase = 'waiting'; ui.acc = 0; ui.endShown = false; ui.spottedShown = false; ui.closeShown = false; ui.slow = 0; ui.flankedAt = new Map();
   view.setPrep(false); view.reset();
   $('result').hidden = true;
   renderOrders();
@@ -175,9 +219,19 @@ function giveSignal() {
   renderOrders();
 }
 function order(cmd) {
-  if (!ui.session || !ui.selected) return;
+  if (!ui.session || !ui.selected) return false;
   const r = ui.session.order({ group: ui.selected, ...cmd });
-  if (r.ok) sfx.play.clash();
+  if (r.ok) {
+    const kind = cmd.type === 'retirar' && cmd.x !== undefined ? 'recuar' : cmd.type;
+    pop(ui.selected, t(`ack.${kind}`), 'ack'); sfx.play.order(kind);
+  }
+  return r.ok;
+}
+/** Recuar para o bosque mais perto do grupo selecionado (larga o combate e fica lá a manter). */
+function fallBack() {
+  const g = ui.selected && lookup(ui.selected); if (!g) return;
+  const w = WOODS.reduce((b, o) => (!b || Math.hypot(o.x - g.x, o.y - g.y) < Math.hypot(b.x - g.x, b.y - g.y) ? o : b), null);
+  if (order({ type: 'retirar', x: w.x, y: w.y })) ping(w.x, w.y);
 }
 
 // --- resultados ---
@@ -185,7 +239,7 @@ function showResult() {
   if (!ui.session || !ui.endShown) return;
   const r = ui.session.report({ language: i18n.locale }).data;
   $('r-title').textContent = t(`result.${r.outcome}`);
-  $('r-text').textContent = t(`result.text.${r.outcome}`);
+  $('r-text').textContent = t(r.outcome === 'escapou' && r.lusitanians.dead + r.romans.dead > 0 ? 'result.text.escapouFought' : `result.text.${r.outcome}`);
   const lus = r.lusitanians, rom = r.romans;
   const rows = [
     [t('result.losses'), `${lus.dead} / ${lus.start}`],
@@ -195,6 +249,8 @@ function showResult() {
     [t('result.signal'), r.signalAt === null ? t('result.noSignal') : t('result.signalAt', { time: Math.round(r.signalAt), percent: Math.round(r.signalColumnProgress * 100) })],
   ];
   $('r-stats').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+  const why = r.keyMoments.map(k => `<li>${t(`why.${k.code}`, { ...k, group: k.group ? nameOf(k.group) : '', ally: k.ally ? nameOf(k.ally) : '' })}</li>`).join('');
+  $('r-why').innerHTML = why ? `<b>${t('why.title')}</b><ul>${why}</ul>` : '';
   $('result').hidden = false;
   $('banner').classList.remove('show'); ui.bannerT = 0;
   $('replay').focus();
@@ -237,7 +293,8 @@ canvas.addEventListener('pointerdown', ev => {
     else if (!g) { panDrag = { x: ev.clientX, y: ev.clientY }; canvas.setPointerCapture(ev.pointerId); }
   } else if (ev.button === 1) { panDrag = { x: ev.clientX, y: ev.clientY, rotate: true }; canvas.setPointerCapture(ev.pointerId); }
   else if (ev.button === 2 && ui.session && ui.selected && !ui.session.battle.over) {
-    if (foe) { order({ type: 'atacar', target: foe.id }); ping(foe.x, foe.y); }
+    if (ev.shiftKey) { if (order({ type: 'retirar', x: p.x, y: p.y })) ping(p.x, p.y); }
+    else if (foe) { order({ type: 'atacar', target: foe.id }); ping(foe.x, foe.y); }
     else { order({ type: 'atacar', x: p.x, y: p.y }); ping(p.x, p.y); }
   }
 });
@@ -267,6 +324,7 @@ window.addEventListener('keydown', ev => {
   if (ev.code === 'Space') { ev.preventDefault(); giveSignal(); }
   else if (ev.code === 'KeyH') order({ type: 'manter' });
   else if (ev.code === 'KeyR') order({ type: 'retirar' });
+  else if (ev.code === 'KeyB') fallBack();
   else if (ev.code === 'KeyP') togglePause();
   else if (ev.code === 'KeyF') setSpeed(ui.speed === 1 ? 2 : ui.speed === 2 ? 4 : 1);
   else if (/^Digit[1-4]$/.test(ev.code)) ui.selected = BAND_IDS[+ev.code.slice(5) - 1];
@@ -284,6 +342,7 @@ $('reset').addEventListener('click', () => { ui.placement = defaultPlacement(); 
 $('role').addEventListener('click', () => { if (ui.selected) toggleRole(ui.placement, ui.selected); });
 $('hold').addEventListener('click', () => order({ type: 'manter' }));
 $('retreat').addEventListener('click', () => order({ type: 'retirar' }));
+$('fallback').addEventListener('click', fallBack);
 $('signal').addEventListener('click', giveSignal);
 $('pause').addEventListener('click', togglePause);
 for (const b of document.querySelectorAll('[data-speed]')) b.addEventListener('click', () => setSpeed(+b.dataset.speed));
@@ -343,7 +402,8 @@ function frame(now) {
     simDt = real * ui.speed * slow;
   }
   const visDt = ui.paused ? 0 : (ui.session ? Math.max(simDt, real * 0.3) : real);
-  view.sync(groupsNow(), visDt, { selected: ui.selected, showPlans: ui.phase === 'waiting', lookup });
+  const threats = new Set(groupsNow().filter(g => threatOf(g)).map(g => g.id));
+  view.sync(groupsNow(), visDt, { selected: ui.selected, showPlans: ui.phase === 'waiting', lookup, threats });
   view.render();
 
   // som de combate e tambor de marcha
