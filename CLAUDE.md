@@ -1,24 +1,27 @@
-# Viriato -- A Guerra dos Montes Hermínios
+# Sentinel — Viriato, A Guerra dos Montes Hermínios
 
-A browser game about the Lusitanian war against Rome (150-147 BC), built on the
-Claude Code Game Studios framework: 49 coordinated subagents, each owning a
-domain, enforcing separation of concerns and quality.
+A game about the Lusitanian war against Rome (150-147 BC), built on the Claude
+Code Game Studios framework: 49 coordinated subagents, each owning a domain,
+enforcing separation of concerns and quality.
+
+@AGENTS.md
 
 **Answer the user in European Portuguese (pt-PT), concisely.**
 
 ## The game
 
-A first/third-person melee game in the Montes Hermínios. Chapters: the prologue
-(Galba's massacre, 150 BC), I Os Cativos (149 BC), II A Emboscada (147 BC); the
-Roman camp is built but kept for a later chapter.
+The tactical direction is group-based ambushes. The T1 simulation in
+`src/tactical/` is deterministic and runs independently of the renderer. The
+current playable build uses the legacy first/third-person engine for the
+prologue (Galba's massacre, 150 BC), I Os Cativos (149 BC), II A Emboscada
+(147 BC) and III O Acampamento.
 
-- Combat follows Mount & Blade: Warband -- directional attacks (up, left, right,
+- Legacy combat follows Mount & Blade: Warband -- directional attacks (up, left, right,
   thrust) in wind-up, strike and recovery, directional blocks, held attacks
   charging up to x1.6, one attacker per target.
 - Characters are the CC0 Quaternius rig, dressed at runtime (`src/rig.js`), with
   authored pose offsets in `src/moves.js` fitted to the damage arc in `src/swing.js`.
-- `npm test` runs the node:test suite; `npm run smoke` runs the jsdom checks;
-  `node tools/shot.mjs <scenario> /home/claude/shots` renders screenshots.
+- `node tools/shot.mjs <scenario> /home/claude/shots` renders screenshots.
 - The playable build is published as a Claude artifact
   (slug 54e32c29-16b4-4c7a-8038-e60eb36d627e) by publishing the changed files.
 
