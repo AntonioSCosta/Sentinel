@@ -1,15 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MARCH_SPEED, PATROL_SPEED, ENCOUNTER_RADIUS, nearRoad, stepDay } from '../src/campaign/simulation.js';
-import { newCampaign, foodPerDay, recruitsFrom } from '../src/campaign/state.js';
+import { newCampaign, foodPerDay } from '../src/campaign/state.js';
 import { makeRng } from '../src/campaign/rng.js';
-import { ensureDoctrine, sectorOf, FIRST_SPAWN, COUNTERS } from '../src/campaign/doctrine.js';
+import { ensureDoctrine, sectorOf, FIRST_SPAWN, FIRST_SPAWN_MIN, COUNTERS } from '../src/campaign/doctrine.js';
 import { battleSpec, applyResult } from '../src/campaign/battles.js';
 
 const rng = () => makeRng(7);
 const fresh = () => newCampaign(3);
 const find = (s, kind) => s.world.settlements.find(x => x.kind === kind);
 const at = (s, p) => { s.party.x = p.x; s.party.y = p.y; };
+/** O lugar do Souto (amiga: dá homens): as aldeias soltas do mundo gerado já não recrutam. */
+const souto = s => s.world.settlements.find(x => x.id === s.communities.souto.settlement);
 const far = s => { s.party.x = 500; s.party.y = 10; }; // longe de tudo o que importa
 const ACAMPAR = { kind: 'acampar' };
 
@@ -81,10 +83,10 @@ function spawns(seed, days = 200) {
   return seen;
 }
 
-test('destacamentos saem a partir de FIRST_SPAWN, a intervalos sorteados de 3 a 9 dias', () => {
+test('o primeiro destacamento sai entre FIRST_SPAWN_MIN e FIRST_SPAWN, os seguintes a intervalos sorteados de 3 a 9 dias', () => {
   const seen = spawns(11);
   assert.ok(seen.length >= 15, `${seen.length} destacamentos em 200 dias`);
-  assert.ok(seen[0].day >= FIRST_SPAWN + 1);   // nasce ao passar o dia marcado
+  assert.ok(seen[0].day >= FIRST_SPAWN_MIN + 1 && seen[0].day <= FIRST_SPAWN + 1);   // nasce ao passar o dia marcado (PR #10)
   const gaps = seen.slice(1).map((p, k) => p.day - seen[k].day);
   for (const g of gaps) assert.ok(g >= 3 && g <= 9, `intervalo ${g}`);
   assert.ok(new Set(gaps).size >= 3, 'os intervalos variam');
@@ -254,24 +256,21 @@ test('cooldown suprime encontros e desce 1 por dia', () => {
 });
 
 test('recrutar numa aldeia', () => {
-  const s = fresh(), v = find(s, 'aldeia');
+  const s = fresh(), v = souto(s);
   at(s, v); s.fame = 35; s.arms = 10;
-  const men = s.men, gain = recruitsFrom(35);
+  const men = s.men, gain = 3;   // amiga: até um quarto dos 15 jovens (a fama não conta)
   stepDay(s, { kind: 'recrutar', id: v.id }, rng());
   assert.equal(s.men, men + gain);
   assert.equal(s.arms, 10 - gain);
   assert.equal(s.villages[v.id].recruitedDay, 0);
   const m2 = s.men;
   stepDay(s, { kind: 'recrutar', id: v.id }, rng());
-  assert.equal(s.men, m2); // < 10 dias
-  s.day = 10;
-  stepDay(s, { kind: 'recrutar', id: v.id }, rng());
-  assert.equal(s.men, m2 + gain);
+  assert.equal(s.men, m2 + gain); // sem espera fixa: volta a dar logo no dia seguinte
 });
 
 test('recrutar não excede as armas', () => {
-  const s = fresh(), v = find(s, 'aldeia');
-  at(s, v); s.fame = 80; s.arms = 2;
+  const s = fresh(), v = souto(s);
+  at(s, v); s.arms = 2;
   const men = s.men;
   stepDay(s, { kind: 'recrutar', id: v.id }, rng());
   assert.equal(s.men, men + 2);
@@ -386,7 +385,7 @@ test('defesa: aldeia queimada, party longe ou escondida não dão defesa', () =>
 
 // Fix wave: recrutar sem armas não gasta a vez; um posto só se ataca uma vez por campanha.
 test('recrutar sem armas: evento próprio e a aldeia fica disponível', () => {
-  const s = fresh(), v = find(s, 'aldeia');
+  const s = fresh(), v = souto(s);
   at(s, v); s.arms = 0;
   const men = s.men, r = stepDay(s, { kind: 'recrutar', id: v.id }, rng());
   assert.deepEqual(r.events.filter(e => e.type === 'sem-armas'), [{ type: 'sem-armas', id: v.id }]);

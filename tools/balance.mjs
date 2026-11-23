@@ -9,6 +9,8 @@ import { createFlow } from '../src/campaign/flow.js';
 import { YEAR_DAYS } from '../src/campaign/clock.js';
 import { foodPerDay } from '../src/campaign/state.js';
 import { makeRng } from '../src/campaign/rng.js';
+import { COMMUNITY_IDS, recruitLimit, communityAt, bandOrigins, diag } from '../src/campaign/communities.js';
+import { writeFileSync, mkdirSync } from 'node:fs';
 import { HELP_GAP } from '../src/campaign/simulation.js';
 import { ensureDoctrine, sectorOf, SECTORS } from '../src/campaign/doctrine.js';
 
@@ -54,9 +56,10 @@ function survive(s, mem, defend = true) {
     const c = nearest(set.filter(x => x.kind === 'castro' && !(s.help && x.id in s.help && s.day - s.help[x.id] < HELP_GAP)), party);
     if (c) return go(c, { kind: 'pedir-ajuda', id: c.id });
   }
-  // 3) recrutar de 10 em 10 dias, se houver armas
+  // 3) recrutar de 10 em 10 dias (cadência do bot), se houver armas, numa comunidade do vale que dê homens
   if (s.arms > 0 && s.day - mem.lastRecruit >= 10) {
-    const v = nearest(live.filter(x => s.day - s.villages[x.id].recruitedDay >= 10), party);
+    const givers = COMMUNITY_IDS.map(id => s.communities[id]).filter(c => recruitLimit(c, s.arms).limit > 0);
+    const v = nearest(set.filter(x => givers.some(c => c.settlement === x.id) && !s.villages[x.id]?.burnt), party);
     if (v) { if (at(v)) mem.lastRecruit = s.day; return go(v, { kind: 'recrutar', id: v.id }); }
   }
   // 4) uma patrulha a ameaçar uma aldeia perto: vai defendê-la
@@ -117,23 +120,57 @@ function play(seed, bot = 'atual', off = false) {
   let burnt30 = 0, guard = 0;
   const losses = [];   // { day, fome, batalha } homens perdidos, para atribuir a causa da ruína
   const types = {};
+  const rows = [];   // diagnóstico de recrutamento: uma linha por aldeia e por dia em que algo aconteceu
+  const gains = { recruits: 0, lossBattle: 0, lossOther: 0 };
+  const eq = { rec: 0, bat: 0, fome: 0, help: 0 };   // equação de homens (comparável com versões sem comunidades)
+  const snapshot = () => Object.fromEntries(COMMUNITY_IDS.map(id => [id, s.communities[id].trust]));
+  /** Junta o que aconteceu hoje a uma aldeia numa só linha (recrutas, recusa e motivo, limite efetivo, baixas, confiança). */
+  const record = (day, pre, events, lost) => {
+    const by = {}, row = id => (by[id] ??= { bot, off, seed, day, village: id, recruits: 0, refused: 0, why: '', closed: '', limit: '', byPosture: '', avail: '', lossBattle: 0, lossOther: 0, trust: '' });
+    for (const e of events) {
+      const id = COMMUNITY_IDS.find(k => s.communities[k].settlement === e.id);
+      if (e.type === 'recrutou' && id) { row(id).recruits += e.men; gains.recruits += e.men; }
+      if ((e.type === 'recrutar-recusado' || e.type === 'sem-armas') && e.id) { const r = row(id ?? 'fora-do-vale'); r.refused++; r.why = e.type === 'sem-armas' ? 'sem-armas' : e.why; }
+    }
+    if (pre.lim && pre.id) Object.assign(row(pre.id), { limit: pre.lim.limit, byPosture: pre.lim.byPosture, avail: pre.lim.avail });
+    for (const l of lost) for (const [k, n] of Object.entries(l.out)) {
+      row(k)[l.grieve ? 'lossBattle' : 'lossOther'] += n; gains[l.grieve ? 'lossBattle' : 'lossOther'] += n;
+    }
+    for (const r of Object.values(by)) if (r.village in s.communities) r.trust = s.communities[r.village].trust;
+    for (const id of COMMUNITY_IDS) if (s.communities[id].trust !== pre.trust[id] && !by[id]) row(id).trust = s.communities[id].trust;   // só a confiança mudou
+    rows.push(...Object.values(by));
+  };
   while (flow.phase !== 'fim' && guard++ < 2000) {
     if (flow.phase === 'batalha') {
+      diag.loss = [];
+      const preB = { trust: snapshot() };
       types[flow.battle.type] = (types[flow.battle.type] || 0) + 1;
       if (flow.battle.type === 'emboscada' || flow.battle.type === 'assalto-coluna') tally.ambushes++;
       const m0 = s.men;
-      flow.finishBattle(fight(flow.battle, rng).result);
+      const evB = flow.finishBattle(fight(flow.battle, rng).result);
+      record(s.day, preB, evB.events ?? [], diag.loss); diag.loss = null;
       losses.push({ day: s.day, batalha: m0 - s.men, fome: 0 });
-      tally.lostInBattle += Math.max(0, m0 - s.men);
+      tally.lostInBattle += Math.max(0, m0 - s.men); eq.bat += Math.max(0, m0 - s.men);
       continue;
     }
     const o = policy(s, mem);
+    if (s.arms > 0 && s.day - mem.lastRecruit >= 10) for (const id of COMMUNITY_IDS) {   // o robô quer recrutar: quem estaria fechado hoje, e porquê
+      const l = recruitLimit(s.communities[id], s.arms);
+      if (l.limit === 0) rows.push({ bot, off, seed, day: s.day, village: id, recruits: 0, refused: 0, why: '', closed: l.why, limit: 0, byPosture: l.byPosture, avail: l.avail, lossBattle: 0, lossOther: 0, trust: s.communities[id].trust });
+    }
+    const cm = o.kind === 'recrutar' ? communityAt(s, o.id) : null;
+    const pre = { trust: snapshot(), id: cm?.id, lim: cm ? recruitLimit(cm, s.arms) : null };
+    diag.loss = [];
+    const day0 = s.day;
     let { events, refused } = flow.order(o);
     // uma ordem recusada já não gasta o dia: o robô fica nesse dia acampado, como antes acontecia
     if (refused) events = [...events, ...flow.order({ kind: 'acampar' }).events];
+    record(day0, pre, events, diag.loss); diag.loss = null;
     if (process.env.TRACE == seed) console.log(s.day, o.kind, o.id || '', `men ${s.men} food ${s.food} arms ${s.arms} fame ${s.fame}`, s.praetor ? `pd ${Math.round(dist(s.praetor, s.party))}` : '', events.map(e => e.type).join(','));
     for (const e of events) {
-      if (e.type === 'fome') losses.push({ day: s.day, fome: e.mortos, batalha: 0 });
+      if (e.type === 'fome') { losses.push({ day: s.day, fome: e.mortos, batalha: 0 }); eq.fome += e.mortos; }
+      if (e.type === 'recrutou') eq.rec += e.men;
+      if (e.type === 'ajuda') eq.help += e.men;
       if (e.type === 'emboscada-descoberta') tally.spotted++;
       if (e.type === 'doutrina' && e.on) tally.counters[e.id] = (tally.counters[e.id] || 0) + 1;
       if (e.type === 'cacadores') tally.hunters++;
@@ -144,7 +181,8 @@ function play(seed, bot = 'atual', off = false) {
   const recent = losses.filter(l => l.day > s.day - 30), sum = k => recent.reduce((a, l) => a + Math.max(0, l[k]), 0);
   const cause = s.over === 'vitoria' ? (s.decisivaWon ? 'decisiva' : 'ano')
     : s.day >= YEAR_DAYS ? 'ano' : s.fame <= 0 ? 'fama' : sum('fome') > sum('batalha') ? 'fome' : 'homens';
-  return { seed, days: Math.min(s.day, YEAR_DAYS), battles: s.battles || 0, result: s.over, cause, burnt, burnt30, men: s.men, fame: s.fame, types, ...tally };
+  return { seed, days: Math.min(s.day, YEAR_DAYS), battles: s.battles || 0, result: s.over, cause, burnt, burnt30, men: s.men, fame: s.fame, types, ...tally, rows, gains, eq,
+    trustEnd: Object.fromEntries(COMMUNITY_IDS.map(id => [id, s.communities[id].trust])), away: Object.fromEntries(COMMUNITY_IDS.map(id => [id, s.communities[id].away])) };
 }
 
 const pad = (v, n) => String(v).padStart(n);
@@ -184,4 +222,35 @@ console.log('robô                            vitórias  dias(med)  batalhas(med
 for (const [k, rows] of Object.entries(runs)) {
   const m = summary(rows), c = m.counters;
   console.log(`${k.padEnd(31)} ${pad(`${m.won}/${SEEDS}`, 8)}  ${pad(m.medDays, 9)}  ${pad(m.medBattles, 13)}  ${pad((100 * m.ambushShare).toFixed(0) + '%', 11)}  ${pad(m.spotted.toFixed(1), 11)}  ${pad(m.lossPerBattle.toFixed(2), 14)}  ${pad(m.menEnd.toFixed(1), 13)}  ${pad(m.hunters.toFixed(1), 9)}  ${pad(c.batedores, 19)} ${pad(c.escolta, 7)} ${pad(c.forca, 5)} ${pad(c.guarnicao, 9)} ${pad(c.cacadores, 9)}`);
+}
+
+// 3) diagnóstico de recrutamento: porque é que o bando chega ao fim com os homens que chega
+const COLS = ['bot', 'off', 'seed', 'day', 'village', 'recruits', 'refused', 'why', 'closed', 'limit', 'byPosture', 'avail', 'lossBattle', 'lossOther', 'trust'];
+const f1 = v => (Math.round(v * 10) / 10).toFixed(1);
+function diagnostics(botRuns) {
+  const out = [];
+  for (const [name, rows] of Object.entries(botRuns)) {
+    const R = rows.flatMap(r => r.rows), n = rows.length, sum = (f, xs = R) => xs.reduce((t, x) => t + f(x), 0);
+    const g = k => mean(rows.map(r => r.gains[k]));
+    out.push(`### ${name} (${n} jogos; médias por jogo)`, '',
+      `Homens: 14 iniciais + ${f1(mean(rows.map(r => r.eq.rec)))} recrutados − ${f1(mean(rows.map(r => r.eq.bat)))} mortos em batalha − ${f1(mean(rows.map(r => r.eq.fome)))} de fome + ${f1(mean(rows.map(r => r.men - (14 + r.eq.rec - r.eq.bat - r.eq.fome))))} (ajuda dos castros ${f1(mean(rows.map(r => r.eq.help)))}, voluntários e traidores) = ${f1(mean(rows.map(r => r.men)))} no fim.`, '',
+      '| aldeia | visitas c/ recrutas | recrutas | dias fechada quando o robô quis recrutar (postura/jovens/sem-armas) | limite efetivo médio nas visitas | baixas (batalha/outras) | confiança final |', '|---|---|---|---|---|---|---|');
+    for (const id of [...COMMUNITY_IDS, 'sem']) {
+      const A = R.filter(x => x.village === id), v = A.filter(x => x.recruits > 0), why = w => A.filter(x => x.closed === w).length / n;
+      const lim = A.filter(x => x.limit !== '' && x.recruits > 0);
+      out.push(`| ${id === 'sem' ? 'sem aldeia (bando inicial, ajudas)' : id} | ${f1(v.length / n)} | ${f1(sum(x => x.recruits, A) / n)} | ${f1(why('postura'))}/${f1(why('jovens'))}/${f1(why('sem-armas'))} | ${lim.length ? f1(mean(lim.map(x => x.limit))) : '—'} | ${f1(sum(x => x.lossBattle, A) / n)}/${f1(sum(x => x.lossOther, A) / n)} | ${id === 'sem' ? '—' : f1(mean(rows.map(r => r.trustEnd[id])))} |`);
+    }
+    out.push('');
+  }
+  return out.join('\n');
+}
+const botRuns = { 'atual': runs.atual, 'repetidor': runs.repetidor, 'variado': runs.variado };
+const report = diagnostics(botRuns);
+console.log('\nDiagnóstico de recrutamento (ver BALANCE_DIAG=<pasta> para as linhas por aldeia e dia)\n\n' + report);
+if (process.env.BALANCE_DIAG) {
+  const dir = process.env.BALANCE_DIAG; mkdirSync(dir, { recursive: true });
+  const all = Object.values(runs).flat().flatMap(r => r.rows);
+  writeFileSync(`${dir}/recrutamento-dias.csv`, [COLS.join(','), ...all.map(r => COLS.map(c => r[c]).join(','))].join('\n') + '\n');
+  writeFileSync(`${dir}/recrutamento-resumo.md`, `# Diagnóstico de recrutamento (${SEEDS} sementes)\n\n${report}\n`);
+  console.log(`\nEscrito em ${dir}/: recrutamento-dias.csv (${all.length} linhas) e recrutamento-resumo.md`);
 }

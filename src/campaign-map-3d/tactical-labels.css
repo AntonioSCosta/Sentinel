@@ -1,0 +1,13 @@
+.map-leaders { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.map-leaders line { stroke: #e2d9b7; stroke-width: 1; stroke-opacity: 0.72; }
+:is(#campaign-map-3d, #map-labels) .map-label:is(.party-label, .rumor-zone, .scouted-zone) {
+  display: inline-flex; align-items: center; gap: 4px; pointer-events: none; letter-spacing: normal;
+}
+:is(#campaign-map-3d, #map-labels) .map-label.party-label {
+  background: #332d17; color: #fff1b0; border-color: #ebce76; font-weight: 700;
+}
+:is(#campaign-map-3d, #map-labels) .map-label.rumor-zone { color: #ffd7a1; border-color: #ffbc75; border-style: dashed; }
+:is(#campaign-map-3d, #map-labels) .map-label.scouted-zone { color: #c6f0d4; border-color: #a6e2bf; }
+.map-label.party-label::before { content: '◆'; }
+.map-label.rumor-zone::before { content: '?'; }
+.map-label.scouted-zone::before { content: '✓'; }

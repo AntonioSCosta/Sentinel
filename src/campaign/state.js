@@ -1,28 +1,29 @@
 // Estado da campanha: recursos, ruína e gravação. Módulo puro (sem DOM nem Three.js).
 import { generateWorld } from './worldgen.js';
 import { validDoctrine, validHunter } from './doctrine.js';
+import { validIntel } from './intel.js';
+import { newCommunities, validCommunities, loseMen } from './communities.js';
+import { validRome } from './rome.js';
 
 /** Tabela de equilíbrio, afinada na Task 18 com `npm run balance` (ver a spec, secção 9). */
 export const START = { men: 14, food: 60, arms: 15, fame: 20 };
 export const MEN_PER_FOOD = 12;
-export const FAME_PER_RECRUIT = 15;
 
 /** Comida gasta por dia: 1 por cada MEN_PER_FOOD homens (arredondado para cima), mínimo 1. */
 export const foodPerDay = men => Math.max(1, Math.ceil(men / MEN_PER_FOOD));
-/** Recrutas por visita a uma aldeia. */
-export const recruitsFrom = fame => Math.floor(fame / FAME_PER_RECRUIT) + 1;
 
 export function newCampaign(seed) {
   const world = generateWorld(seed);
   const villages = {};
   for (const s of world.settlements) if (s.kind === 'aldeia') villages[s.id] = { burnt: false, recruitedDay: -999 };
   return { v: 1, seed, day: 0, ...START, party: { x: world.start.x, y: world.start.y }, world,
-    villages, praetor: null, patrols: [], done: [], over: null, cooldown: 0 };
+    villages, communities: newCommunities(world), praetor: null, patrols: [], done: [], over: null, cooldown: 0 };
 }
 
-/** Subtrai cada campo dado, saturando em 0. */
+/** Subtrai cada campo dado, saturando em 0. Os homens perdidos (em batalha) saem das aldeias de origem, que choram os seus mortos (communities.loseMen). */
 export function spend(state, cost) {
-  for (const k of ['men', 'food', 'arms', 'fame']) if (cost[k] !== undefined) state[k] = Math.max(0, state[k] - cost[k]);
+  if (cost.men !== undefined) loseMen(state, cost.men, { grieve: true });
+  for (const k of ['food', 'arms', 'fame']) if (cost[k] !== undefined) state[k] = Math.max(0, state[k] - cost[k]);
   return state;
 }
 
@@ -33,6 +34,7 @@ export function checkRuin(state) {
   return false;
 }
 
+const sumAway = o => Object.values(o.communities).reduce((n, c) => n + c.away, 0);
 export const serialize = state => JSON.stringify(state);
 
 const isObj = x => !!x && typeof x === 'object' && !Array.isArray(x);
@@ -55,7 +57,10 @@ export function deserialize(text) {
   if ('decisivaWon' in o && typeof o.decisivaWon !== 'boolean') return null;
   if ('doctrine' in o && !validDoctrine(o.doctrine)) return null;   // Roma aprende (opcional: gravações antigas não a têm)
   if (!o.patrols.every(validHunter)) return null;
+  if ('intel' in o && !validIntel(o.intel)) return null;   // o que o jogador sabe (opcional: gravações antigas não o têm)
   if (!isObj(o.world) || !isObj(o.world.start) || !Array.isArray(o.world.settlements)) return null;
   if (!o.world.settlements.every(s => isObj(s) && typeof s.id === 'string' && num(s.x) && num(s.y))) return null;
+  if ('communities' in o && !(validCommunities(o.communities, o.world) && sumAway(o) <= o.men)) return null;   // as cinco comunidades do vale, ligadas ao mundo, e os homens delas no bando não passam do bando (opcional: gravações antigas não as têm)
+  if ('rome' in o && !validRome(o.rome)) return null;   // atenção de Roma, suspeitas e denúncias (opcional: gravações antigas não o têm)
   return o;
 }

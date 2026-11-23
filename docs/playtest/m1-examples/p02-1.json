@@ -1,0 +1,16 @@
+{
+  "version": "m1-proto-1",
+  "seed": 2,
+  "outcome": "escapou",
+  "time": 92.5,
+  "combatSeconds": 0,
+  "signalAt": null,
+  "signalColumnProgress": null,
+  "orders": 1,
+  "refusedOrders": 0,
+  "discovered": [],
+  "lusitanians": { "start": 15, "alive": 15, "dead": 0, "fled": 0, "withdrawn": 0, "escaped": 0 },
+  "romans": { "start": 13, "alive": 0, "dead": 0, "fled": 0, "withdrawn": 0, "escaped": 13 },
+  "playerId": "P02",
+  "battleNumber": 1
+}

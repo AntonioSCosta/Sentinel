@@ -1,0 +1,29 @@
+{
+  "version": "m1.1-proto-2",
+  "seed": 1,
+  "columnOrder": 0,
+  "outcome": "vitoria",
+  "time": 88,
+  "combatSeconds": 30,
+  "signalAt": 58,
+  "signalColumnProgress": 0.6,
+  "orders": 6,
+  "refusedOrders": 0,
+  "fallBacks": 2,
+  "flanks": { "lusitanos": 4, "romanos": 1 },
+  "discovered": [],
+  "romanResponses": [{ "type": "persegue", "group": "vanguarda", "t": 63, "target": "lobos" }],
+  "keyMoments": [{ "code": "signal", "percent": 60, "count": 3 }],
+  "lusitanians": { "start": 15, "alive": 12, "dead": 3, "fled": 0, "withdrawn": 0, "escaped": 0 },
+  "romans": { "start": 13, "alive": 0, "dead": 7, "fled": 6, "withdrawn": 0, "escaped": 0 },
+  "playerId": "P01",
+  "battleNumber": 2,
+  "feedback": {
+    "wouldPlayAgain": "no",
+    "controlsClarity": 4,
+    "combatClarity": 3,
+    "ambushSatisfaction": 4,
+    "tacticalDecisions": 4,
+    "notes": "Ficou satisfeito com a segunda tentativa e preferiu terminar."
+  }
+}

@@ -13,7 +13,7 @@ const { createGame } = await import('../src/game.js');
 let rapier = null;
 if (process.env.SMOKE_RAPIER) { rapier = (await import('@dimforge/rapier3d-compat')).default; await rapier.init(); }
 const mem = new Map(), storage = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, String(v)), removeItem: k => mem.delete(k), clear: () => mem.clear() };
-const G = await createGame({ storage, THREE, renderer, canvas: renderer.domElement, document: doc, window: win, rapier });
+const G = await createGame({ legacyCampaignMapForTests: true, storage, THREE, renderer, canvas: renderer.domElement, document: doc, window: win, rapier });
 console.log('physics:', G.physicsOk ? 'rapier' : 'simple');
 
 let god = false;

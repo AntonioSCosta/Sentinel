@@ -213,6 +213,50 @@ Roma lembra-se de como o bando combate e responde (`src/campaign/doctrine.js`). 
 
 **Leitura.** As contramedidas custam mais ao repetidor (−5 vitórias, −18 dias, −5 pontos de emboscadas, 0,7 emboscadas descobertas por ano) do que ao variado (−3 vitórias, 0 dias, −1 ponto, nenhuma descoberta). A diferença existe, mas é pequena: estes robôs combatem pouco (mediana 8–10 batalhas) e a perseguição do pretor pesa mais do que a tática. O variado fica abaixo do repetidor em valor absoluto porque deixa passar colunas e marcha mais; isso é custo da sua própria política, não de Roma. Para o robô «atual», a campanha com contramedidas fica mais dura: 19/60 vitórias, contra 26/60 na tabela anterior desta secção (versão antes de «Roma aprende») e 28/60 anos na faixa de 12–25 batalhas. O 31/60 «sem contramedidas» não é a versão anterior: mantém a pressão romana e o novo calendário das colunas. Afinações feitas: memória 40 → 60 dias, batedores e escolta 2,5/2 → 1,8, força +4 → +3 homens, caçadores 6 → 7 de pressão. Com 20 sementes os números variam muito (atual 2/20 a 5/20).
 
+### Informação e reconhecimento (Mapa de Campanha 2.0, fase 1)
+
+O jogador deixa de ver todas as forças romanas. A simulação continua a usar as posições reais (`state.patrols`, `state.praetor`); o mapa só desenha `intelView(state)`, feito apenas de `state.intel` (`src/campaign/intel.js`).
+
+| Estado | Quando | No mapa |
+|---|---|---|
+| Confirmada | à vista do bando hoje (≤ 150; o pretor vê o bando a 140) ou vista hoje pelos batedores | figura normal |
+| Estimada | vista há 1–8 dias | figura esbatida na última posição, zona tracejada que cresce 35 por dia (22 para o pretor, máx. 150), «há N dias» |
+| Relato | notícia de uma aldeia, rumor ou fumo, até 6 dias | zona tracejada com «?»; nunca a posição exata |
+| Desconhecida | o resto | nada |
+
+**Relatos.** Aldeias por queimar e castros dão por uma força a ≤ 50 (≤ 90 para o exército do pretor): 50 % por dia, no máximo um relato por força de 3 em 3 dias, zona de raio 50 à volta da povoação (90 quando é o exército do pretor, que se vê de mais longe). O mensageiro demora um dia por cada 150 de caminho (máx. 3). Rumores: 6 % por dia (20 % para o pretor), zona de raio 130, pouco fiáveis, chegam no dia seguinte. Uma aldeia queimada pelo pretor dá um relato de fumo. No dia 0 sabe-se em que posto o pretor junta o exército. Nesta fase os relatos nunca mentem: a fiabilidade só mede a largura da zona. O sorteio é próprio (semente e dia), por isso o balance não muda.
+
+**Reconhecer.** Ordem nova: 2 batedores vão a um ponto até 250 do bando e voltam no fim do dia; confirmam o que há a ≤ 110 desse ponto, ou dizem que a zona parece livre. Gasta o dia (o bando fica acampado) e exige 3 homens. Recusada, não gasta nada. Não há risco de captura nesta fase.
+
+### Qualidade da campanha (PR #10)
+
+Origem: playtest real da `main` em `5f0b8ed` (6/10). Regras novas:
+
+- **Esperar e esconder respondem sempre no diário** (evento `espera`): se se está na estrada (sem estrada não há emboscada), o que está à vista (só forças confirmadas pelo jogador), o pretor visto a menos de dois dias e a comida gasta. A mesma linha em dias seguidos conta-se («(3.º dia)») em vez de se repetir. Não se escreve quando o dia acaba em batalha.
+- **Avistamento** (evento `avistamento`): quando uma força entra na vista do bando (ontem não se via): rumo a partir do bando, distância em dias, efetivo estimado e para onde segue. Não se escreve para o que os batedores trouxeram (já tem linha) nem a menos de 30 (é batalha).
+- **Emboscada contra defesa de aldeia.** À espera na estrada, a coluna que passa à frente do bando é emboscada antes de chegar à aldeia. A defesa da aldeia só passa à frente quando é o pretor a chegar à aldeia (é ele quem queima) ou quando a emboscada é descoberta. Sem esperar, tudo como antes.
+- **Painel de batalha:** a especificação leva `foeKind` e `context` (`emboscada`, `descoberta`, `fora-estrada`, `encontro`, `cacadores`, `aldeia`, `pretor`, `ataque`); o painel diz quem é, quantos são, porque se luta e o que se perde.
+- **Recusar o combate** (`flow.withdraw`, `battles.withdrawFrom`): só nos combates que o bando não escolheu (campo aberto, defesa de aldeia, decisiva) e com uma serra a ≤ 80. O bando vai para a serra, perde a retaguarda (`WITHDRAW_LOSS`: 10 % dos homens em campo aberto, 20 % na decisiva, mínimo 1; 0 na defesa de aldeia) e paga o custo de uma retirada (5 de comida, 3 de fama). Na defesa de aldeia, a aldeia arde (mais 3 de fama). Na decisiva o pretor reagrupa 6 dias. Não conta como batalha nem ensina Roma. Emboscadas, assaltos e ataques a postos não se recusam: foste tu que os escolheste.
+- **Relatos:** estimativa de efetivos (`estimateMen`: exato até 7, arredondado a 5 daí para cima) e rumo (8 pontos) quando a fonte os pode saber: aldeias e batedores sim, rumores não. Para o pretor, o rumo só sai de dois avistamentos seguidos. A lista mostra os relatos recentes; os antigos (mais de 6 dias) vão para um arquivo a um clique, sem se apagar nenhum. O painel passou para o canto superior esquerdo, mais pequeno, com uma legenda dos estados. Rumores com pontilhado largo; notas das zonas não se sobrepõem (descem uma linha ou ficam só na lista).
+- **Início da campanha:** o primeiro destacamento sai num dia sorteado entre 2 e 6 (`FIRST_SPAWN_MIN`..`FIRST_SPAWN`) e, metade das vezes (`FIRST_NEAR`), do posto mais perto do bando. Sorteio próprio pela semente: não mexe nos sorteios do dia. Não há evento garantido.
+
+Medição do início (200 sementes, 20 dias; «oportunidade» = uma coluna ao alcance dos batedores, um relato ou zona, ou uma força à vista; não conta o pretor):
+
+| Robô | Sem oportunidade até ao dia 10, antes | depois | até ao dia 15, antes | depois |
+|---|---|---|---|---|
+| Acampado no início | 122/200 | 54/200 | 17/200 | 5/200 |
+| Vai para a estrada e espera | 105/200 | 46/200 | 13/200 | 4/200 |
+
+Antes, a primeira oportunidade caía quase sempre entre os dias 7 e 15 (mediana 12–13) em todas as sementes: o problema era estrutural (o primeiro destacamento saía sempre no dia 6 e levava cerca de uma semana a chegar perto). Depois, a mediana é o dia 9–10, com dispersão maior.
+
+Equilíbrio (`npm run balance`, 200 sementes, `main` → este PR): robô atual 64 → 60 vitórias; atual sem contramedidas 86 → 68; repetidor 50 → 54, com emboscadas de 18 % para 23 % das batalhas. A primeira mudança (o início) explica a descida do robô atual; a segunda (emboscada antes da defesa) explica a subida das emboscadas do repetidor. Com 60 sementes o robô atual não muda com a segunda.
+
+**Painéis «Lugares» e «Relatos».** Podem estar abertos ao mesmo tempo: ficam numa coluna única à esquerda (`#mpanels`, flex vertical), os relatos com a altura natural (máx. 260 px ou 40 % da altura) e os lugares com o resto, sem se sobreporem entre si, a `#mctx` nem às barras. Verificado em Chrome real por `npm run e2e:paineis` (1280×800, 1024×600, 844×390). Em ecrãs baixos (altura ≤ 480 px) os painéis ficam lado a lado, cada um com toda a altura (250 px a 844×390), e o diário (`#mlog`) fica por baixo, sem aparecer entre eles.
+
+Validação no browser (evidência 07–09): a mesma patrulha junto da Aldeia da Azinheira dá «Defesa da aldeia» (com «Recusar e recuar»; recusar queima a aldeia e custa 6 de fama: 3 da aldeia e 3 da retirada) se o bando acampa, e «Emboscada» (sem recuo) se espera na estrada.
+
+**Fica para outra tarefa (equilíbrio do combate):** no playtest, 6 das 7 vitórias foram ganhas só com a ordem de carga e o escudo levantado, sem baixas. Se qualquer coluna pequena é vitória certa, saber o efetivo do inimigo deixa de pesar. Não se mexeu no combate neste PR.
+
 ## 10. Lacunas que o construtor encontrou (decididas por mim)
 
 7. **Quando é que o pretor dá batalha?** Quando a coluna dele chega ao teu ponto no mapa, ou quando tu o procuras. Não há batalha decisiva «agendada»: a que decide o ano é aquela em que o pretor te apanha em campo aberto, ou em que tu o apanhas numa emboscada.

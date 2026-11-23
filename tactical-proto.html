@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Ambush — Sentinel prototype</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./vendor/fonts/fonts.css">
+<style>
+/*
+  VOICE: sober, tense, readable at a glance — a war table at dusk, not a tech demo.
+  IDEA: the battlefield is the screen; the HUD is a thin leather-and-bronze frame around it.
+  PICTURE: the 3D valley fills everything; panels float at the edges and never cover the road.
+  COLOUR and TYPE: dark umber panels, ivory text, bronze accents, Roman red only for Rome; Cinzel for titles, system UI for numbers.
+  LAYOUT: top bar (title · column progress · settings), bottom bar (bands · orders · signal · time), centre left free.
+*/
+:root { --panel: rgba(28, 22, 16, .86); --edge: #7c6643; --ink: #f1e6c8; --dim: #b9a986; --bronze: #d8b46a; --rome: #d8483c; --ok: #9fc38a; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #1a150f; color: var(--ink); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: default; touch-action: none; }
+#labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+.panel { background: var(--panel); border: 1px solid var(--edge); border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+button, select { font: inherit; color: var(--ink); background: #3a2d1f; border: 1px solid var(--edge); border-radius: 6px; padding: 7px 12px; cursor: pointer; min-height: 36px; }
+button:hover:not(:disabled) { background: #4c3b28; border-color: var(--bronze); }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--bronze); outline-offset: 2px; }
+button:disabled { opacity: .45; cursor: default; }
+button.on { background: #6b5330; border-color: var(--bronze); }
+kbd { font: 11px ui-monospace, monospace; color: var(--dim); border: 1px solid #5c4a32; border-radius: 3px; padding: 0 4px; margin-left: 6px; }
+
+#top { position: fixed; left: 12px; right: 12px; top: 10px; display: flex; align-items: center; gap: 14px; padding: 8px 12px; }
+#top h1 { font: 700 20px/1 Cinzel, Georgia, serif; margin: 0; letter-spacing: .03em; color: var(--bronze); white-space: nowrap; }
+#top .sub { font-size: 12px; color: var(--dim); white-space: nowrap; }
+#phase { font: 600 13px system-ui; color: var(--ink); white-space: nowrap; }
+#march { font-size: 12px; color: var(--dim); white-space: nowrap; padding: 2px 8px; border: 1px solid #5c4a32; border-radius: 10px; }
+#march[data-mode="halted"] { color: #ffd59a; border-color: #a7834a; }
+#march[data-mode="fighting"] { color: #ffb4a6; border-color: #8f3a2c; }
+#progress { flex: 1; min-width: 120px; position: relative; height: 22px; }
+#progress .track { position: absolute; left: 0; right: 0; top: 10px; height: 3px; background: #6b5a3c; border-radius: 2px; }
+#progress .done { position: absolute; left: 0; top: 10px; height: 3px; background: var(--rome); border-radius: 2px; width: 0; }
+#progress .mark { position: absolute; top: 3px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: var(--rome); border: 2px solid #f3d1c8; left: 0; transition: left .2s linear; }
+#progress .sig { position: absolute; top: 0; width: 2px; height: 22px; background: var(--bronze); display: none; }
+#progress .sig.late { background: #8a7a5e; }
+#progress .label { position: absolute; right: 0; top: -2px; font-size: 11px; color: var(--dim); }
+#top .right { display: flex; gap: 8px; align-items: center; }
+
+#prep { position: fixed; left: 12px; top: 74px; width: min(330px, calc(100vw - 24px)); padding: 14px; }
+#prep p { margin: 0 0 12px; color: var(--ink); }
+#prep .row { display: flex; gap: 8px; }
+#goal { font-weight: 700; color: var(--bronze); }
+#prep-warn { font-size: 13px; color: var(--ok); }
+#prep-warn.bad { color: #ffb19c; }
+#start { background: #7a4f22; border-color: var(--bronze); font-weight: 700; flex: 1; }
+#hint.bad { color: #ffcdbf; border-color: #8f3a2c; }
+#hint { position: fixed; left: 50%; transform: translateX(-50%); bottom: 132px; padding: 6px 12px; font-size: 13px; color: var(--dim); max-width: min(680px, calc(100vw - 24px)); text-align: center; }
+
+#bar { position: fixed; left: 12px; right: 12px; bottom: 10px; display: flex; align-items: center; gap: 10px; padding: 8px 10px; flex-wrap: wrap; }
+#cards { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.card { text-align: left; width: 142px; padding: 6px 8px; display: grid; gap: 2px; background: #2e241a; }
+.card.sel { border-color: var(--bronze); background: #4a3a26; box-shadow: 0 0 0 1px var(--bronze) inset; }
+.card.gone { opacity: .5; }
+.card.threat { border-color: #e2553f; box-shadow: 0 0 0 1px #e2553f inset; animation: threat 0.9s ease-in-out infinite; }
+.card.threat .state { color: #ff9b84; font-weight: 700; }
+.card.exposed .state { color: #ffb19c; }
+.card.exposed:not(.threat) { border-color: #a0573f; }
+@keyframes threat { 50% { background: #4a231b; } }
+#hurt { position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 90px 20px rgba(190, 30, 20, .55); opacity: 0; transition: opacity .25s; }
+#r-why { margin: -6px 0 16px; font-size: 13px; color: var(--ink); }
+#r-why b { color: var(--bronze); font-weight: 700; }
+#r-why ul { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+#r-why li { display: grid; grid-template-columns: 38px 1fr; gap: 6px; }
+#r-why .at { color: var(--dim); font: 600 12px ui-monospace, monospace; padding-top: 1px; }
+.card .n { display: flex; justify-content: space-between; font-weight: 700; }
+.card .role { font-size: 12px; color: var(--dim); font-weight: 400; }
+.pips { letter-spacing: 1px; font-size: 13px; color: var(--ink); }
+.pips i { font-style: normal; color: #6d5d44; }
+.state { font-size: 11px; color: var(--bronze); min-height: 15px; }
+#orders { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+#orders button:not(#signal) { padding: 7px 10px; }
+#signal { font: 700 17px Cinzel, Georgia, serif; letter-spacing: .04em; padding: 10px 22px; background: #8f2d1c; border-color: #e0a36b; min-height: 52px; }
+#signal.ready { animation: pulse 1.6s ease-in-out infinite; }
+#signal.late { background: #5a3326; border-color: #8a6a4e; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(224,163,107,.25); } }
+#time { display: flex; gap: 4px; align-items: center; }
+#clock { font: 600 14px ui-monospace, monospace; color: var(--dim); min-width: 52px; text-align: right; }
+
+#banner { position: fixed; left: 50%; top: 22%; transform: translate(-50%, -50%); font: 700 clamp(28px, 5vw, 56px)/1.1 Cinzel, Georgia, serif; color: #f6e2b0;
+  text-shadow: 0 3px 18px rgba(0,0,0,.7); pointer-events: none; opacity: 0; transition: opacity .25s; text-align: center; white-space: nowrap; }
+#banner.show { opacity: 1; }
+#banner.rome { color: #ffb4a6; }
+#flash { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(circle, rgba(255,226,170,.0) 30%, rgba(160,40,20,.55) 100%); opacity: 0; transition: opacity .6s; }
+#feed { position: fixed; left: 12px; bottom: 132px; display: grid; gap: 3px; pointer-events: none; max-width: 300px; }
+#feed div { background: rgba(28,22,16,.72); padding: 3px 8px; border-radius: 4px; font-size: 12px; color: var(--ink); animation: fade 6s forwards; }
+@keyframes fade { 0%, 75% { opacity: 1; } 100% { opacity: 0; } }
+
+.lbl { position: absolute; transform: translate(-50%, -100%); text-align: center; white-space: nowrap; font-size: 12px; line-height: 1.2; text-shadow: 0 1px 3px #000, 0 0 2px #000; }
+.lbl b { font-weight: 700; }
+.lbl .p { letter-spacing: 1px; font-size: 10px; }
+.lbl.danger b { color: #ff9b84; }
+.lbl.danger .s { color: #ffb19c; font-weight: 700; }
+.lbl.fight { font-size: 11px; }
+#leaders { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+#leaders line { stroke: rgba(241, 230, 200, .55); stroke-width: 1; }
+#leaders line.rom { stroke: rgba(255, 180, 166, .45); }
+.lbl .p i { font-style: normal; opacity: .4; }
+.lbl .s { font-size: 11px; color: var(--bronze); }
+.lbl.rom { color: #ffd0c8; }
+.lbl.sel b { color: #ffcf4a; }
+.pop { position: absolute; transform: translate(-50%, -100%); font: 700 18px Cinzel, Georgia, serif; text-shadow: 0 2px 6px #000; animation: rise 1.4s ease-out forwards; pointer-events: none; white-space: nowrap; }
+.pop.ack { color: #f4ead0; font: 600 13px system-ui, sans-serif; }
+.pop.bad { color: #ff9b84; } .pop.good { color: #ffe39a; } .pop.loss { color: #ff7b6b; font-size: 16px; } .pop.kill { color: #f3e3b8; font-size: 15px; }
+@keyframes rise { from { opacity: 1; margin-top: 0; } to { opacity: 0; margin-top: -46px; } }
+.ping { position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px; border: 2px solid #ffcf4a; border-radius: 50%; animation: ping .6s ease-out forwards; }
+@keyframes ping { from { transform: scale(.3); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
+
+#help { position: fixed; right: 12px; top: 74px; width: min(360px, calc(100vw - 24px)); padding: 12px 14px; font-size: 13px; color: var(--ink); }
+#result { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(520px, calc(100vw - 24px)); padding: 22px 24px; }
+#result h2 { font: 700 34px/1.1 Cinzel, Georgia, serif; margin: 0 0 6px; color: var(--bronze); }
+#result p { margin: 0 0 16px; color: var(--ink); }
+#result dl { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; margin: 0 0 18px; }
+#result dt { color: var(--dim); } #result dd { margin: 0; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+#result .row { display: flex; gap: 8px; flex-wrap: wrap; }
+#result .primary { background: #7a4f22; border-color: var(--bronze); font-weight: 700; }
+#r-ver { margin-top: 6px; font: 11px ui-monospace, monospace; color: #8a7a5e; text-align: right; }
+#copy-status { min-height: 18px; margin-top: 10px; font-size: 12px; color: var(--ok); }
+#copy-text { width: 100%; height: 110px; margin-top: 8px; background: #1c160f; color: var(--ink); border: 1px solid var(--edge); font: 11px ui-monospace, monospace; }
+[hidden] { display: none !important; }
+@media (max-width: 760px) { #top .sub, #phase { display: none; } .card { width: calc(50% - 4px); } #hint, #feed { bottom: 210px; } }
+@media (prefers-reduced-motion: reduce) { #signal.ready, .pop, .ping, #feed div, .card.threat { animation: none; } }
+</style>
+<script type="importmap">{"imports":{"three":"./vendor/three/three.module.js"}}</script>
+</head>
+<body>
+<canvas id="view" aria-label="Battlefield"></canvas>
+<div id="labels"></div>
+<div id="flash"></div>
+<div id="hurt"></div>
+<div id="banner"></div>
+
+<header id="top" class="panel">
+  <div><h1 data-t="title">The Ambush</h1><div class="sub"><span data-t="subtitle">Prototype</span> · <span id="seed"></span> · <span id="ver" title="Prototype version"></span></div></div>
+  <div id="phase"></div>
+  <div id="march" hidden></div>
+  <div id="progress" aria-hidden="true"><div class="track"></div><div class="done"></div><div class="sig"></div><div class="mark"></div><div class="label" data-t="progress">Column</div></div>
+  <div class="right">
+    <select id="lang" aria-label="Language"><option value="en">English</option><option value="pt-PT">Português</option></select>
+    <button id="sound" class="on" data-t="sound">Sound</button>
+    <button id="help-btn" data-t="help">Controls</button>
+  </div>
+</header>
+
+<aside id="prep" class="panel">
+  <p id="goal" data-t="prep.goal"></p>
+  <p data-t="prep.hint"></p>
+  <p id="prep-warn" aria-live="polite"></p>
+  <div class="row"><button id="start" data-t="prep.start">Start</button><button id="reset" data-t="prep.reset">Reset</button></div>
+</aside>
+
+<div id="hint" class="panel" hidden></div>
+<div id="feed"></div>
+
+<footer id="bar" class="panel">
+  <div id="cards"></div>
+  <div id="orders">
+    <button id="role"></button>
+    <button id="hold"><span data-t="cmd.hold">Hold</span><kbd>H</kbd></button>
+    <button id="fallback"><span data-t="cmd.fallBack">Fall back (stay)</span><kbd>B</kbd></button>
+    <button id="retreat"><span data-t="cmd.retreat">Leave battle</span><kbd>R</kbd></button>
+    <button id="signal"><span data-t="signal">Signal</span><kbd>Space</kbd></button>
+  </div>
+  <div id="time">
+    <button id="pause" aria-label="Pause">❚❚</button>
+    <button data-speed="1" class="on">1×</button><button data-speed="2">2×</button><button data-speed="4">4×</button>
+    <span id="clock">0:00</span>
+  </div>
+</footer>
+
+<div id="help" class="panel" hidden><b data-t="help">Controls</b><p data-t="help.body"></p></div>
+
+<div id="result" class="panel" hidden role="dialog" aria-modal="true" aria-labelledby="r-title">
+  <h2 id="r-title"></h2>
+  <p id="r-text"></p>
+  <dl id="r-stats"></dl>
+  <div id="r-why"></div>
+  <div class="row">
+    <button id="replay" class="primary" data-t="result.replay">Play again</button>
+    <button id="plan" data-t="result.plan">Change plan</button>
+    <button id="copy" data-t="result.copy">Copy results</button>
+  </div>
+  <div id="copy-status" aria-live="polite"></div>
+  <div id="r-ver"></div>
+  <textarea id="copy-text" readonly hidden></textarea>
+</div>
+
+<script type="module" src="./src/tactical/proto/main.js"></script>
+</body>
+</html>

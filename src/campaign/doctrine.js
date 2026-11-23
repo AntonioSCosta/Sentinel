@@ -31,8 +31,13 @@ const PATTERN = { emboscada: 'emboscada', 'assalto-coluna': 'coluna', 'campo-abe
 export const SECTORS = 4;          // a estrada dividida em troços, para saber se o bando repete o sítio
 export const HALF_LIFE = 60;       // dias para a memória de um padrão cair para metade
 export const ACT_HALF_LIFE = 20;   // dias para a atividade recente cair para metade
-export const FAME_PER_PRESSURE = 25;   // cada 25 de fama vale 1 de pressão: a fama recruta, mas chama Roma
+export const FAME_PER_PRESSURE = 25;   // cada 25 de fama vale 1 de pressão: a fama chama Roma
 export const FIRST_SPAWN = 6;      // o primeiro destacamento sai do posto a partir deste dia
+// O primeiro destacamento sai num dia sorteado entre FIRST_SPAWN_MIN e FIRST_SPAWN e, metade das vezes, do posto
+// mais perto do bando: sem isto o primeiro alvo só chegava perto do bando por volta do dia 12 (PR #10, medido em
+// 200 sementes). Sorteio próprio pela semente: não mexe nos sorteios do dia.
+export const FIRST_SPAWN_MIN = 2;
+export const FIRST_NEAR = 0.5;
 export const HUNT_DAYS = 12, HUNT_SPEED = 32, HUNT_SIGHT = 90, HUNT_GAP = 15, HUNT_MEN = 10;
 
 /**

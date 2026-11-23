@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="map.title">Sentinel · Mapa estratégico 3D</title>
+  <link rel="stylesheet" href="./src/i18n/language.css">
+  <link rel="stylesheet" href="./src/campaign-map-3d/viewer.css">
+  <link rel="stylesheet" href="./src/campaign-map-3d/tactical-labels.css">
+  <script type="importmap">{"imports":{"three":"./vendor/three/three.module.js"}}</script>
+  <script type="module" src="./src/campaign-map-3d/viewer.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Sentinel</div>
+    <span class="divider" aria-hidden="true"></span>
+    <span class="view-name" data-i18n="map.page">Mapa estratégico 3D</span>
+    <form id="seed-form">
+      <label for="seed" data-i18n="map.seed">Seed</label>
+      <input id="seed" name="seed" type="number" step="1" value="1" required>
+      <button type="submit" data-i18n="map.generate">Gerar</button>
+    </form>
+    <label class="file-label"><span data-i18n="map.openSave">Abrir gravação</span> <input id="save-file" type="file" accept=".json,application/json"></label>
+    <label class="language-option" for="viewer-language"><span data-i18n="interface.language">Idioma</span> <select id="viewer-language" data-language><option value="en" lang="en">English</option><option value="pt-PT" lang="pt-PT">Português (Portugal)</option></select></label>
+  </header>
+  <main class="map-frame">
+    <canvas id="map-scene" tabindex="0" aria-label="Mapa estratégico tridimensional. Setas para deslocar, mais e menos para alterar o zoom, Q e E para rodar." data-i18n-aria="map.a11y.canvasViewer"></canvas>
+    <div id="map-labels" aria-label="Locais e forças conhecidas" data-i18n-aria="map.a11y.labels"></div>
+    <aside class="legend" aria-label="Legenda" data-i18n-aria="map.a11y.legend" data-reserve-labels>
+      <h1 data-i18n="map.valley">Vale dos Hermínios</h1>
+      <dl>
+        <div><dt><i class="symbol house"></i><span data-i18n="map.kind.aldeia">Aldeia</span></dt><dd id="aldeia-count"></dd></div>
+        <div><dt><i class="symbol castro"></i><span data-i18n="map.kind.castro">Castro</span></dt><dd id="castro-count"></dd></div>
+        <div><dt><i class="symbol peak"></i><span data-i18n="map.kind.serra">Serra</span></dt><dd id="serra-count"></dd></div>
+        <div><dt><i class="symbol post"></i><span data-i18n="map.kind.posto">Posto romano</span></dt><dd id="posto-count"></dd></div>
+        <div><dt><i class="symbol line road"></i><span data-i18n="map.road">Estrada romana</span></dt></div>
+        <div><dt><i class="symbol line river"></i><span data-i18n="map.river">Rio</span></dt></div>
+        <div><dt><i class="symbol standard"></i><span data-i18n="map.known">Forças conhecidas</span></dt><dd id="known-count"></dd></div>
+        <div><dt><i class="symbol intel-zone"></i><span data-i18n="map.zone">Zona de informação</span></dt></div>
+      </dl>
+    </aside>
+    <div class="map-controls" role="group" aria-label="Controlos da câmara" data-i18n-aria="map.a11y.cameraViewer" data-reserve-labels>
+      <button type="button" id="rotate-left" aria-label="Rodar para a esquerda" data-i18n-aria="map.a11y.left">↶</button>
+      <button type="button" id="rotate-right" aria-label="Rodar para a direita" data-i18n-aria="map.a11y.right">↷</button>
+      <button type="button" id="zoom-out" aria-label="Afastar" data-i18n-aria="map.a11y.out">−</button>
+      <button type="button" id="zoom-in" aria-label="Aproximar" data-i18n-aria="map.a11y.in">+</button>
+      <button type="button" id="reset" data-i18n="map.overview">Vista geral</button>
+    </div>
+    <div class="map-status" data-reserve-labels>
+      <p id="status" role="status" data-i18n="map.preparing">A preparar o relevo…</p>
+      <p id="selection" role="status"></p>
+    </div>
+  </main>
+</body>
+</html>

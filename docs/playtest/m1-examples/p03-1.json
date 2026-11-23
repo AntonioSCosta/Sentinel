@@ -1,0 +1,24 @@
+{
+  "version": "m1.2-proto-1",
+  "seed": 2,
+  "columnOrder": 1,
+  "outcome": "escapou",
+  "time": 110,
+  "combatSeconds": 75,
+  "signalAt": 35,
+  "signalColumnProgress": 0.35,
+  "orders": 3,
+  "fallBacks": 1,
+  "flanks": { "lusitanos": 0, "romanos": 1 },
+  "discovered": [{ "group": "corvos", "t": 26 }],
+  "seen": [
+    { "group": "lobos", "t": 16, "cause": "open", "d": 22, "by": "vanguarda" },
+    { "group": "corvos", "t": 26, "cause": "cover", "d": 9, "by": "velites" }
+  ],
+  "romanResponses": [{ "type": "segura", "group": "vanguarda", "t": 32 }],
+  "keyMoments": [{ "code": "signalLate", "t": 35, "percent": 35, "count": 0 }],
+  "lusitanians": { "start": 15, "alive": 13, "dead": 2, "fled": 0, "withdrawn": 0, "escaped": 0 },
+  "romans": { "start": 13, "alive": 0, "dead": 1, "fled": 0, "withdrawn": 0, "escaped": 12 },
+  "playerId": "P03",
+  "battleNumber": 1
+}

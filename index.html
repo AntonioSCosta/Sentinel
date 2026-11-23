@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="pt">
+<html lang="pt-PT">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Viriato — A Guerra dos Montes Hermínios</title>
+<title>Sentinel</title>
 <link rel="stylesheet" href="./vendor/fonts/fonts.css">
 <style>
   :root{--gold:#e0a64a;--ink:#efe4d2;--dim:#b9ab96;--bg:#0d0b09;--red:#c8382a}
@@ -11,16 +11,108 @@
   canvas#gl{position:fixed;inset:0;width:100vw;height:100vh;display:block}
   .hidden{display:none!important}
   #map{position:fixed;inset:0;background:#1a1410;color:var(--ink)}
-  #mapcv{position:absolute;left:0;right:0;top:52px;bottom:64px;width:100%;height:calc(100% - 116px);display:block;cursor:crosshair}
-  #mtop,#mbot{position:absolute;left:0;right:0;display:flex;align-items:center;gap:18px;padding:0 16px;background:rgba(16,13,10,.96);border:0 solid #4a3a2a;font-size:17px}
-  #mtop{top:0;height:52px;border-bottom-width:1px}#mbot{bottom:0;height:64px;border-top-width:1px;gap:12px}
-  #mbot button{white-space:nowrap;padding:10px 16px}#mbot .hint{flex:1;min-width:0;color:var(--dim);font-size:15px;line-height:1.2}
-  #mtop .res b{font-family:'Cinzel',serif;font-size:13px;letter-spacing:.14em;color:var(--gold);margin-right:6px;font-weight:400}
-  #mtop .res span{margin-right:4px}#mtop .grow{flex:1}
-  #mlog{position:absolute;left:12px;bottom:76px;width:min(340px,50vw);margin:0;padding:6px 10px;list-style:none;background:rgba(16,13,10,.72);border:1px solid #4a3a2a;font-size:14px;line-height:1.3;pointer-events:none}
-  #mlog:empty{display:none}
-  #mctx{position:absolute;right:12px;top:64px;width:min(210px,40vw);padding:12px 14px;background:rgba(16,13,10,.94);border:1px solid #4a3a2a}
-  #mctx h3{margin:0 0 2px;font-family:'Cinzel',serif;color:var(--gold);font-size:17px}#mctx p{margin:0 0 8px;color:var(--dim)}#mctx button{display:block;width:100%;margin-top:6px}
+  /* ---------- mapa da campanha: o vale (PR 5) ----------
+     barra de cima 48px · mapa · coluna de assuntos/povoação à direita (320px) · barra de baixo 56px.
+     Em ecrãs estreitos ou baixos a coluna passa a gaveta por cima do mapa, aberta com «Assuntos». */
+  #mtop,#mbot{position:absolute;left:0;right:0;display:flex;align-items:center;gap:16px;padding:0 14px;background:rgba(16,13,10,.97);border:0 solid #4a3a2a}
+  #mtop,#mbot,#mside,#mdiary .card{box-sizing:border-box}
+  #mdiary,#mbattle,#mend,#mcron{z-index:4}   /* as janelas ficam sempre por cima da gaveta de assuntos */
+  #mtop{top:0;height:48px;border-bottom-width:1px;font-size:16px}
+  #mbot{bottom:0;height:56px;border-top-width:1px;gap:8px}
+  #mtop .when{display:flex;align-items:baseline;gap:8px;white-space:nowrap;min-width:0}
+  #mtop .when b{font-family:'Cinzel',serif;color:var(--gold);font-weight:400;font-size:16px}
+  #m-season,#m-left{color:var(--dim);font-size:15px}#m-left::before{content:"· "}
+  #m-time{display:flex;gap:2px;margin-left:auto}
+  #m-time button{min-height:36px;min-width:44px;padding:4px 10px;font-family:'EB Garamond',serif;font-size:16px;letter-spacing:0}
+  #m-time[data-state="pause"] #m-pause{color:var(--gold)}
+  #mtop .res{display:flex;gap:16px;white-space:nowrap}
+  #mtop .res b{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.14em;color:var(--dim);margin-right:6px;font-weight:400;text-transform:uppercase}
+  #mtop .res span{font-size:17px}#mtop .res small{color:var(--dim);font-size:13px;margin-left:4px}
+  #m-food-box.low span,#m-food-box.low b{color:#ff9a7a}
+  #m-side-toggle{display:none;min-height:36px;padding:4px 12px;font-size:13px}
+  :is(#mapcv,#campaign-map-3d):focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
+  :is(#mapcv,#campaign-map-3d){position:absolute;left:0;top:48px;bottom:56px;width:calc(100% - 320px);height:calc(100% - 104px);display:block;cursor:crosshair}
+  #mside{position:absolute;right:0;top:48px;bottom:56px;width:320px;overflow-y:auto;background:#15110d;border-left:1px solid #4a3a2a;font-size:16px}
+  #mside h2{font-family:'Cinzel',serif;font-size:13px;letter-spacing:.2em;color:var(--dim);text-transform:uppercase;margin:14px 16px 8px;font-weight:400}
+  #missues-list{list-style:none;margin:0;padding:0 10px 12px}
+  #missues-list li.none{color:var(--dim);font-style:italic;padding:8px 6px;font-size:16px}
+  .issue{position:relative;margin:0 0 8px;padding:8px 10px 10px;background:#1d1711;border:1px solid #3e3022;border-left:4px solid #6b5438}
+  .issue.decisao{border-left-color:var(--red)}.issue.t-comida{border-left-color:#d99a3a}.issue.t-ameaca,.issue.t-patrulha{border-left-color:#a3302a}
+  .issue .head{display:block;width:100%;min-height:0;padding:0;border:0;background:none;text-align:left;font-family:'EB Garamond',serif;letter-spacing:0;font-size:17px;line-height:1.25;color:var(--ink)}
+  .issue .head:hover .title{text-decoration:underline}
+  .issue .tag{display:block;font-family:'Cinzel',serif;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);margin-bottom:2px}
+  .issue.decisao .tag{color:#ff8a70}
+  .issue p{margin:4px 0 0;font-size:15px;line-height:1.3}.issue .meta{color:var(--dim);font-size:14px}.issue .cons{color:#e6c9a8}.issue .note{color:var(--dim);font-size:13px}
+  .issue .acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .issue .acts button{min-height:36px;padding:4px 10px;font-family:'EB Garamond',serif;font-size:15px;letter-spacing:0}
+  .issue .acts .dismiss{position:absolute;top:4px;right:4px;min-width:32px;min-height:32px;padding:0;border-color:transparent;background:none;color:var(--dim);font-size:18px}
+  .issue .acts:has(> .dismiss:only-child){margin:0;height:0}.issue:has(.dismiss) .head{padding-right:30px}
+  #m-int{margin:10px;padding:10px 12px;border:1px solid var(--gold);background:#2a1e12}
+  #m-int h2{margin:0 0 6px;color:var(--gold)}#m-int ul{margin:0 0 10px;padding-left:18px;font-size:16px;line-height:1.3}
+  #m-int .link,#mctx .link,#mdiary .link{min-height:0;padding:0;border:0;background:none;color:var(--ink);font:inherit;letter-spacing:0;text-align:left;text-decoration:underline;text-decoration-color:#6b5438}
+  #mctx{padding:10px 16px 16px}
+  #mctx .back{min-height:32px;padding:2px 10px;font-family:'EB Garamond',serif;font-size:15px;letter-spacing:0}
+  #mctx h3{margin:10px 0 2px;font-family:'Cinzel',serif;color:var(--gold);font-size:20px;font-weight:400}
+  #mctx h3:focus{outline:none}
+  #mctx .sub{margin:0 0 8px;color:var(--dim);font-size:15px;line-height:1.3}
+  #mctx .line{margin:6px 0;font-size:16px;line-height:1.3;font-style:italic}#mctx .cons{font-size:15px;color:#e6c9a8;margin:4px 0}
+  #mctx h4,#mdiary h4{font-family:'Cinzel',serif;font-size:12px;letter-spacing:.18em;color:var(--dim);text-transform:uppercase;margin:14px 0 6px;font-weight:400}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{display:inline-block;padding:1px 8px;border:1px solid #6a5238;font-size:14px;color:var(--ink)}
+  .chip.p-comprometida{border-color:#d9a62a;color:#f0c45a}.chip.p-amiga{border-color:#6f9a52;color:#a9d08a}.chip.p-neutra{color:#d6cab6}
+  .chip.p-receosa{border-color:#7d8796;color:#b4bdca;border-style:dashed}.chip.p-colabora{border-color:var(--red);color:#ff9a7a;border-width:2px}
+  .chip.s-tributada{border-color:#c9a23a}.chip.s-castigada,.chip.s-ocupada{border-color:var(--red);color:#ff9a7a}.chip.s-queimada,.chip.s-abandonada{color:#8d7f6c;border-style:dotted}.chip.warn{border-color:#d99a3a;color:#ffc27a}
+  #mctx .facts{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:10px 0 0;font-size:15px}
+  #mctx dt{color:var(--dim)}#mctx dd{margin:0}
+  #mctx .motives{list-style:none;margin:0;padding:0;font-size:15px;line-height:1.3}
+  #mctx .motives li{margin:2px 0}#mctx .motives .sign{display:inline-block;width:16px}#mctx .motives .up .sign{color:#a9d08a}#mctx .motives .down .sign{color:#ff9a7a}
+  #mctx .motives small,#mctx .dim{color:var(--dim)}
+  #mctx .act{margin:0 0 8px}#mctx .act button{display:block;width:100%;min-height:40px;padding:6px 12px;font-family:'EB Garamond',serif;font-size:17px;letter-spacing:0;text-align:left}
+  #mctx .act small{display:block;color:var(--dim);font-size:14px;line-height:1.25;margin-top:2px}
+  #mctx .act.off button{opacity:.55;cursor:not-allowed}#mctx .act.off small{color:#d9b48a}
+  #mctx .later{color:#8d7f6c;font-size:13px;font-style:italic;margin:10px 0 0}
+  #mctx .risk{color:#a99a85;font-size:13px;margin:10px 0 0}
+  #mtip{position:absolute;max-width:260px;padding:6px 10px;background:rgba(16,13,10,.95);border:1px solid #6b5438;pointer-events:none;font-size:15px;line-height:1.3}
+  #mtip b{display:block;font-family:'Cinzel',serif;font-weight:400;color:var(--gold)}#mtip span{display:block}#mtip em{display:block;color:var(--dim)}#mtip small{display:block;color:var(--gold);font-size:13px;margin-top:2px}
+  #mlog{position:absolute;left:12px;bottom:68px;max-width:min(460px,calc(100% - 360px));margin:0;padding:4px 10px;list-style:none;background:rgba(16,13,10,.78);border:1px solid #4a3a2a;font-size:15px;line-height:1.3;pointer-events:none}
+  #mlog:empty{display:none}#mlog{transition:opacity .8s}#mlog.faded{opacity:0}
+  #mbot button{white-space:nowrap;padding:8px 16px;min-height:42px}
+  #mbot .hint{flex:1;min-width:0;max-height:48px;overflow:hidden;color:var(--dim);font-size:15px;line-height:1.2;padding:0 8px}
+  #m-diary{margin-left:auto}
+  #mdiary{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(5,4,3,.82)}
+  #mdiary .card{width:min(820px,94vw);max-height:90vh;display:flex;flex-direction:column;padding:20px 28px}
+  #mdiary h2{margin:2px 0 8px;font-size:28px;font-weight:700;color:var(--ink)}
+  #mdiary-tabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid #4a3a2a}
+  #mdiary-tabs [role="tab"]{min-height:38px;padding:4px 14px;border-bottom:0;font-size:13px}
+  #mdiary-tabs [aria-selected="true"]{background:#3a2a17;border-color:var(--gold);color:var(--gold)}
+  #mdiary-body{flex:1;min-height:0;overflow:auto;padding:10px 4px;font-size:16px;line-height:1.35}
+  #mdiary-body ul{list-style:none;margin:0;padding:0}#mdiary-body li{margin:0 0 8px}
+  #mdiary-body .status{color:var(--gold);margin:0 0 6px;font-size:16px}
+  #mdiary-body .goal li{font-size:16px}
+  #mdiary-body .legend{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:4px 16px}
+  #mdiary-body .legend li{display:grid;grid-template-columns:48px auto;gap:0 6px;align-items:center;margin:0}
+  #mdiary-body .legend canvas{grid-row:span 2;width:44px;height:30px;background:#e3d3a8}
+  #mdiary-body .legend span{color:var(--dim);font-size:14px}
+  #mdiary-body .history .day{color:var(--gold);font-family:'Cinzel',serif;font-size:13px;letter-spacing:.1em;margin-top:12px}
+  #mdiary-body .history .chip{font-size:12px;margin-right:4px}
+  #mdiary-body .communities li{padding:6px 0;border-bottom:1px solid #3a2e22}#mdiary-body .communities .chip{margin-left:8px}
+  #mdiary-body .dim,#mdiary-body small{color:var(--dim)}#mdiary-body small{display:block;font-size:14px}
+  #mdiary-body .reports .old{opacity:.6}#mdiary-body .arch{margin:8px 0;font-size:13px}
+  #mdiary .row{margin-top:10px}
+  @media (max-width:1280px){#mtop{gap:10px}#mtop .res{gap:10px}#m-left{display:none}}
+  @media (max-width:1100px){:is(#mapcv,#campaign-map-3d){width:calc(100% - 290px)}#mside{width:290px}#mlog{max-width:min(420px,calc(100% - 320px))}}
+  /* estreito ou baixo: a coluna é uma gaveta por cima do mapa (fecha-se com ESC ou com «Assuntos») */
+  @media (max-width:900px),(max-height:480px){
+    :is(#mapcv,#campaign-map-3d){width:100%}#m-side-toggle{display:inline-block}
+    #mside{width:min(340px,86vw);box-shadow:-10px 0 30px rgba(0,0,0,.6);z-index:2}#mside.closed{display:none}
+    #mtop{gap:8px;padding:0 8px;font-size:14px}#mtop .when b{font-size:14px}#m-season{display:none}
+    #mtop .res{gap:8px}#mtop .res b{font-size:9px;letter-spacing:.06em;margin-right:3px}#mtop .res span{font-size:15px}#mtop .res small{display:none}
+    #m-time button{min-width:36px;padding:2px 6px}
+    #mbot{gap:4px;padding:0 6px}#mbot button{padding:6px 9px;font-size:12px;letter-spacing:.04em}#mbot .hint{font-size:13px}
+    #mlog{max-width:calc(100% - 24px);font-size:13px}
+  }
+  @media (max-width:700px){#mbot .hint{display:none}}
+  @media (max-height:480px){#mtop{height:42px}:is(#mapcv,#campaign-map-3d),#mside{top:42px}#mbot{height:48px}:is(#mapcv,#campaign-map-3d),#mside{bottom:48px}:is(#mapcv,#campaign-map-3d){height:calc(100% - 90px)}#mlog{bottom:54px}#mbot button{min-height:38px}}
   #mbattle,#mend{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(5,4,3,.8)}
   #mend{background:radial-gradient(ellipse at 50% 40%,#1e140c,#050403 75%)}
   #mend h1{font-size:40px;line-height:1.1}#mend-result{font-family:'Cinzel',serif;font-size:22px;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin:10px 0 14px}
@@ -37,9 +129,20 @@
   #mcron-list .txt{margin:6px 0 0;font-size:16px;line-height:1.4}#mcron-list .cit{margin:4px 0 0;font-size:14px;color:var(--dim)}
   #mcron-list li.locked h3{color:#8d7f6c}#mcron-list li.locked .lk{margin:4px 0 0;font-size:15px;font-style:italic;color:#8d7f6c}
   #mcron .row{margin-top:12px}
-  #mplaces{position:absolute;left:12px;top:64px;width:min(320px,46vw);max-height:calc(100% - 160px);overflow-y:auto;margin:0;padding:4px;list-style:none;background:rgba(16,13,10,.94);border:1px solid #4a3a2a}
-  #mplaces button{display:block;width:100%;text-align:left;margin:2px 0;padding:7px 10px;font-size:15px;letter-spacing:.02em}
   #camp-confirm{margin-top:12px;padding:12px 16px;border:1px solid #6a5238;background:rgba(16,13,10,.9)}#camp-confirm p{margin:0 0 8px}
+  /* menu: os dois botões principais ficam sempre à vista (rodapé fixo do cartão); as opções e os controlos rolam por cima */
+  #menu .card{padding-bottom:0}
+  .menu-foot{position:sticky;bottom:0;margin:0 -40px;padding:12px 40px 16px;background:#100d0a;border-top:1px solid #4a3a2a}
+  .menu-foot .row{margin:10px 0 0}
+  .menu-foot #camp-confirm{position:absolute;left:40px;right:40px;bottom:calc(100% + 8px);margin:0;background:#17120d;box-shadow:0 8px 24px rgba(0,0,0,.6)}
+  @media (max-height:820px){.menu-foot{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding-top:10px;padding-bottom:12px}.menu-foot .row{margin:0}}
+  @media (max-height:560px){
+    #menu .card{width:min(780px,94vw);padding:14px 28px 0}
+    #menu h1{font-size:40px;margin-top:2px}#menu h2{font-size:16px;margin:4px 0 8px}#menu .brief{font-size:15px;line-height:1.35;margin:0 0 6px}
+    .menu-foot{margin:0 -28px;padding:8px 28px 10px}
+    .menu-foot button.go{padding:10px 24px}
+    .menu-foot #camp-confirm{left:28px;right:28px}
+  }
   /* ---------- HUD ---------- */
   #hud{position:fixed;inset:0;pointer-events:none;user-select:none}
   #obj{position:absolute;top:18px;left:22px;max-width:380px;text-shadow:0 1px 3px #000}
@@ -113,6 +216,9 @@
   .stats span:nth-child(even){color:var(--gold);text-align:right}
   #loaderr{color:#ff8a70}
 </style>
+  <link rel="stylesheet" href="./src/i18n/language.css">
+  <link rel="stylesheet" href="./src/campaign-map-3d/campaign-view.css">
+  <link rel="stylesheet" href="./src/campaign-map-3d/tactical-labels.css">
 </head>
 <body>
 <canvas id="gl"></canvas>
@@ -144,69 +250,118 @@
 <div id="menu" class="screen">
   <div class="card">
     <p class="kicker" id="kicker">LUSITÂNIA · 147 A.C.</p>
-    <h1>VIRIATO</h1>
-    <h2>A Guerra dos Montes Hermínios</h2>
+    <h1>Sentinel</h1>
     <p class="brief" id="brief">Três anos depois da traição de Galba, Roma volta a marchar pelos vales. Uma patrulha desce a estrada do vale. Viriato e os seus esperam-na escondidos no mato.</p>
-    <div class="row"><span class="lbl">CAPÍTULO</span>
-      <button type="button" data-ch="prologo" aria-pressed="true">Prólogo · A traição de Galba</button>
-      <button type="button" data-ch="cativos" aria-pressed="false">I · Os Cativos</button>
-      <button type="button" data-ch="emboscada" aria-pressed="false">II · A Emboscada</button>
-      <button type="button" data-ch="acampamento" aria-pressed="false">III · O Acampamento</button>
+    <div class="row"><span class="lbl" data-i18n="interface.chapter">CAPÍTULO</span>
+      <button type="button" data-ch="prologo" aria-pressed="true" data-i18n="interface.prologue">Prólogo · A traição de Galba</button>
+      <button type="button" data-ch="cativos" aria-pressed="false" data-i18n="interface.captives">I · Os Cativos</button>
+      <button type="button" data-ch="emboscada" aria-pressed="false" data-i18n="interface.ambush">II · A Emboscada</button>
+      <button type="button" data-ch="acampamento" aria-pressed="false" data-i18n="interface.camp">III · O Acampamento</button>
     </div>
-    <div class="row"><span class="lbl">DIFICULDADE</span>
-      <button type="button" data-diff="0" aria-pressed="false">Fácil</button>
-      <button type="button" data-diff="1" aria-pressed="true">Normal</button>
-      <button type="button" data-diff="2" aria-pressed="false">Difícil</button>
+    <div class="row"><span class="lbl" data-i18n="interface.difficulty">DIFICULDADE</span>
+      <button type="button" data-diff="0" aria-pressed="false" data-i18n="interface.easy">Fácil</button>
+      <button type="button" data-diff="1" aria-pressed="true" data-i18n="interface.normal">Normal</button>
+      <button type="button" data-diff="2" aria-pressed="false" data-i18n="interface.hard">Difícil</button>
     </div>
-    <div class="row"><span class="lbl">GRÁFICOS</span>
-      <button type="button" data-q="low" aria-pressed="false">Baixa</button>
-      <button type="button" data-q="medium" aria-pressed="true">Média</button>
-      <button type="button" data-q="high" aria-pressed="false">Alta</button>
+    <div class="row"><span class="lbl" data-i18n="interface.graphics">GRÁFICOS</span>
+      <button type="button" data-q="low" aria-pressed="false" data-i18n="interface.low">Baixa</button>
+      <button type="button" data-q="medium" aria-pressed="true" data-i18n="interface.medium">Média</button>
+      <button type="button" data-q="high" aria-pressed="false" data-i18n="interface.high">Alta</button>
     </div>
-    <div class="row"><label class="lbl" for="sens">RATO</label><input id="sens" type="range" min="1" max="10" value="5"></div>
+    <div class="row"><label class="lbl" for="sens" data-i18n="interface.mouse">RATO</label><input id="sens" type="range" min="1" max="10" value="5"></div>
+    <div class="row"><label class="language-option" for="menu-language"><span data-i18n="interface.language">Idioma</span> <select id="menu-language" data-language><option value="en" lang="en">English</option><option value="pt-PT" lang="pt-PT">Português (Portugal)</option></select></label></div>
     <div class="keys">
-      <b>W A S D</b><span>mover</span><b>RATO</b><span>olhar</span>
-      <b>CLIQUE</b><span>atacar ou lançar — segura para mais força</span><b>CLIQUE DIR.</b><span>escudo</span>
-      <b>Q</b><span>aparar com a falcata</span><b>Z</b><span>companheiros: sigam-me</span><b>X</b><span>companheiros: bandeira (aponta e clica)</span><b>T</b><span>companheiros: ao ataque</span>
-      <b>R</b><span>arrancar dardos do escudo</span><b>G</b><span>campanha: retirada, se houver serra perto</span>
-      <b>1 2 3 / RODA</b><span>armas</span><b>SHIFT</b><span>correr</span>
-      <b>ESPAÇO</b><span>saltar</span><b>C</b><span>agachar</span>
-      <b>E</b><span>usar</span><b>ESC</b><span>pausa</span>
-      <b>V</b><span>1.ª / 3.ª pessoa</span><span></span><span></span>
+      <b>W A S D</b><span data-i18n="interface.move">mover</span><b data-i18n="interface.mouse">RATO</b><span data-i18n="interface.look">olhar</span>
+      <b data-i18n="interface.click">CLIQUE</b><span data-i18n="interface.attack">atacar ou lançar — segura para mais força</span><b data-i18n="interface.rightClick">CLIQUE DIR.</b><span data-i18n="interface.shield">escudo</span>
+      <b>Q</b><span data-i18n="interface.parry">aparar com a falcata</span><b>Z</b><span data-i18n="interface.follow">companheiros: sigam-me</span><b>X</b><span data-i18n="interface.flag">companheiros: bandeira (aponta e clica)</span><b>T</b><span data-i18n="interface.charge">companheiros: ao ataque</span>
+      <b>R</b><span data-i18n="interface.clearShield">arrancar dardos do escudo</span><b>G</b><span data-i18n="interface.retreatHint">campanha: retirada, se houver serra perto</span>
+      <b data-i18n="interface.weaponKeys">1 2 3 / RODA</b><span data-i18n="interface.weapons">armas</span><b>SHIFT</b><span data-i18n="interface.sprint">correr</span>
+      <b data-i18n="interface.space">ESPAÇO</b><span data-i18n="interface.jump">saltar</span><b>C</b><span data-i18n="interface.crouch">agachar</span>
+      <b>E</b><span data-i18n="interface.use">usar</span><b>ESC</b><span data-i18n="interface.pauseKey">pausa</span>
+      <b>V</b><span data-i18n="interface.perspective">1.ª / 3.ª pessoa</span><span></span><span></span>
     </div>
-    <p id="physnote" class="hidden" style="font-size:15px;color:var(--dim)">Física simplificada: o motor de física não carregou, o jogo continua jogável.</p>
-    <p id="loaderr" class="hidden">Não foi possível carregar o motor 3D. Verifica a ligação e recarrega a página.</p>
-    <button type="button" class="go" id="start" disabled>A CARREGAR…</button>
-    <div class="row" style="margin-top:14px"><button type="button" id="camp-new">CAMPANHA — Um Ano de Guerra</button>
-      <button type="button" id="camp-cont" class="hidden">Continuar campanha</button></div>
-    <div id="camp-confirm" class="hidden" role="alertdialog" aria-modal="true" aria-labelledby="camp-confirm-t">
-      <p id="camp-confirm-t">Há uma campanha a meio. Começar de novo apaga-a.</p>
-      <div class="row"><button type="button" id="camp-confirm-yes">Começar de novo</button><button type="button" id="camp-confirm-no">Voltar</button></div>
+    <p id="physnote" class="hidden" style="font-size:15px;color:var(--dim)" data-i18n="interface.physics">Física simplificada: o motor de física não carregou, o jogo continua jogável.</p>
+    <p id="loaderr" class="hidden" data-i18n="interface.loadError">Não foi possível iniciar o motor 3D. Verifica se o navegador suporta WebGL, ativa a aceleração gráfica e recarrega a página.</p>
+    <div class="menu-foot">
+      <button type="button" class="go" id="start" disabled data-i18n="interface.loading">A CARREGAR…</button>
+      <div class="row"><button type="button" id="camp-new" data-i18n="interface.campaign">CAMPANHA — Um Ano de Guerra</button>
+        <button type="button" id="camp-cont" class="hidden" data-i18n="interface.continueCampaign">Continuar campanha</button></div>
+      <div id="camp-confirm" class="hidden" role="alertdialog" aria-modal="true" aria-labelledby="camp-confirm-t">
+        <p id="camp-confirm-t" data-i18n="interface.confirmReset">Há uma campanha a meio. Começar de novo apaga-a.</p>
+        <div class="row"><button type="button" id="camp-confirm-yes" data-i18n="interface.startOver">Começar de novo</button><button type="button" id="camp-confirm-no" data-i18n="interface.back">Voltar</button></div>
+      </div>
     </div>
   </div>
 </div>
 
 <div id="map" class="hidden">
-  <div id="mtop">
-    <div><b id="m-date" style="font-family:'Cinzel',serif;color:var(--gold)"></b> · <span id="m-season"></span></div>
-    <div class="res" role="group" aria-label="Recursos"><b>HOMENS</b><span id="m-men"></span> <b>COMIDA</b><span id="m-food"></span> <b>ARMAS</b><span id="m-arms"></span> <b>FAMA</b><span id="m-fame"></span></div>
-    <div class="grow"></div><div style="color:var(--dim)">Dia <span id="m-day"></span> · faltam <span id="m-left"></span></div>
+  <header id="mtop">
+    <div class="when"><b id="m-date"></b><span id="m-season"></span><span id="m-left"></span></div>
+    <div id="m-time" role="group" aria-label="Tempo (Espaço: pausa e retoma)" data-i18n-aria="map.a11y.time" data-state="pause">
+      <button type="button" id="m-pause" aria-pressed="true" aria-label="Pausa" data-i18n-aria="map.a11y.pause"><span aria-hidden="true">❚❚</span></button>
+      <button type="button" data-speed="1" aria-pressed="false" aria-label="Velocidade 1×" data-i18n-aria="map.a11y.speed1">1×</button>
+      <button type="button" data-speed="2" aria-pressed="false" aria-label="Velocidade 2×" data-i18n-aria="map.a11y.speed2">2×</button>
+      <button type="button" data-speed="4" aria-pressed="false" aria-label="Velocidade 4×" data-i18n-aria="map.a11y.speed4">4×</button>
+    </div>
+    <div class="res" role="group" aria-label="O bando" data-i18n-aria="map.a11y.band">
+      <span class="r"><b data-i18n="map.men">Homens</b><span id="m-men"></span></span>
+      <span class="r" id="m-food-box"><b data-i18n="map.food">Comida</b><span id="m-food"></span><small id="m-food-raw"></small></span>
+      <span class="r"><b data-i18n="map.arms">Armas</b><span id="m-arms"></span></span>
+    </div>
+    <button type="button" id="m-side-toggle" aria-controls="mside" aria-expanded="true" data-i18n="map.issues">Assuntos</button>
+    <label class="language-option map-language" for="map-language"><span data-i18n="interface.language">Idioma</span> <select id="map-language" data-language><option value="en" lang="en">English</option><option value="pt-PT" lang="pt-PT">Português (Portugal)</option></select></label>
+  </header>
+  <canvas id="mapcv" class="hidden" tabindex="0" aria-label="Mapa do vale. Clica numa povoação para a ver, ou num ponto vazio para lá ir. O Diário tem a lista dos lugares para o teclado."></canvas>
+  <div id="campaign-map-3d">
+    <canvas id="m-scene" tabindex="0" aria-label="Mapa do vale em 3D. Seleciona uma povoação ou clica no terreno para marchar. O Diário lista os lugares." data-i18n-aria="map.a11y.canvas"></canvas>
+    <div class="map-labels" aria-label="Locais e forças conhecidas" data-i18n-aria="map.a11y.labels"></div>
+    <div class="map-controls" role="group" aria-label="Câmara do mapa" data-i18n-aria="map.a11y.camera" data-reserve-labels>
+      <button type="button" data-camera="left" aria-label="Rodar para a esquerda" data-i18n-aria="map.a11y.left">↶</button>
+      <button type="button" data-camera="right" aria-label="Rodar para a direita" data-i18n-aria="map.a11y.right">↷</button>
+      <button type="button" data-camera="out" aria-label="Afastar" data-i18n-aria="map.a11y.out">−</button>
+      <button type="button" data-camera="in" aria-label="Aproximar" data-i18n-aria="map.a11y.in">+</button>
+      <button type="button" data-camera="reset" data-i18n="map.center">Centrar</button>
+    </div>
+    <p class="map-preview" data-reserve-labels></p>
+    <p class="map-error" role="alert" hidden></p>
   </div>
-  <canvas id="mapcv" aria-label="Mapa da campanha. Clica num ponto vazio para marchar, ou numa povoação para ver as ações. O botão «Lugares» lista as povoações para o teclado."></canvas>
-  <ul id="mlog" role="status" aria-live="polite" aria-label="Registo da campanha"></ul>
-  <div id="mctx" class="hidden" role="region" aria-label="Povoação"></div>
-  <ul id="mplaces" class="hidden" aria-label="Lugares do mapa"></ul>
-  <div id="mbot">
-    <button type="button" data-act="acampar" data-order="acampar" id="m-acampar">Acampar</button>
-    <button type="button" data-act="esperar" data-order="esperar" id="m-esperar">Esperar na estrada</button>
-    <button type="button" data-act="esconder" data-order="esconder" id="m-esconder">Esconder</button>
-    <button type="button" id="m-places" aria-expanded="false" aria-controls="mplaces">Lugares</button>
-    <button type="button" id="m-cronica" aria-haspopup="dialog">Crónica</button>
-    <span class="hint">Clica para marchar um dia; duplo clique, três · as setas também marcham · ESC: menu</span>
-  </div>
+  <div id="mtip" class="hidden" role="tooltip"></div>
+  <ul id="mlog" role="status" aria-live="polite" aria-label="Últimos acontecimentos" data-i18n-aria="map.a11y.recent" data-reserve-labels></ul>
+  <aside id="mside" aria-label="Assuntos e povoação" data-i18n-aria="map.a11y.sidebar" data-reserve-labels>
+    <section id="missues" aria-labelledby="missues-h">
+      <div id="m-int" class="hidden" role="alert">
+        <h2 data-i18n="map.timeStopped">O tempo parou</h2>
+        <ul id="m-int-list"></ul>
+        <button type="button" id="m-int-go" class="go" data-i18n="map.resumeTime">Continuar</button>
+      </div>
+      <h2 id="missues-h" data-i18n="map.issues">Assuntos</h2>
+      <ol id="missues-list"></ol>
+    </section>
+    <section id="mctx" class="hidden" role="region" aria-label="Povoação" data-i18n-aria="map.a11y.settlement"></section>
+  </aside>
+  <footer id="mbot">
+    <button type="button" data-act="ir" id="m-go" aria-pressed="false" data-i18n="map.go">Ir</button>
+    <button type="button" data-act="esperar" id="m-ambush" aria-pressed="false" data-i18n="map.ambush">Emboscar</button>
+    <button type="button" data-act="esconder" id="m-hide" aria-pressed="false" data-i18n="map.hide">Esconder</button>
+    <button type="button" data-act="reconhecer" id="m-recon" aria-pressed="false" data-i18n="map.scout">Reconhecer</button>
+    <span id="m-status" class="hint" role="status"></span>
+    <button type="button" id="m-diary" aria-haspopup="dialog" data-i18n="map.diary">Diário</button>
+  </footer>
+  <div id="mdiary" class="hidden" role="dialog" aria-modal="true" aria-labelledby="mdiary-title"><div class="card">
+    <p class="kicker">A CAMPANHA DE 147 A.C.</p><h2 id="mdiary-title">Diário</h2>
+    <div id="mdiary-tabs" role="tablist" aria-label="Secções do Diário">
+      <button type="button" role="tab" id="mdiary-tab-campanha" data-tab="campanha" aria-controls="mdiary-body">Campanha</button>
+      <button type="button" role="tab" id="mdiary-tab-comunidades" data-tab="comunidades" aria-controls="mdiary-body">Comunidades</button>
+      <button type="button" role="tab" id="mdiary-tab-historia" data-tab="historia" aria-controls="mdiary-body">História</button>
+      <button type="button" role="tab" id="mdiary-tab-relatos" data-tab="relatos" aria-controls="mdiary-body">Relatos</button>
+      <button type="button" role="tab" id="mdiary-tab-lugares" data-tab="lugares" aria-controls="mdiary-body">Lugares</button>
+    </div>
+    <div id="mdiary-body" role="tabpanel" tabindex="0"></div>
+    <div class="row"><button type="button" id="m-cronica" aria-haspopup="dialog">Crónica</button><button type="button" id="mdiary-close">Fechar</button></div>
+  </div></div>
   <div id="mbattle" class="hidden" role="dialog" aria-modal="true" aria-labelledby="mb-type"><div class="card">
     <p class="kicker">BATALHA</p><h2 id="mb-type"></h2><p class="brief" id="mb-info"></p>
-    <div class="row"><button type="button" class="go" id="mb-fight">Lutar</button></div>
+    <div class="row"><button type="button" class="go" id="mb-fight">Lutar</button><button type="button" id="mb-withdraw" class="hidden">Recusar e recuar</button></div>
   </div></div>
   <div id="mend" class="hidden" role="dialog" aria-modal="true" aria-labelledby="mend-title" aria-describedby="mend-text"><div class="card">
     <p class="kicker">FIM DA CAMPANHA</p><h1 id="mend-title"></h1><p id="mend-result"></p>
@@ -229,17 +384,18 @@
 
 <div id="pause" class="screen hidden">
   <div class="card">
-    <p class="kicker">PAUSA</p>
+    <p class="kicker" data-i18n="interface.pause">PAUSA</p>
     <h2 style="margin-top:10px" id="pauseobj"></h2>
-    <div class="row"><span class="lbl">GRÁFICOS</span>
-      <button type="button" data-q="low" aria-pressed="false">Baixa</button>
-      <button type="button" data-q="medium" aria-pressed="true">Média</button>
-      <button type="button" data-q="high" aria-pressed="false">Alta</button>
+    <div class="row"><span class="lbl" data-i18n="interface.graphics">GRÁFICOS</span>
+      <button type="button" data-q="low" aria-pressed="false" data-i18n="interface.low">Baixa</button>
+      <button type="button" data-q="medium" aria-pressed="true" data-i18n="interface.medium">Média</button>
+      <button type="button" data-q="high" aria-pressed="false" data-i18n="interface.high">Alta</button>
     </div>
-    <div class="row"><label class="lbl" for="sens2">RATO</label><input id="sens2" type="range" min="1" max="10" value="5"></div>
+    <div class="row"><label class="lbl" for="sens2" data-i18n="interface.mouse">RATO</label><input id="sens2" type="range" min="1" max="10" value="5"></div>
+    <div class="row"><label class="language-option" for="pause-language"><span data-i18n="interface.language">Idioma</span> <select id="pause-language" data-language><option value="en" lang="en">English</option><option value="pt-PT" lang="pt-PT">Português (Portugal)</option></select></label></div>
     <p id="fps" role="status" style="font-size:15px;opacity:.7;margin-top:6px"></p>
     <p id="pausehint" role="status" style="font-size:16px;color:var(--gold)"></p>
-    <div class="row"><button type="button" class="go" id="resume">CONTINUAR</button><button type="button" id="restart">RECOMEÇAR</button><button type="button" id="pretreat" class="hidden">RETIRAR</button><button type="button" id="abandon" class="hidden">ABANDONAR (DERROTA)</button></div>
+    <div class="row"><button type="button" class="go" id="resume" data-i18n="interface.resume">CONTINUAR</button><button type="button" id="restart" data-i18n="interface.restart">RECOMEÇAR</button><button type="button" id="pretreat" class="hidden" data-i18n="interface.retreat">RETIRAR</button><button type="button" id="abandon" class="hidden" data-i18n="interface.abandon">ABANDONAR (DERROTA)</button></div>
   </div>
 </div>
 
@@ -250,7 +406,7 @@
     <p class="brief" id="endp" style="margin-top:14px"></p>
     <div class="stats" id="ends"></div>
     <button type="button" class="go hidden" id="next">CONTINUAR · A EMBOSCADA</button>
-    <button type="button" class="go" id="again">JOGAR OUTRA VEZ</button>
+    <button type="button" class="go" id="again" data-i18n="interface.playAgain">JOGAR OUTRA VEZ</button>
   </div>
 </div>
 

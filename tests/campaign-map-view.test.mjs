@@ -2,7 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeView, toScreen, toWorld, hitTest, drawMap, layoutMapLabels } from '../src/campaign/map-view.js';
 import { newCampaign } from '../src/campaign/state.js';
-import { dateLabel } from '../src/campaign/clock.js';
+import { placeName, MAP_TITLE } from '../src/campaign/strings.js';
+
+/** Põe à vista do jogador as forças do estado (como se o bando as visse hoje): a vista só desenha o que ele sabe. */
+function sighted(s) {
+  s.intel = { known: {}, reports: [], n: 0 };
+  for (const f of s.patrols || []) s.intel.known[f.id] = { kind: f.kind, x: f.x, y: f.y, day: s.day };
+  if (s.praetor) s.intel.known[s.praetor.id] = { kind: 'pretor', x: s.praetor.x, y: s.praetor.y, day: s.day, name: s.praetor.name };
+  return s;
+}
 
 const SIZES = [[1000, 700], [1920, 1080], [3000, 400], [300, 2000], [640, 480], [1, 1], [0, 0]];
 const near = (a, b, e = 1e-6) => Math.abs(a - b) < e;
@@ -51,6 +59,7 @@ test('hitTest finds settlement, patrol, praetor; nearest wins; null outside', ()
   assert.deepEqual(hitTest(v, s, p.x + 3, p.y - 3), { type: 'settlement', id: st.id });
   s.patrols = [{ id: 'p1', kind: 'ronda', x: st.x + 5, y: st.y }];
   s.praetor = { id: 'pr', x: st.x + 40, y: st.y, name: 'Galba' };
+  sighted(s);
   const pp = toScreen(v, s.patrols[0]);
   assert.deepEqual(hitTest(v, s, pp.x + 1, pp.y), { type: 'patrol', id: 'p1' });
   const pr = toScreen(v, s.praetor);
@@ -60,14 +69,14 @@ test('hitTest finds settlement, patrol, praetor; nearest wins; null outside', ()
   assert.equal(hitTest(v, s, far.x, far.y), null);
 });
 
-test('drawMap writes names and date, balances save/restore, resets dash', () => {
+test('drawMap writes names (as comunidades com o seu nome) and the map title, balances save/restore, resets dash', () => {
   const s = newCampaign(3);
   s.day = 40;
   const v = makeView(s.world, 800, 600), c = fakeCtx();
   drawMap(c, v, s);
   const texts = c.calls.filter(x => x[0] === 'fillText').map(x => x[1]);
-  for (const st of s.world.settlements) assert.ok(texts.includes(st.name), st.name);
-  assert.ok(texts.includes(dateLabel(40)));
+  for (const st of s.world.settlements) assert.ok(texts.includes(placeName(s, st.id)), st.name);
+  assert.ok(texts.includes(MAP_TITLE), 'a data saiu do mapa: está na barra de cima');
   assert.ok(texts.includes('Viriato'));
   assert.ok(count(c, 'save') > 0);
   assert.equal(count(c, 'save'), count(c, 'restore'));
@@ -84,6 +93,7 @@ test('drawMap tolerates no praetor, patrols, and draws them when present', () =>
   assert.doesNotThrow(() => drawMap(fakeCtx(), v, s));
   s.praetor = { id: 'pr', x: 100, y: 100, name: 'Galba' };
   s.patrols = [{ id: 'a', kind: 'ronda', x: 50, y: 50 }, { id: 'b', kind: 'comboio', x: 60, y: 60 }];
+  sighted(s);
   const c = fakeCtx();
   drawMap(c, v, s);
   assert.ok(c.calls.some(x => x[0] === 'fillText' && x[1] === 'Galba'));
@@ -111,6 +121,7 @@ test('desenha uma figura para cada tipo de povoação, com e sem queimar, sem re
   for (const p of s.world.settlements) if (p.kind === 'posto') s.posts[p.id] = { taken: true };
   s.praetor = { id: 'pr', x: 100, y: 100, name: 'Vetílio' };
   s.patrols = [{ id: 'a', kind: 'ronda', x: 50, y: 50 }, { id: 'b', kind: 'comboio', x: 60, y: 60 }];
+  sighted(s);
   const c = fakeCtx();
   assert.doesNotThrow(() => drawMap(c, v, s));
   assert.equal(count(c, 'save'), count(c, 'restore'));
@@ -148,6 +159,7 @@ test('layoutMapLabels: nomes reais ficam no canvas, não se sobrepõem e evitam 
     const s = newCampaign(seed);
     s.praetor = { id: 'pr', name: 'Vetílio', x: 520, y: 340, men: 40 };
     s.patrols = [{ id: 'p1', kind: 'ronda', x: 300, y: 400 }, { id: 'p2', kind: 'comboio', x: 700, y: 300 }];
+    sighted(s);
     for (const [w, h] of sizes) {
       const v = makeView(s.world, w, h);
       const { placed } = layoutMapLabels(v, s, conservative);
@@ -155,7 +167,7 @@ test('layoutMapLabels: nomes reais ficam no canvas, não se sobrepõem e evitam 
       // todos os nomes, inteiros e uma só vez
       assert.equal(placed.length, s.world.settlements.length, tag);
       assert.deepEqual(placed.map(p => p.id).sort(), s.world.settlements.map(x => x.id).sort(), tag);
-      for (const p of placed) assert.ok(s.world.settlements.some(x => x.id === p.id && x.name === p.name), tag);
+      for (const p of placed) assert.ok(s.world.settlements.some(x => x.id === p.id && placeName(s, x.id) === p.name), tag);   // as comunidades com o seu nome (PR 5)
       // nenhum nome sai do canvas
       for (const p of placed) {
         const r = rectOf(p);
@@ -190,6 +202,7 @@ test('drawMap desenha cada nome na posição calculada e todo o texto fica no ca
   const s = newCampaign(7);
   s.praetor = { id: 'pr', name: 'Vetílio', x: 520, y: 340 };
   s.patrols = [{ id: 'p1', kind: 'ronda', x: 300, y: 400 }];
+  sighted(s);
   const v = makeView(s.world, 800, 600);
   const c = fakeCtx();
   c.measureText = text => ({ width: conservative(text) });
@@ -222,6 +235,7 @@ test('grelha de último recurso: ecrãs de proporção extrema ficam sem sobrepo
     const s = newCampaign(seed);
     s.praetor = { id: 'pr', name: 'Vetílio', x: 520, y: 340 };
     s.patrols = [{ id: 'p1', kind: 'ronda', x: 300, y: 400 }];
+    sighted(s);
     for (const [w, h] of [[300, 2000], [3000, 400], [200, 2000], [1000, 200]]) {
       const v = makeView(s.world, w, h);
       const { placed } = layoutMapLabels(v, s, conservative);
@@ -235,5 +249,43 @@ test('grelha de último recurso: ecrãs de proporção extrema ficam sem sobrepo
         assert.ok(!boxesHit(rectOf(placed[i]), rectOf(placed[j])), `${tag}: ${placed[i].name} <> ${placed[j].name}`);
       assert.equal(placed.filter(p => p.fallback).length, 0, `${tag}: houve recurso ao último sítio`);
     }
+  }
+});
+
+// --- PR 5: o vale ---
+import { POSTURE_FLAG, valleyIds } from '../src/campaign/map-view.js';
+import { COMMUNITY_IDS } from '../src/campaign/communities.js';
+
+test('vale: cada postura tem uma bandeira de forma e cor próprias (não só a cor)', () => {
+  const shapes = Object.values(POSTURE_FLAG).map(f => f.shape), colors = Object.values(POSTURE_FLAG).map(f => f.color);
+  assert.deepEqual(Object.keys(POSTURE_FLAG), ['comprometida', 'amiga', 'neutra', 'receosa', 'colabora']);
+  assert.equal(new Set(shapes).size, 5); assert.equal(new Set(colors).size, 5);
+});
+
+test('vale: desenha todas as posturas e situações sem rebentar, com o «!» dos assuntos e o destaque', () => {
+  const s = newCampaign(3), v = makeView(s.world, 900, 600);
+  const postures = Object.keys(POSTURE_FLAG), sits = ['livre', 'tributada', 'castigada', 'ocupada', 'queimada', 'abandonada'];
+  for (let i = 0; i < sits.length; i++) {
+    COMMUNITY_IDS.forEach((id, k) => { s.communities[id].posture = postures[(i + k) % 5]; s.communities[id].situation = sits[(i + k) % sits.length]; });
+    const issues = { [s.communities.souto.settlement]: 'decisao', [s.communities.vau.settlement]: 'atencao' };
+    const c = fakeCtx();
+    assert.doesNotThrow(() => drawMap(c, v, s, { issues, flash: { [s.communities.ribeira.settlement]: 0.5 }, route: { to: { x: 500, y: 300 }, label: '2 dias' } }));
+    assert.equal(count(c, 'save'), count(c, 'restore'));
+    assert.equal(c.calls.filter(x => x[0] === 'fillText' && x[1] === '!').length, 2);
+    assert.ok(c.calls.some(x => x[0] === 'fillText' && x[1] === '2 dias'));
+  }
+});
+
+test('vale: a figura de cada comunidade está no seu lugar funcional (o clique nela seleciona esse lugar)', () => {
+  for (const seed of [1, 3, 42]) {
+    const s = newCampaign(seed);
+    for (const [w, h] of [[1066, 664], [980, 696], [724, 484], [844, 274]]) {
+      const v = makeView(s.world, w, h);
+      for (const id of COMMUNITY_IDS) {
+        const p = s.world.settlements.find(x => x.id === s.communities[id].settlement), q = toScreen(v, p);
+        assert.deepEqual(hitTest(v, s, q.x, q.y), { type: 'settlement', id: p.id }, `${seed} ${w}x${h} ${id}`);
+      }
+    }
+    assert.equal(valleyIds(s).size, 5);
   }
 });

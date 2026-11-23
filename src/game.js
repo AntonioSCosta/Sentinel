@@ -1,3 +1,5 @@
+import { createI18n } from './i18n/index.js';
+import { bindDocumentLanguage } from './i18n/dom.js';
 import { solidAt, TAU, rand, rr, clamp, lerp, smooth, wrapA, setSeed, vnoise, WORLD, roadX, streamX, inStream, CAMP, CASTRO, heightAt, inCamp, addCol, resolve, losTerrain, clearColliders } from './terrain.js';
 import { initAudio, SFX, spatial, setListener } from './audio.js';
 import * as C from './combat.js';
@@ -29,7 +31,7 @@ import { campStart, campGarrison, campPhase, CAMP_MISSIONS, TENTS_TO_BURN, RELIE
  * Builds the whole game. Rendering, DOM and window are injected so the game can run headless in tests.
  * @returns game API used by boot() and by tools/smoke.mjs
  */
-export async function createGame({ THREE, renderer, canvas, document, window, rapier = null, loader = null, quality = 'medium', chars = null, storage = (() => { try { return window.localStorage; } catch (_) { return null; } })() }) {
+export async function createGame({ THREE, renderer, canvas, document, window, rapier = null, loader = null, quality = 'medium', chars = null, i18n = createI18n(), legacyCampaignMapForTests = false, storage = (() => { try { return window.localStorage; } catch (_) { return null; } })() }) {
 clearColliders();
 const $ = id => document.getElementById(id);
 
@@ -694,7 +696,7 @@ function rigSoldier(kind, look = null) {
   if (!chars.weave) chars.weave = weaveTexture(THREE);
   const cloth = outfit === 'roman_mail' ? null : (look && look.palette && look.palette.dress) || { lusitano: 0x7a5a36, lusitano_b: 0x5c4630, lusitano_c: 0x96682c, lusitano_d: 0x605440, roman_red: 0x9a2a20, roman_white: 0xd8d0bc, velite: 0x9a2a20 }[outfit] || 0x6b4a2e;
   const tint = rr(.86, 1.05);
-  const rig = makeRig(THREE, chars.clone, chars, { female: !!(look && look.female), palette: look && look.palette, outfit, hair, shielded: !!shield, cloth, tint, hairColor: look ? look.hairColor : [0x2a1d14, 0x3b2a1e, 0x1c1410, 0x4a3524][Math.floor(rand() * 4)] });
+  const rig = makeRig(THREE, chars.clone, chars, { female: !!(look && look.female), child: !!(look && look.child), palette: look && look.palette, outfit, hair, shielded: !!shield, cloth, tint, hairColor: look ? look.hairColor : [0x2a1d14, 0x3b2a1e, 0x1c1410, 0x4a3524][Math.floor(rand() * 4)] });
   // helmet / cap: everything on the old head except the skin
   const hk = new THREE.Group();
   for (const o of [...p.head.children]) if (!(o.isMesh && o.material === p.skin)) hk.add(o);
@@ -1403,6 +1405,9 @@ function villager() {
     palette: { dress: pick(DRESS), skin: pick([0x9c6e52, 0x8a5e44, 0xa87a5a, 0x93664a]), long: woman || (child && rand() < .5) },
     scale: child ? rr(.56, .68) : woman ? rr(.9, .96) : rr(.95, 1.06),
     dress: woman || (child && rand() < .5), hair: woman ? ['hair_long'] : child ? [rand() < .5 ? 'hair_long' : 'hair_buzzed'] : [rand() < .6 ? 'hair_long' : 'hair_buzzed', 'hair_beard'] };
+  if (child) {   // girl or boy follows from the hair the draw above already gave (long or buzzed), so the seeded sequence is unchanged
+    const girl = look.hair[0] === 'hair_long'; look.child = true; look.female = girl; look.dress = girl && look.dress; look.hair = [girl ? 'hair_long' : 'hair_buzzed'];
+  }
   return { look, child };
 }
 function spawnCiv(look, x, z, child) {
@@ -1641,9 +1646,10 @@ function resetCativos() {
     const st = new THREE.Mesh(stakeGeo, stakeMat); st.position.set(g.x, Y(g.x, g.z) + .85, g.z); st.castShadow = true; add(st);
     const cs = g.captives.map(c => {
       const child = c.kind === 'child', woman = c.kind === 'woman', old = c.kind === 'elder';
-      const look = { unarmed: true, cap: false, outfit: pick(OUT), hairColor: old ? 0x8f8a82 : pick(HC), female: woman || child,
+      const girl = child && (Math.round(c.x * 7 + c.z * 13) & 1) === 0;   // half of the captive children are girls, by where they stand (no extra draw)
+      const look = { unarmed: true, cap: false, outfit: pick(OUT), hairColor: old ? 0x8f8a82 : pick(HC), female: woman || girl, child,
         palette: { dress: pick(DRESS), skin: pick([0x9c6e52, 0x8a5e44, 0xa87a5a, 0x93664a]), long: woman }, scale: child ? rr(.56, .68) : woman ? rr(.9, .96) : rr(.95, 1.04),
-        dress: woman, hair: woman ? ['hair_long'] : child ? ['hair_buzzed'] : [old || rand() < .6 ? 'hair_long' : 'hair_buzzed', 'hair_beard'] };
+        dress: woman, hair: woman || girl ? ['hair_long'] : child ? ['hair_buzzed'] : [old || rand() < .6 ? 'hair_long' : 'hair_buzzed', 'hair_beard'] };
       const e = spawnCiv(look, c.x, c.z, child); e.kind2 = c.kind; e.yaw = c.yaw; e.bound = true; e.crouch = true; return e;
     });
     g.guards.forEach((q, k) => { const e = spawn('legio', q.x, q.z, 'halt'); e.yaw = q.yaw; e.wT = rr(2, 7); e.beat = k ? 6 : 1.5; });
@@ -3035,7 +3041,7 @@ let introVeil = null, introTitled = false, introHorn = false;
 const OPENING = {
   cativos: ['I · Os Cativos', 'Agacha-te (C), mata os guardas pelas costas ou com dardos, e corta as cordas (E). Os teus dois homens só atacam quando a luta começar.'],
   emboscada: ['II · A Emboscada', 'Agacha-te (C) e aproxima-te sem seres visto. Um golpe pelas costas é mortal.'],
-  acampamento: ['III · O Acampamento', 'Entra sem dar o alarme. Queima os três depósitos (E) e o centurião sai para te enfrentar.'],
+  acampamento: ['III · O Acampamento', 'Agacha-te (C) e avança pelo mato: à vista, a guarnição dá o alarme. Queima os três depósitos (E) e o centurião sai para te enfrentar.'],
 };
 function startGame(intro = false) {
   initAudio();
@@ -3140,7 +3146,7 @@ function pauseGame() { releaseAll(); state = 'pause'; $('abandon').classList.tog
 // Resume only once the browser has actually granted pointer lock (Chrome refuses it for ~1 s after Esc).
 let resumePending = false;
 function finishResume() { resumePending = false; state = 'play'; $('pause').classList.add('hidden'); $('pausehint').textContent = ''; releaseAll(); }
-function lockRefused() { if (state === 'pause') $('pausehint').textContent = 'O browser ainda não deixou prender o rato. Espera um segundo e clica em CONTINUAR outra vez.'; }
+function lockRefused() { if (state === 'pause') $('pausehint').textContent = i18n.t('interface.pointerLock'); }
 function resume() {
   releaseAll();
   if (!cv.requestPointerLock) { finishResume(); return; } // no pointer lock support (tests)
@@ -3165,15 +3171,14 @@ function win() { state = 'won'; SFX.horn(); endT = 1.8; endArgs = chapter === 'a
 $('start').addEventListener('click', () => startGame(!navigator.webdriver));
 $('again').addEventListener('click', () => startGame(false));
 $('next').addEventListener('click', () => { if (!nextChapter) return; setChapter(nextChapter); startGame(true); });
-const BRIEF = {
-  prologo: ['LUSITÂNIA · 150 A.C.', 'Prólogo. O pretor Sérvio Galba promete terras aos lusitanos que entreguem as armas. Viriato está entre os que as entregaram.'],
-  emboscada: ['LUSITÂNIA · 147 A.C.', 'Três anos depois de Galba, Roma volta aos vales. Uma patrulha desce a estrada do vale. Viriato e os seus esperam-na escondidos no mato. Não deixes nenhum voltar.'],
-  cativos: ['LUSITÂNIA · 149 A.C.', 'Os que Galba não matou vão a caminho dos mercados de escravos. A coluna parou numa clareira. Viriato seguiu-a com dois homens.'],
-  acampamento: ['LUSITÂNIA · 147 A.C.', 'A patrulha caiu na estrada, mas é o acampamento que a sustenta. Queima-lhe os mantimentos e derruba o centurião, e Roma não aguenta estes vales.'],
-};
+function renderChapterBrief() {
+  $('kicker').textContent = i18n.t(`interface.brief.${chapter}.kicker`);
+  $('brief').textContent = i18n.t(`interface.brief.${chapter}.body`);
+}
 function setChapter(c) {
-  chapter = c; for (const o of document.querySelectorAll('[data-ch]')) o.setAttribute('aria-pressed', o.dataset.ch === c ? 'true' : 'false');
-  if ($('kicker')) $('kicker').textContent = BRIEF[c][0]; if ($('brief')) $('brief').textContent = BRIEF[c][1];
+  chapter = c;
+  for (const option of document.querySelectorAll('[data-ch]')) option.setAttribute('aria-pressed', option.dataset.ch === c ? 'true' : 'false');
+  renderChapterBrief();
 }
 for (const b of document.querySelectorAll('[data-ch]')) b.addEventListener('click', () => setChapter(b.dataset.ch));
 setChapter(chapter);
@@ -3189,9 +3194,23 @@ $('sens2').addEventListener('input', e => { setSens(+e.target.value); $('sens').
 /* =========================================================
    Main loop
    ========================================================= */
-/* Campanha: ecrã do mapa (src/campaign/ui.js). Estado 'map': o 3D não corre nem pede o rato. */
-const campUI = createCampaignUI({ document, window, storage, startBattle: spec => startCampaignBattle(spec), onClose: () => { campIntro = false; state = 'menu'; $('menu').classList.remove('hidden'); refreshCampMenu(); } });
-function refreshCampMenu() { const sv = campUI.saveState(); $('camp-cont').classList.toggle('hidden', !sv); $('camp-cont').textContent = sv === 'fim' ? 'Ver resultado' : 'Continuar campanha'; $('camp-confirm').classList.add('hidden'); }
+/* Campanha: ecrã do mapa (src/campaign/ui.js). Estado 'map': a arena não corre nem pede o rato. */
+const campUI = createCampaignUI({ document, window, storage, legacyMapForTests: legacyCampaignMapForTests, i18n, startBattle: spec => startCampaignBattle(spec), onClose: () => { campIntro = false; state = 'menu'; $('menu').classList.remove('hidden'); refreshCampMenu(); } });
+let continueMessage = 'interface.continueCampaign';
+function refreshCampMenu() {
+  const saved = campUI.saveState();
+  $('camp-cont').classList.toggle('hidden', !saved);
+  continueMessage = saved === 'fim' ? 'interface.result' : 'interface.continueCampaign';
+  $('camp-cont').textContent = i18n.t(continueMessage);
+  $('camp-confirm').classList.add('hidden');
+}
+i18n.subscribe(() => {
+  renderChapterBrief();
+  $('camp-cont').textContent = i18n.t(continueMessage);
+  $('start').textContent = i18n.t($('start').disabled ? 'interface.loading' : 'interface.start');
+  if ($('pausehint').textContent) $('pausehint').textContent = i18n.t('interface.pointerLock');
+});
+
 function openCampaign(f) { try { document.exitPointerLock && document.exitPointerLock(); } catch (_) {} releaseAll(); if (!f()) { refreshCampMenu(); return; } state = 'map'; for (const id of ['menu', 'end', 'pause', 'hud']) $(id).classList.add('hidden'); }
 /** Revela o mapa da campanha do fluxo já carregado (fim do prólogo da campanha). Espelha os passos do openCampaign/backToMap. */
 function showCampaignMap() {
@@ -3200,6 +3219,7 @@ function showCampaignMap() {
   releaseAll(); state = 'map'; endT = 0; endArgs = null; nextChapter = null; resumePending = false;
   for (const id of ['menu', 'end', 'pause', 'hud']) $(id).classList.add('hidden');
   $('hud').classList.remove('intro'); $('msg').style.opacity = 0; missionMsgT = 0; CLOG.length = 0; drawClog();   // nada do prólogo fica no ecrã do mapa
+  if (introVeil) introVeil.style.display = 'none';   // nem o véu escuro da abertura (ficava por cima do mapa se a abertura não chegasse ao fim)
   campUI.open(campUI.flow);
 }
 /** Campanha nova: cria+grava já o fluxo (para que «Continuar» leve ao mapa, não repita o prólogo) e corre o prólogo do massacre como primeira cena. */
@@ -3228,7 +3248,7 @@ $('camp-cont').addEventListener('click', () => openCampaign(() => campUI.resume(
 refreshCampMenu();
 let menuT = 0;
 function step(dt) {
-  if (state === 'map') { frameNo++; return; }
+  if (state === 'map') { frameNo++; skipHint(); return; }   // o «ENTER para saltar» do epílogo não fica no mapa
   frameNo++;
   updateBoughs(P.pos.x, P.pos.z, camera.position.x, camera.position.z);
   WIND.tick(dt);
@@ -3281,7 +3301,7 @@ for (const b of document.querySelectorAll('[data-q]')) {
 }
 setListener(camera);
 resetWorld();
-$('start').disabled = false; $('start').textContent = 'COMEÇAR';
+$('start').disabled = false; $('start').textContent = i18n.t('interface.start');
 return {
   startCampaign, showCampaignMap, get campIntro() { return campIntro; }, campaignStorage: storage, campaign: campUI, startCampaignBattle,
   campaignTest: { YEAR_DAYS, get retreat() { const r = campBattle?.retreat; return r ? { on: r.on, at: { ...r.at }, via: r.via ? { ...r.via } : null, dir: r.dir } : { on: false, at: null, via: null }; }, forceBattle: spec => { const f = campUI.flow; f.battle = spec; f.phase = 'batalha'; campUI.render(); return f; } },
@@ -3297,7 +3317,7 @@ return {
 }
 
 /** Browser entry point: real WebGL renderer + animation loop. */
-export async function boot() {
+export async function boot(i18n = bindDocumentLanguage(window)) {
   const THREE = await import('three');
   const canvas = document.getElementById('gl');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -3306,7 +3326,9 @@ export async function boot() {
   catch (err) { console.warn('Rapier unavailable, using simple physics', err); rapier = null; }
   renderer.useLegacyLights = true;
   const chars = await loadChars(THREE).catch(err => { console.warn('Animated characters unavailable, using simple models', err); return null; });
-  const game = await createGame({ chars, THREE, renderer, canvas, document, window, rapier, loader: new THREE.TextureLoader(), quality: (() => { try { return window.localStorage.getItem('viriato.quality') || 'medium'; } catch (_) { return 'medium'; } })() });
+  const testQuery = new URLSearchParams(window.location.search);
+  const legacyCampaignMapForTests = testQuery.get('manual') === '1' && testQuery.get('legacy-map-test') === '1';
+  const game = await createGame({ legacyCampaignMapForTests, i18n, chars, THREE, renderer, canvas, document, window, rapier, loader: new THREE.TextureLoader(), quality: (() => { try { return window.localStorage.getItem('viriato.quality') || 'medium'; } catch (_) { return 'medium'; } })() });
   if (!game.physicsOk) document.getElementById('physnote').classList.remove('hidden');
   let last = 0;
   // tuning aids: F8 = slow motion (1×, ½×, ¼×); window.__moves / window.__combat = poses and timings, editable live in the console
@@ -3318,11 +3340,18 @@ export async function boot() {
   const { manual, scene } = installHook(game, window);
   if (scene) game.start(null, scene);
   const fps = newFps(), fpsEl = document.getElementById('fps');
+  let lastFps;
+  const renderFps = () => {
+    if (lastFps !== undefined && fpsEl) fpsEl.textContent = i18n.t('interface.fps', {
+      count: lastFps, quality: i18n.t(`interface.${game.quality}`),
+    });
+  };
+  i18n.subscribe(renderFps);
   const frame = t => {
     const dt = Math.min(.05, (t - last) / 1000 || 0) * timeScale; last = t;
     game.step(dt); game.render();
     const f = tickFps(fps, t);
-    if (f != null && fpsEl) fpsEl.textContent = `${f} imagens por segundo · gráficos ${{ low: 'Baixa', medium: 'Média', high: 'Alta' }[game.quality]}`;
+    if (f != null) { lastFps = f; renderFps(); }
     requestAnimationFrame(frame);
   };
   if (!manual) requestAnimationFrame(frame);
