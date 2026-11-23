@@ -95,7 +95,7 @@ function ribbon(points, width, y, color, jitter = 0) {
  * Cria a vista. `canvas`: o elemento onde desenhar.
  * Devolve funções para sincronizar grupos, disparar efeitos, mexer a câmara e converter coordenadas.
  */
-export function createView(canvas) {
+export function createView(canvas, { troopCapacity = 40 } = {}) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -236,17 +236,19 @@ export function createView(canvas) {
   }
 
   // --- soldados instanciados por papel, vivos e mortos ---
-  const CAP = 40, kinds = {};
+  const CAP = troopCapacity, kinds = {}, stock = new THREE.Group();
+  scene.add(stock);
+  let hybrid, hybridActive = false, stockCount = 0;
   for (const role of ['guerreiro', 'fundeiro', 'legionario', 'velite']) {
     const geo = soldierGeometry(role), mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 });
     const live = new THREE.InstancedMesh(geo, mat, CAP), dead = new THREE.InstancedMesh(geo, mat, CAP * 2);
-    for (const o of [live, dead]) { o.castShadow = true; o.frustumCulled = false; o.instanceMatrix.setUsage(THREE.DynamicDrawUsage); o.count = 0; scene.add(o); }
+    for (const o of [live, dead]) { o.castShadow = true; o.frustumCulled = false; o.instanceMatrix.setUsage(THREE.DynamicDrawUsage); o.count = 0; stock.add(o); }
     live.setColorAt(0, new THREE.Color(1, 1, 1)); dead.setColorAt(0, new THREE.Color(1, 1, 1));
     // silhueta «raio-X»: só se desenha onde o soldado está tapado (pelas copas), para nunca se perder um grupo de vista
     const ghost = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({
       color: ['legionario', 'velite'].includes(role) ? '#ff8f80' : '#fff1c9', transparent: true, opacity: 0.55, depthWrite: false, depthFunc: THREE.GreaterDepth }), CAP);
     ghost.instanceMatrix = live.instanceMatrix; ghost.frustumCulled = false; ghost.count = 0; ghost.renderOrder = 15;
-    scene.add(ghost);
+    stock.add(ghost);
     kinds[role] = { live, dead, ghost };
   }
   const corpses = [];
@@ -262,7 +264,7 @@ export function createView(canvas) {
     scene.add(ring, line);
     const soldiers = [];
     for (let i = 0; i < g.men; i++) soldiers.push({ x: g.x + (hash(i, 1) - 0.5) * 3, y: g.y + (hash(i, 2) - 0.5) * 3, yaw: g.facing ?? 0, phase: hash(i, 9) * 6.28, flash: 0, alive: true });
-    return { id: g.id, side: g.side, role: g.role, soldiers, ring, line, x: g.x, y: g.y, men: g.men };
+    return { id: g.id, side: g.side, role: g.role, soldiers, ring, ringOpacity: 0.85, line, x: g.x, y: g.y, men: g.men };
   }
   function dropVisual(v) { scene.remove(v.ring, v.line); v.ring.material.dispose(); v.line.geometry.dispose(); v.line.material.dispose(); }
 
@@ -323,7 +325,16 @@ export function createView(canvas) {
   let clock = 0;
 
   return {
-    dispose() { renderer.dispose(); renderer.forceContextLoss(); },
+    dispose() { hybrid?.dispose(); renderer.dispose(); renderer.forceContextLoss(); },
+    setTroops(factory) {
+      if (factory && !hybrid) {
+        hybrid = factory({ capacity: CAP, heightAt });
+        scene.add(hybrid.root);
+      }
+      hybridActive = Boolean(factory);
+      if (hybrid) hybrid.root.visible = hybridActive;
+      stock.visible = !hybridActive;
+    },
     /** Mostra ou esconde a camada da preparação. */
     setPrep(on) { prepLayer.visible = on; },
 
@@ -362,7 +373,7 @@ export function createView(canvas) {
         if (off) continue;
         const marching = g.order?.type === 'mover' && g.order.pace === 'marcha' && !g.engaged;
         const target = g.target && opts.lookup ? opts.lookup(g.target) : null;
-        const sl = slots(living.length, g.x, g.y, g.facing ?? 0, marching);
+        const sl = hybridActive ? hybrid.slots(living.length, g, marching) : slots(living.length, g.x, g.y, g.facing ?? 0, marching);
         const moving = !g.engaged && (g.order?.type === 'mover' || g.order?.type === 'atacar' || g.order?.type === 'retirar' || g.state === 'debandada') && !g.hidden;
         living.forEach((s, i) => {
           const t = sl[i], dx = t.x - s.x, dy = t.y - s.y, d = Math.hypot(dx, dy);
@@ -384,6 +395,7 @@ export function createView(canvas) {
         v.ring.material.color.copy(sel ? COLORS.sel : threat ? COLORS.threat : g.side === 'lusitanos' ? COLORS.lus : g.rough ? COLORS.broken : COLORS.rom);
         // em corpo a corpo os anéis romanos ficam discretos: o que tem de saltar à vista é o anel do grupo lusitano em perigo
         v.ring.material.opacity = g.hidden ? 0.45 : g.state === 'debandada' ? 0.35 : threat ? 0.6 + Math.abs(Math.sin(clock * 7)) * 0.4 : g.side === 'romanos' && g.engaged && !sel ? 0.4 : 0.9;
+        v.ringOpacity = v.ring.material.opacity;
         if (threat && !sel) v.ring.scale.setScalar(r * (1.05 + Math.abs(Math.sin(clock * 7)) * 0.12));
         if (g.side === 'romanos' && g.order?.type === 'atacar' && g.order.target !== undefined && !g.engaged && g.state === 'ativo') {   // ameaça romana visível
           const to = opts.lookup?.(g.order.target);
@@ -410,43 +422,47 @@ export function createView(canvas) {
       }
       for (const [id, v] of visuals) if (!seen.has(id)) { dropVisual(v); visuals.delete(id); }
 
-      // escrever as instâncias
-      const counts = { guerreiro: 0, fundeiro: 0, legionario: 0, velite: 0 }, dcounts = { ...counts };
-      for (const v of visuals.values()) {
-        const g = groups.find(o => o.id === v.id);
-        const off = g.left !== null && g.left !== undefined;
-        if (off) continue;
-        const k = kinds[v.role].live;
-        for (const s of v.soldiers) {
-          if (!s.alive || counts[v.role] >= CAP) continue;
-          const i = counts[v.role]++;
-          const bob = s.moving ? Math.abs(Math.sin(clock * 9 + s.phase)) * 0.14 : 0;
-          const lunge = g.engaged ? Math.max(0, Math.sin(clock * 6.5 + s.phase)) * 0.35 : 0;
-          tmpP.set(s.x + Math.cos(s.yaw) * lunge, heightAt(s.x, s.y) + bob, s.y + Math.sin(s.yaw) * lunge);
-          tmpQ.setFromAxisAngle(up, -s.yaw);
-          tmpS.set(FIG, FIG * (g.hidden ? 0.68 : 1), FIG);
-          k.setMatrixAt(i, tmpM.compose(tmpP, tmpQ, tmpS));
-          const tint = g.hidden ? 0.62 : 1;
-          k.setColorAt(i, tmpC.setRGB(tint + s.flash * 1.6, tint + s.flash * 0.7, tint + s.flash * 0.5));
+      for (const c of corpses) c.t = Math.min(1, c.t + dt * 3);
+      if (hybridActive) hybrid.sync(groups, visuals, corpses, clock);
+      else {
+        // escrever as instâncias
+        const counts = { guerreiro: 0, fundeiro: 0, legionario: 0, velite: 0 }, dcounts = { ...counts };
+        for (const v of visuals.values()) {
+          const g = groups.find(o => o.id === v.id);
+          const off = g.left !== null && g.left !== undefined;
+          if (off) continue;
+          const k = kinds[v.role].live;
+          for (const s of v.soldiers) {
+            if (!s.alive || counts[v.role] >= CAP) continue;
+            const i = counts[v.role]++;
+            const bob = s.moving ? Math.abs(Math.sin(clock * 9 + s.phase)) * 0.14 : 0;
+            const lunge = g.engaged ? Math.max(0, Math.sin(clock * 6.5 + s.phase)) * 0.35 : 0;
+            tmpP.set(s.x + Math.cos(s.yaw) * lunge, heightAt(s.x, s.y) + bob, s.y + Math.sin(s.yaw) * lunge);
+            tmpQ.setFromAxisAngle(up, -s.yaw);
+            tmpS.set(FIG, FIG * (g.hidden ? 0.68 : 1), FIG);
+            k.setMatrixAt(i, tmpM.compose(tmpP, tmpQ, tmpS));
+            const tint = g.hidden ? 0.62 : 1;
+            k.setColorAt(i, tmpC.setRGB(tint + s.flash * 1.6, tint + s.flash * 0.7, tint + s.flash * 0.5));
+          }
         }
-      }
-      for (const c of corpses) {
-        c.t = Math.min(1, c.t + dt * 3);
-        const k = kinds[c.role].dead;
-        if (dcounts[c.role] >= CAP * 2) continue;
-        const i = dcounts[c.role]++;
-        fallAxis.set(Math.sin(c.yaw), 0, Math.cos(c.yaw));
-        tmpQ.setFromAxisAngle(up, -c.yaw).premultiply(new THREE.Quaternion().setFromAxisAngle(fallAxis, -c.t * Math.PI / 2 * 0.95));
-        tmpP.set(c.x, heightAt(c.x, c.y) + 0.1, c.y);
-        k.setMatrixAt(i, tmpM.compose(tmpP, tmpQ, tmpS.set(FIG, FIG, FIG)));
-        k.setColorAt(i, tmpC.setRGB(0.55, 0.5, 0.48));
-      }
-      for (const role of Object.keys(kinds)) {
-        const { live, dead, ghost } = kinds[role];
-        live.count = counts[role]; dead.count = dcounts[role]; ghost.count = counts[role];
-        live.instanceMatrix.needsUpdate = true; dead.instanceMatrix.needsUpdate = true;
-        if (live.instanceColor) live.instanceColor.needsUpdate = true;
-        if (dead.instanceColor) dead.instanceColor.needsUpdate = true;
+        for (const c of corpses) {
+          const k = kinds[c.role].dead;
+          if (dcounts[c.role] >= CAP * 2) continue;
+          const i = dcounts[c.role]++;
+          fallAxis.set(Math.sin(c.yaw), 0, Math.cos(c.yaw));
+          tmpQ.setFromAxisAngle(up, -c.yaw).premultiply(new THREE.Quaternion().setFromAxisAngle(fallAxis, -c.t * Math.PI / 2 * 0.95));
+          tmpP.set(c.x, heightAt(c.x, c.y) + 0.1, c.y);
+          k.setMatrixAt(i, tmpM.compose(tmpP, tmpQ, tmpS.set(FIG, FIG, FIG)));
+          k.setColorAt(i, tmpC.setRGB(0.55, 0.5, 0.48));
+        }
+        for (const role of Object.keys(kinds)) {
+          const { live, dead, ghost } = kinds[role];
+          live.count = counts[role]; dead.count = dcounts[role]; ghost.count = counts[role];
+          live.instanceMatrix.needsUpdate = true; dead.instanceMatrix.needsUpdate = true;
+          if (live.instanceColor) live.instanceColor.needsUpdate = true;
+          if (dead.instanceColor) dead.instanceColor.needsUpdate = true;
+        }
+        stockCount = Object.values(counts).reduce((total, n) => total + n, 0);
       }
 
       // projéteis
@@ -524,8 +540,23 @@ export function createView(canvas) {
     get camera() { return cam; },
 
     /** Desenha um fotograma. */
-    render() { resize(); placeCamera(); renderer.render(scene, camera); },
+    render(cameraEffect) {
+      resize(); placeCamera();
+      if (cameraEffect) {
+        cameraEffect(camera);
+        const close = camera.fov > 46;
+        for (const { ghost } of Object.values(kinds)) ghost.visible = !close;
+        hybrid?.closeView(close);
+        for (const v of visuals.values()) {
+          v.ring.material.depthTest = close;
+          v.ring.material.opacity = v.ringOpacity * (close ? 0.3 : 1);
+        }
+      }
+      renderer.render(scene, camera);
+    },
     /** Estatísticas do renderer (para medir desempenho). */
-    info: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles }),
+    info: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
+      geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures,
+      programs: renderer.info.programs.length, troops: hybridActive ? 'c' : 'm1', soldiers: hybridActive ? hybrid.count : stockCount }),
   };
 }
