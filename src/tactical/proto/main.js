@@ -29,6 +29,7 @@ function applyTexts() {
   for (const el of document.querySelectorAll('[data-t]')) el.textContent = t(el.dataset.t);
   $('lang').value = i18n.locale;
   $('seed').textContent = t('battleNo', { seed: ui.seed });
+  $('fallback').title = t('cmd.fallBackTip'); $('retreat').title = t('cmd.retreatTip');
   $('ver').textContent = PROTO_VERSION;   // discreto, para não misturar resultados de versões diferentes no playtest
   $('pause').setAttribute('aria-label', ui.paused ? t('time.play') : t('time.pause'));
   if (!$('result').hidden) showResult();
@@ -403,6 +404,8 @@ window.addEventListener('blur', () => keys.clear());
 function togglePause() { ui.paused = !ui.paused; $('pause').classList.toggle('on', ui.paused); $('pause').textContent = ui.paused ? '▶' : '❚❚'; applyTexts(); }
 function setSpeed(s) { ui.speed = s; for (const b of document.querySelectorAll('[data-speed]')) b.classList.toggle('on', +b.dataset.speed === s); }
 
+// A barra de baixo muda de altura (duas linhas em ecrãs estreitos): a dica e o registo ficam sempre por cima dela.
+new ResizeObserver(() => { const b = `${$('bar').offsetHeight + 22}px`; $('hint').style.bottom = $('feed').style.bottom = b; }).observe($('bar'));
 $('cards').addEventListener('click', ev => { const c = ev.target.closest('.card'); if (c) ui.selected = c.dataset.id; });
 $('start').addEventListener('click', startBattle);
 $('reset').addEventListener('click', () => { ui.placement = defaultPlacement(); });

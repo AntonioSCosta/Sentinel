@@ -120,3 +120,13 @@ Todas as diferenças vêm da correção dos vélites; as mudanças de ecrã não
 ### Hipótese H2 (não implementada): recuperar a ocultação
 
 Um grupo visto voltaria a ficar escondido depois de **perder o contacto visual** com todos os romanos (nenhum a menos de `spotRange` × 1,5, por exemplo) e de **permanecer em cobertura** (ocultação > 0,5) durante um tempo mínimo (por exemplo 15 s), sem combater nem disparar. A coluna continuaria de sobreaviso (sem surpresa). Precisa de condições explícitas no ecrã (contagem no cartão), de testes de determinismo e de comparação de equilíbrio com os robôs — esperar escondido não pode voltar a ganhar sozinho. Decisão depois do playtest do M1.2.
+
+## M1.2 — correções de usabilidade antes do primeiro playtest externo
+
+Só ecrã e textos; simulação, equilíbrio, reação romana, relatório e `PROTO_VERSION` (`m1.2-proto-1`) inalterados. Guardar o SHA da build com as notas das sessões.
+
+- **Câmara inicial** (`view.js`): os quatro grupos começavam por baixo da barra do topo; a 1366×768 não se conseguiam agarrar sem mexer na câmara. Novo enquadramento (`tx 80, ty 44, dist 110`): grupos e etiquetas abaixo da barra e à direita do painel de preparação de 1280×720 a 1920×1080. Posições táticas iguais.
+- **Objetivo** no painel de preparação (`prep.goal`, inglês e português): a coluna vem da esquerda e tem de ser desbaratada antes de sair do vale. Não diz onde esconder nem quando dar o sinal.
+- **B vs R**: botões «Fall back (stay)» / «Leave battle» («Recuar (fica)» / «Abandonar batalha»), dica de cada botão, dica da batalha e lista de controlos explicam que B fica no campo e R sai de vez.
+- **Layout**: a dica e o registo acompanham a altura da barra de baixo (a 1366×768 passa a duas linhas e tapava a dica).
+- Verificação: `node tools/e2e-tactical-first-screen.mjs` (falha 20 verificações sem as correções); capturas `production/qa/evidence/tactical-proto-m12/primeiro-ecra-*.jpg`.

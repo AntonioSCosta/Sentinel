@@ -46,6 +46,7 @@ kbd { font: 11px ui-monospace, monospace; color: var(--dim); border: 1px solid #
 #prep { position: fixed; left: 12px; top: 74px; width: min(330px, calc(100vw - 24px)); padding: 14px; }
 #prep p { margin: 0 0 12px; color: var(--ink); }
 #prep .row { display: flex; gap: 8px; }
+#goal { font-weight: 700; color: var(--bronze); }
 #prep-warn { font-size: 13px; color: var(--ok); }
 #prep-warn.bad { color: #ffb19c; }
 #start { background: #7a4f22; border-color: var(--bronze); font-weight: 700; flex: 1; }
@@ -148,6 +149,7 @@ kbd { font: 11px ui-monospace, monospace; color: var(--dim); border: 1px solid #
 </header>
 
 <aside id="prep" class="panel">
+  <p id="goal" data-t="prep.goal"></p>
   <p data-t="prep.hint"></p>
   <p id="prep-warn" aria-live="polite"></p>
   <div class="row"><button id="start" data-t="prep.start">Start</button><button id="reset" data-t="prep.reset">Reset</button></div>
@@ -161,8 +163,8 @@ kbd { font: 11px ui-monospace, monospace; color: var(--dim); border: 1px solid #
   <div id="orders">
     <button id="role"></button>
     <button id="hold"><span data-t="cmd.hold">Hold</span><kbd>H</kbd></button>
-    <button id="fallback"><span data-t="cmd.fallBack">Fall back</span><kbd>B</kbd></button>
-    <button id="retreat"><span data-t="cmd.retreat">Leave field</span><kbd>R</kbd></button>
+    <button id="fallback"><span data-t="cmd.fallBack">Fall back (stay)</span><kbd>B</kbd></button>
+    <button id="retreat"><span data-t="cmd.retreat">Leave battle</span><kbd>R</kbd></button>
     <button id="signal"><span data-t="signal">Signal</span><kbd>Space</kbd></button>
   </div>
   <div id="time">

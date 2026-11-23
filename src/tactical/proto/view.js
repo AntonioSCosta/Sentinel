@@ -298,7 +298,9 @@ export function createView(canvas) {
   }
 
   // --- câmara ---
-  const cam = { tx: 86, ty: 58, dist: 96, yaw: 0, pitch: 0.95, shake: 0 };
+  // Enquadramento inicial: os quatro grupos (zona de colocação, y ≈ 9) ficam abaixo da barra do topo e à direita do painel
+  // de preparação de 1280×720 a 1920×1080 (tests: e2e-tactical-m12, verificação «primeiro ecrã»).
+  const cam = { tx: 80, ty: 44, dist: 110, yaw: 0, pitch: 0.95, shake: 0 };
   function placeCamera() {
     cam.tx = Math.min(FIELD.w + 10, Math.max(-10, cam.tx)); cam.ty = Math.min(FIELD.h + 10, Math.max(-10, cam.ty));
     cam.dist = Math.min(150, Math.max(32, cam.dist));
