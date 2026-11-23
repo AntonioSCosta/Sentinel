@@ -298,56 +298,68 @@ O pipeline atual do Sentinel é o do combate em primeira/terceira pessoa (estilo
 
 ### 9.2 Representação atualmente utilizada no protótipo tático M1.2
 
-O repositório atual **não contém ainda um renderer tático isométrico dedicado**. O que existe hoje:
+O repositório já contém um renderer tático Three.js independente do motor de combate close-up, em `src/tactical/proto/view.js` (protótipo M1/M1.2, servido por `tactical-proto.html`). A simulação (`src/tactical/sim.js`, `combat.js`, `data.js`) é desacoplada do renderer, como o design exige.
 
-- **Mapa de campanha**: canvas 2D (`src/campaign/map-view.js`, `ui.js`) — sem personagens 3D.
-- **Combate**: a cena 3D em primeira/terceira pessoa descrita em 9.1 (personagens completos).
-- **Inimigos/aliados** na cena 3D: soldados com rig completo, até algumas dezenas por missão.
+Representação dos soldados no M1.2:
 
-Ou seja, no estado atual, o "tático" reutiliza o mesmo pipeline de alta fidelidade do combate close-up, aplicado a pequenos grupos. Não existe ainda um modo isométrico com representação simplificada.
+- **Geometrias primitivas por papel** (`soldierGeometry(role)`): cilindros, esferas e caixas fundidas (`mergeGeometries`) num único `BufferGeometry` por papel — `guerreiro`, `fundeiro`, `legionario`, `velite`.
+- **Cores de vértice** (vertex colors) para distinguir papéis; sem texturas nem materiais PBR.
+- **Instancing**: um `InstancedMesh` por papel e por estado (`live`, `dead`, `ghost`), com `CAP = 40` por papel, `DynamicDrawUsage`. Total máximo ~160 soldados por papel? Na prática os grupos têm 3–5 homens.
+- **Silhueta «raio-X»** (`ghost`): InstancedMesh partilhando a `instanceMatrix` do `live`, desenhado só onde o soldado está tapado pelas copas (depth func `GreaterDepth`), para nunca se perder um grupo de vista.
+- **Animação**: **não há esqueleto nem clips**. O movimento é simulado por instância: bob (seno), lunge em combate, rotação da instância para o yaw, e queda do cadáver por rotação do quaternion (sem skinning). Os soldados são estátuas rígidas com deslocamento procedural.
+- **LOD**: não há LOD de geometria nem de pose. O custo é controlado por instancing e por culling implícito (campo pequeno, ~160×110 m).
+- **Projéteis e partículas**: `InstancedMesh` para pedras/dardos; `THREE.Points` para partículas.
+- **Terreno**: malha de terreno com vertex colors (heightAt, cobertura de bosques), instancing de árvores/rochas/tufo de erva.
 
-### 9.3 Componentes do pipeline antigo realmente reutilizáveis no novo combate
+Ou seja, o M1.2 **já adotou a representação simplificada** (instancing de primitivas, sem esqueleto), exatamente na direção recomendada para grupos vistos de câmara isométrica. A recomendação original de "substituir por completo" não se aplica: o protótipo já é essa solução.
 
-| Componente | Reutilizável? | Notas |
+### 9.3 Componentes reutilizáveis vs. já implementados no renderer tático
+
+| Componente do pipeline antigo | Estado no M1.2 | Leitura |
 |---|---|---|
-| Esqueleto canónico (Quaternius) e nomes de ossos | Sim, como referência | Serve de base para animações e retargeting |
-| Clips UAL 1/2 (CC0) | Sim | Podem ser reutilizados ou simplificados (subconjunto de loops) |
-| `SkeletonUtils.clone` | Sim | Partilha de esqueleto base |
-| `splitClips` (3 camadas) | Parcial | Útil se mantiver animação por camadas; dispensável em representação simplificada |
-| `driveState` / `locomotion` (escolha de loop por velocidade) | Sim | Lógica pura, independente do renderer |
-| `legTwist`, `attackTime` | Parcial | Úteis se mantiver poses authored; dispensáveis se usar animações baked |
-| Material/textura de corpo (`loadMaterials`, outfits) | Sim | Reutilizáveis para LOD alto |
-| Slots de equipamento (arma/escudo/capacete por osso) | Sim | Conceito reutilizável, mesmo com rig simplificado |
-| `cullCharacters`, `poseEvery`, `shouldPose` | Sim | Estratégias de LOD aplicáveis a qualquer representação |
-| `instanced` (cenário) | Sim | Padrão reutilizável para soldados distantes |
-| Licenças (CC0/MIT/Apache/OFL) | Sim | Sem restrições |
+| Esqueleto Quaternius + nomes de ossos | **Não usado** | O M1.2 não usa esqueleto; soldados são primitivas rígidas |
+| Clips UAL 1/2 | **Não usados** | Sem animação esquelética; movimento é procedural por instância |
+| `SkeletonUtils.clone` | **Não usado** | Instancing substitui a clonagem de rigs |
+| `splitClips` (3 camadas) | **Não usado** | Sem camadas de animação |
+| `driveState` / `locomotion` (escolha de loop) | **Parcialmente reutilizado** | A lógica de velocidade → tipo de movimento existe, mas aplicada a bob/lunge, não a clips |
+| `legTwist`, `attackTime` | **Não usados** | Sem poses authored |
+| Material/textura de corpo | **Não usado** | Vertex colors simples; texturas PBR não aplicadas |
+| Slots de equipamento por osso | **Não usado** | Papéis distinguem-se por geometria, não por slots |
+| `cullCharacters`, `poseEvery`, `shouldPose` | **Não necessário** | Sem skinning a reduzir; instancing já é barato |
+| `instanced` (padrão) | **Já implementado** | `InstancedMesh` por papel/estado é o núcleo do M1.2 |
+| Licenças (CC0/MIT/Apache/OFL) | **Reutilizáveis** | Ativos continuam disponíveis se se quiser elevar o detalhe |
+| `cullChunks` (cenário) | **Conceito aplicável** | Cenário é pequeno; culling por distância seria útil em mapas maiores |
 
-### 9.4 Componentes que seria melhor não transportar
+### 9.4 Componentes do pipeline antigo que seria melhor não transportar
 
-| Componente | Porquê não transportar |
-|---|---|
-| `shellGeometry` (túnica procedural, 14 iterações de smoothing) | Custo alto de CPU/memória; para grupos pequenos em isométrico, túnicas simples (mesh estático ou vertex color) bastam |
-| `paintBody` / `addFace` (face detalhada colada) | Detalhe facial invisível a distância isométrica |
-| `weaveTexture` (tecido procedural 64×64) | Desnecessário para grupos pequenos; textura simples ou cor sólida |
-| `slimBody` (escala de ossos para civis) | Só relevante em close-up |
-| Painéis dinâmicos de saia (`rig.dyn`) | Física de cloth procedural cara; substituir por mesh estático ou animação baked |
-| IK do braço (`solveArm`) e poses authored (`moves.js`) | Só fazem sentido em combate close-up com direções de ataque |
-| `AnimationMixer` por soldado com 3 camadas | Custo alto; para grupos pequenos em isométrico, animações baked de corpo inteiro ou até sprites são mais eficientes |
-| `AttackTime` sincronizado com `swing.js` | Acoplamento desnecessário se a animação for apenas visual |
+A maioria dos itens da lista anterior **já não se aplica**, porque o M1.2 já os evita:
 
-### 9.5 Esqueleto completo (65 ossos) vs. solução simplificada para grupos pequenos em câmara isométrica
+| Componente | Estado no M1.2 | Ação recomendada |
+|---|---|---|
+| `shellGeometry`, `paintBody`, `addFace`, `weaveTexture`, `slimBody` | Não usados | Manter fora do tático; reservar para close-up/cinemáticas |
+| Painéis dinâmicos de saia (`rig.dyn`) | Não usados | Manter fora |
+| IK do braço e poses authored (`moves.js`, `solveArm`) | Não usados | Manter fora do tático |
+| `AnimationMixer` por soldado | Não usado | Manter fora; instancing é mais eficiente para grupos |
+| `AttackTime` sincronizado com `swing.js` | Não usado | Manter fora; animação é puramente visual/procedural |
 
-**Recomendação: solução simplificada para o renderer tático.**
+O que **falta** no M1.2 para legibilidade e aparência (melhorias incrementais, não substituição):
 
-Justificação:
+1. **Diferenciação visual por papel mais clara** — silhuetas distintas (capacete, escudo, arco) já existem; cores de facção e estados (ameaçado, quebrado, escondido) já usam cor/anel. Pequenas melhorias de contraste ajudariam.
+2. **Animação de ataque/contacto** — atualmente só bob + lunge; adicionar um flash/impacto (já existe `burst` de partículas) ou uma rotação curta da instância no impacto.
+3. **Queda de cadáver mais legível** — já existe rotação progressiva; poderia ganhar uma pose final estável.
+4. **LOD por distância** — o campo é pequeno; para mapas maiores, considerar impostor/sprite além de ~100 m.
+5. **Sombras** — já ativas; verificar custo com muitos soldados.
+6. **Textura/normal map nos soldados** — atualmente vertex colors; uma textura simples por papel melhoraria a leitura sem custo de skeleton.
 
-1. **Visibilidade**: numa câmara isométrica, os soldados ocupam poucos píxeis. Detalhes de dedos, expressões faciais e twist de cintura são invisíveis.
-2. **Custo**: 65 ossos × N soldados × skinning por frame. Mesmo com `poseEvery`, o custo de skinning e de draw calls (corpo + túnica + cabelo + arma + escudo + capacete) é desproporcional ao detalhe visível.
-3. **Alternativas mais eficientes para grupos pequenos**:
-   - **Mesh simplificado** (10–20 ossos ou até estático) com animação baked (walk/idle/attack/death) — suficiente para grupos pequenos vistos de cima.
-   - **Sprites/billboards animados** (2D ou impostor 3D) — mais barato ainda, adequado para dezenas de soldados.
-   - **Instancing** com pose partilhada para soldados idênticos (formação).
-4. **Quando manter o rig completo**: apenas para o herói e personagens principais em close-up (combate first-person), e para cinemáticas. O combate tático não precisa desse nível de detalhe.
+### 9.5 Recomendação técnica para o renderer tático (partindo do M1.2 existente)
 
-**Conclusão técnica**: para o novo renderer tático, recomendo uma **representação simplificada** (mesh low-poly com animações baked ou impostor) para grupos pequenos, reutilizando apenas os componentes listados em 9.3 (locomotion, materiais, slots de equipamento, culling/LOD). O pipeline completo de 65 ossos deve ser reservado ao combate close-up e a personagens de destaque. Esta decisão final fica para comparar com o relatório do FreeBuff.
+O M1.2 **já implementa a representação simplificada** recomendada (instancing de primitivas, sem esqueleto, sem AnimationMixer). Portanto, a recomendação não é substituir o pipeline, mas sim **melhorar incrementalmente** a legibilidade e a aparência das tropas, mantendo a base instanciada:
+
+1. **Manter a base instanciada** (`InstancedMesh` por papel/estado) — é o ponto forte do M1.2 e deve continuar.
+2. **Acrescentar animação leve** (sem esqueleto): rotação/lunge no impacto, queda mais estável, bob mais expressivo. Já existe infraestrutura de partículas (`burst`) e `flash` por soldado.
+3. **Melhorar diferenciação visual** com texturas simples por papel (sem PBR completo) e contraste de cores por facção/estado.
+4. **LOD por distância** apenas se o campo crescer: impostor/sprite além de ~100 m.
+5. **Reservar o pipeline completo de 65 ossos** para close-ups, cinemáticas e personagens de destaque (combate first-person), onde já é usado.
+
+**Conclusão sobre personagens simplificadas**: continua **válida e já aplicada** no M1.2. A questão não é "simplificado vs. completo", mas "quanto detalhe incremental acrescentar ao simplificado sem perder a eficiência do instancing". A decisão final de direção visual fica para comparação com o relatório do FreeBuff.
 "
