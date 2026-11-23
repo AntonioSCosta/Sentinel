@@ -1,4 +1,7 @@
 export default {
+  "campaign.subtitle": "Batalha de campanha",
+  "campaign.back": "Voltar à campanha",
+  "campaign.saveFailed": "Não foi possível guardar a campanha. Tenta de novo ou recarrega se a campanha estiver aberta noutro separador.",
   "title": "A Emboscada",
   "subtitle": "Protótipo · arte provisória",
   "phase.prep": "Preparação",

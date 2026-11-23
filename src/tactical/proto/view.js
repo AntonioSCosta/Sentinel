@@ -323,6 +323,7 @@ export function createView(canvas) {
   let clock = 0;
 
   return {
+    dispose() { renderer.dispose(); renderer.forceContextLoss(); },
     /** Mostra ou esconde a camada da preparação. */
     setPrep(on) { prepLayer.visible = on; },
 

@@ -5,12 +5,13 @@ import { YEAR_DAYS } from './clock.js';
 import { newCampaign, serialize, deserialize, foodPerDay } from './state.js';
 import { makePraetor } from './praetor.js';
 import { stepDay, ownEffect } from './simulation.js';
-import { battleSpec, BATTLE_TYPES, applyResult, withdrawFrom, ALLY_CAP } from './battles.js';
+import { battleSpec, BATTLE_TYPES, applyResult, applyPatrolResult, withdrawFrom, ALLY_CAP } from './battles.js';
 import { dueScheduled, rollEvent } from './events.js';
 import { ensureIntel, forgetForce, rememberForce, intelView } from './intel.js';
 import { ensureCommunities } from './communities.js';
 import { payTribute, refuseTribute } from './rome.js';
 import { postureSnapshot, postureChanges, postureDiff, splitSameOccurrence, record, validJournal } from './journal.js';
+import { createPatrolEncounter, PATROL_ENGINE, patrolCasualties, patrolOf, preparePatrol, restorePatrol } from './tactical-patrol.js';
 
 export const STORAGE_KEY = 'viriato.campaign';
 const PHASES = ['mapa', 'batalha', 'fim'];
@@ -38,7 +39,7 @@ function asSeen(state) {
   return copy;
 }
 
-function build(state, storage, phase, battle, journal = []) {
+function build(state, storage, phase, battle, journal = [], savedRaw = null, tactical = null, m3 = null) {
   ensureIntel(state);   // campanha nova ou gravação antiga: o jogador começa a saber o que tem à vista
   ensureCommunities(state);   // gravação v1 de antes das comunidades: ganha-as no estado inicial
   /** Corre `fn` (que mexe no estado) e acrescenta aos eventos as mudanças de postura; regista tudo no Diário do dia. */
@@ -48,14 +49,22 @@ function build(state, storage, phase, battle, journal = []) {
     record(flow.journal, day(), out.events);
     return out;
   };
+  function write({ state, phase, battle, tactical, journal }, meta = m3) {
+    if (typeof storage?.setItem !== 'function') return false;
+    try {
+      const encoded = tactical ? { engine: PATROL_ENGINE, spec: battle, request: tactical } : battle;
+      const data = { v: 1, phase, battle: encoded, state: JSON.parse(serialize(state)), journal };
+      if (meta) data.m3 = meta;
+      const next = JSON.stringify(data);
+      if (storage.getItem && (storage.getItem(STORAGE_KEY) ?? null) !== savedRaw) return false;
+      storage.setItem(STORAGE_KEY, next);
+      savedRaw = next;
+      return true;
+    } catch { return false; }
+  }
   const flow = {
-    state, phase, battle, journal,
-    save() {
-      if (!storage || typeof storage.setItem !== 'function') return;
-      try { // gravar é best-effort (quota, modo privado): nunca rebenta o jogo
-        storage.setItem(STORAGE_KEY, JSON.stringify({ v: 1, phase: flow.phase, battle: flow.battle, state: JSON.parse(serialize(state)), journal: flow.journal }));
-      } catch { /* ignorado */ }
-    },
+    state, phase, battle, journal, tactical,
+    save() { return write(flow); },
     order(o) {
       if (flow.phase !== 'mapa') return { events: [], battle: null, refused: true };
       const rng = dayRng(state);
@@ -79,15 +88,23 @@ function build(state, storage, phase, battle, journal = []) {
       record(flow.journal, state.day - 1, events.slice(0, dayBreak).concat(ordered, back));   // a ordem, a marcha, o pretor, a postura que a ordem mudou: o dia que acabou
       record(flow.journal, state.day, stay);                                                  // a colheita, Roma, os relatos, o acontecimento: o dia novo
       events.push(...ordered, ...closing);
-      if (encounter && !state.over) { flow.battle = battleSpec(encounter, state, rng); flow.phase = 'batalha'; }
-      else yearEnd();
+      if (encounter && !state.over) {
+        const spec = flow.battle = battleSpec(encounter, state, rng);
+        flow.phase = 'batalha';
+        if (patrolOf(state, spec)) {
+          const campaignId = m3?.campaignId ?? Array.from(globalThis.crypto.getRandomValues(new Uint32Array(4))).join('-');
+          const next = { ...m3, campaignId, revision: (m3?.revision ?? 0) + 1 };
+          const request = createPatrolEncounter(state, spec, next);
+          if (request) { m3 = next; flow.tactical = request; }
+        }
+      } else yearEnd();
       if (state.over && flow.phase !== 'batalha') flow.phase = 'fim';
       flow.save();
       return { events, battle: flow.battle };
     },
     /** Recusar o combate pendente (battles.withdrawFrom). Recusado sem mexer em nada quando não se pode. */
     withdraw() {
-      if (flow.phase !== 'batalha') return { events: [], refused: true };
+      if (flow.phase !== 'batalha' || flow.tactical) return { events: [], refused: true };
       let events = null;
       chronicle(() => ({ events: (events = withdrawFrom(state, flow.battle)) || [] }));
       if (!events) return { events: [], refused: true };
@@ -98,7 +115,7 @@ function build(state, storage, phase, battle, journal = []) {
       return { events };
     },
     finishBattle(result) {
-      if (flow.phase !== 'batalha') return { events: [], refused: true };
+      if (flow.phase !== 'batalha' || flow.tactical) return { events: [], refused: true };
       const battle = flow.battle;
       const { events } = chronicle(() => ({ events: applyResult(state, battle, result ?? {}) }));
       if (result?.won && battle?.foeId !== undefined) {
@@ -114,6 +131,36 @@ function build(state, storage, phase, battle, journal = []) {
       yearEnd();
       flow.phase = state.over ? 'fim' : 'mapa';
       flow.save();
+      return { events };
+    },
+    prepareTactical(request, placement) {
+      if (flow.phase !== 'batalha' || !request || request !== flow.tactical) return null;
+      const tactical = preparePatrol(request, placement);
+      if (!tactical || !write({ ...flow, tactical })) return null;
+      flow.tactical = tactical;
+      return tactical;
+    },
+    finishTactical(result) {
+      const request = flow.tactical;
+      if (flow.phase !== 'batalha' || !request || m3.lastResolved === request.encounterId) return { events: [], refused: true };
+      const casualties = patrolCasualties(state, flow.battle, request, result);
+      if (!casualties) return { events: [], refused: true };
+      const { world, ...mutable } = state;
+      const next = { ...structuredClone(mutable), world };
+      const journal = [...flow.journal];
+      const before = postureSnapshot(next);
+      const events = applyPatrolResult(next, flow.battle, casualties);
+      if (casualties.romanSurvivors > 0) rememberForce(next, flow.battle.foeId);
+      else forgetForce(next, flow.battle.foeId);
+      events.push(...postureChanges(before, next));
+      record(journal, next.day, events);
+      yearEnd(next);
+      const phase = next.over ? 'fim' : 'mapa';
+      const meta = { ...m3, lastResolved: request.encounterId };
+      if (!write({ state: next, phase, battle: null, tactical: null, journal }, meta)) return { events: [], refused: true };
+      Object.assign(state, next);
+      Object.assign(flow, { phase, battle: null, tactical: null, journal });
+      m3 = meta;
       return { events };
     },
   };
@@ -159,8 +206,8 @@ function build(state, storage, phase, battle, journal = []) {
     const copy = structuredClone(state);
     return { events: kind === 'pagar' ? payTribute(copy, id) : refuseTribute(copy, id), state: copy };
   };
-  function yearEnd() {
-    if (!state.over && state.day >= YEAR_DAYS) state.over = state.men >= WIN_MEN && state.fame >= WIN_FAME ? 'vitoria' : 'derrota';
+  function yearEnd(target = state) {
+    if (!target.over && target.day >= YEAR_DAYS) target.over = target.men >= WIN_MEN && target.fame >= WIN_FAME ? 'vitoria' : 'derrota';
   }
   return flow;
 }
@@ -169,25 +216,37 @@ export function createFlow({ storage, seed } = {}) {
   const s = seed ?? Date.now() % 2 ** 31;
   const state = newCampaign(s);
   state.praetor = makePraetor('vetilio', dayRng(state), state.world);
-  const flow = build(state, storage, 'mapa', null);
+  let savedRaw = null;
+  try { savedRaw = storage?.getItem?.(STORAGE_KEY) ?? null; } catch { /* Storage can be disabled. */ }
+  const flow = build(state, storage, 'mapa', null, [], savedRaw);
   flow.save();
   return flow;
 }
 
 export function loadFlow(storage) {
-  let parsed;
-  try { parsed = JSON.parse(storage?.getItem?.(STORAGE_KEY) ?? ''); } catch { return null; }
+  let parsed, savedRaw;
+  try { savedRaw = storage?.getItem?.(STORAGE_KEY); parsed = JSON.parse(savedRaw ?? ''); } catch { return null; }
   if (!parsed || typeof parsed !== 'object' || parsed.v !== 1 || !PHASES.includes(parsed.phase)) return null;
   const state = deserialize(JSON.stringify(parsed.state));
   if (!state) return null;
   if (parsed.phase === 'fim' && !state.over) return null;
-  const battle = parsed.phase === 'batalha' ? parsed.battle : null;
+  const m3 = parsed.m3 ?? null;
+  if (m3 && (typeof m3.campaignId !== 'string' || !m3.campaignId.trim() || !Number.isSafeInteger(m3.revision) || m3.revision < 1
+    || (m3.lastResolved !== undefined && typeof m3.lastResolved !== 'string'))) return null;
+  let battle = parsed.phase === 'batalha' ? parsed.battle : null;
+  let tactical = null;
   if (parsed.phase === 'batalha') {
+    if (battle?.engine === PATROL_ENGINE) {
+      if (!m3 || state.over || m3.lastResolved === battle.request?.encounterId) return null;
+      tactical = restorePatrol(state, battle.spec, m3, battle.request);
+      if (!tactical) return null;
+      battle = battle.spec;
+    }
     const b = battle, fin = Number.isFinite;
     if (!b || typeof b !== 'object' || !BATTLE_TYPES.includes(b.type) || !fin(b.realMen) || !fin(b.allies)
       || !b.enemies || typeof b.enemies !== 'object') return null;
   }
-  return build(state, storage, state.over ? 'fim' : parsed.phase, battle, validJournal(parsed.journal) ? parsed.journal : []);   // um diário estragado não deita a campanha fora
+  return build(state, storage, state.over ? 'fim' : parsed.phase, battle, validJournal(parsed.journal) ? parsed.journal : [], savedRaw, tactical, m3);
 }
 
 export function clearSave(storage) { storage?.removeItem?.(STORAGE_KEY); }

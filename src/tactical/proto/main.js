@@ -8,17 +8,22 @@ import { createSession, defaultPlacement, placeGroup, toggleRole, startsHidden, 
 import { spotRange, STUB } from './roman-stub.js';
 import { radius } from '../combat.js';
 import { COLUMN, WOODS } from './field.js';
+import { patrolColumn, patrolPlacement, patrolResult } from '../../campaign/tactical-patrol.js';
 
 const $ = id => document.getElementById(id);
+const campaign = window.frameElement?.sentinelCampaignArena;
 let storage; try { storage = window.localStorage; } catch { /* sem armazenamento */ }
-const i18n = createI18n({ storage, languages: ['en'] });   // inglês por omissão; a escolha do jogador fica guardada
+const i18n = campaign?.i18n ?? createI18n({ storage, languages: ['en'] });   // inglês por omissão; a escolha do jogador fica guardada
 const t = (k, p) => i18n.t(`tactical.${k}`, p);
 
-const view = createView($('view'));
+let view;
+try { view = createView($('view')); } catch (error) { campaign?.fail(); throw error; }
 const sfx = createSfx();
+const column = campaign ? patrolColumn(campaign.request) : null;
+const initialPlacement = () => campaign ? patrolPlacement(campaign.request) : defaultPlacement();
 
 const ui = {
-  phase: 'prep', seed: 1, placement: defaultPlacement(), session: null, selected: null,
+  phase: 'prep', seed: campaign?.request.seed ?? 1, placement: initialPlacement(), session: null, selected: null,
   speed: 1, paused: false, slow: 0, acc: 0, drag: null, endShown: false, bannerT: 0, spottedShown: false, flankedAt: new Map(), pops: new Map(),
 };
 const BAND_IDS = ui.placement.map(p => p.id);
@@ -32,14 +37,29 @@ function applyTexts() {
   $('fallback').title = t('cmd.fallBackTip'); $('retreat').title = t('cmd.retreatTip');
   $('ver').textContent = PROTO_VERSION;   // discreto, para não misturar resultados de versões diferentes no playtest
   $('pause').setAttribute('aria-label', ui.paused ? t('time.play') : t('time.pause'));
+  if (campaign) {
+    $('top').querySelector('[data-t="subtitle"]').textContent = t('campaign.subtitle');
+    for (const id of ['campaign-prep-error', 'campaign-result-error']) $(id).textContent = t('campaign.saveFailed');
+  }
   if (!$('result').hidden) showResult();
 }
-i18n.subscribe(applyTexts);
+const unsubscribeTexts = i18n.subscribe(applyTexts);
+function loseArena() { campaign.fail(); }
+function releaseArena() {
+  unsubscribeTexts();
+  $('view').removeEventListener('webglcontextlost', loseArena);
+  view.dispose();
+}
+if (campaign) {
+  $('view').addEventListener('webglcontextlost', loseArena);
+  $('campaign-cancel').hidden = $('campaign-return').hidden = false;
+  $('replay').hidden = $('plan').hidden = true;
+}
 
 // --- estado de cada grupo para o ecrã ---
 const groupsNow = () => ui.session ? ui.session.battle.groups
   : [...ui.placement.map(p => ({ ...p, side: 'lusitanos', facing: p.y < 55 ? Math.PI / 2 : -Math.PI / 2, hidden: startsHidden(p.x, p.y), state: 'ativo', left: null, order: { type: 'manter' } })),
-    ...COLUMN.map(c => ({ id: c.id, role: c.role, men: c.men, side: 'romanos', x: -20 - (22 - c.along), y: 58, facing: 0, state: 'ativo', left: null, order: { type: 'mover', pace: 'marcha', path: [] } }))];
+    ...(column ?? COLUMN).map(c => ({ id: c.id, role: c.role, men: c.men, side: 'romanos', x: column ? c.x - 60 : -20 - (22 - c.along), y: 58, facing: 0, state: 'ativo', left: null, order: { type: 'mover', pace: 'marcha', path: [] } }))];
 const lookup = id => groupsNow().find(g => g.id === id) || null;
 
 /**
@@ -245,7 +265,7 @@ function onEvents(events) {
 // --- partidas ---
 function startBattle() {
   sfx.unlock();
-  ui.session = createSession({ seed: ui.seed, placement: ui.placement });
+  ui.session = createSession({ seed: ui.seed, placement: ui.placement, column: column ?? undefined });
   ui.phase = 'waiting'; ui.acc = 0; ui.endShown = false; ui.spottedShown = false; ui.closeShown = false; ui.slow = 0; ui.flankedAt = new Map(); ui.pops = new Map();
   view.setPrep(false); view.reset();
   $('result').hidden = true; $('progress').querySelector('.sig').style.display = 'none';
@@ -314,7 +334,7 @@ function showResult() {
   $('r-ver').textContent = `${PROTO_VERSION} · seed ${r.seed}`;
   $('result').hidden = false;
   $('banner').classList.remove('show'); ui.bannerT = 0;
-  $('replay').focus();
+  $(campaign ? 'campaign-return' : 'replay').focus();
 }
 /** Chave do catálogo de um momento do relatório (a variante diz porquê: causa, quantos inimigos, flanco). */
 function whyKey(k) {
@@ -407,8 +427,32 @@ function setSpeed(s) { ui.speed = s; for (const b of document.querySelectorAll('
 // A barra de baixo muda de altura (duas linhas em ecrãs estreitos): a dica e o registo ficam sempre por cima dela.
 new ResizeObserver(() => { const b = `${$('bar').offsetHeight + 22}px`; $('hint').style.bottom = $('feed').style.bottom = b; }).observe($('bar'));
 $('cards').addEventListener('click', ev => { const c = ev.target.closest('.card'); if (c) ui.selected = c.dataset.id; });
-$('start').addEventListener('click', startBattle);
-$('reset').addEventListener('click', () => { ui.placement = defaultPlacement(); });
+$('start').addEventListener('click', async () => {
+  if (!campaign) { startBattle(); return; }
+  sfx.unlock();
+  const start = $('start');
+  start.disabled = true;
+  $('campaign-prep-error').hidden = true;
+  const placement = structuredClone(ui.placement);
+  try {
+    if (!await campaign.prepare(placement)) { $('campaign-prep-error').hidden = false; return; }
+    ui.placement = placement;
+    startBattle();
+  } catch { campaign.fail(); }
+  finally { start.disabled = false; }
+});
+$('reset').addEventListener('click', () => { ui.placement = initialPlacement(); });
+$('campaign-cancel').addEventListener('click', () => campaign?.cancel());
+$('campaign-return').addEventListener('click', async () => {
+  if (!campaign || !ui.session?.battle.over) return;
+  const button = $('campaign-return');
+  button.disabled = true;
+  $('campaign-result-error').hidden = true;
+  try {
+    if (!await campaign.finish(patrolResult(campaign.request, ui.session.battle))) $('campaign-result-error').hidden = false;
+  } catch { $('campaign-result-error').hidden = false; }
+  finally { button.disabled = false; }
+});
 $('role').addEventListener('click', () => { if (ui.selected) toggleRole(ui.placement, ui.selected); });
 $('hold').addEventListener('click', () => order({ type: 'manter' }));
 $('retreat').addEventListener('click', () => order({ type: 'retirar' }));
@@ -494,7 +538,7 @@ function detectionRings() {
 }
 
 // --- ciclo ---
-let last = performance.now(), uiT = 0, clashT = 0;
+let last = performance.now(), uiT = 0, clashT = 0, campaignReady = false;
 function frame(now) {
   const real = Math.min(0.1, (now - last) / 1000); last = now;
   // câmara pelo teclado
@@ -520,6 +564,7 @@ function frame(now) {
   view.sync(groupsNow(), visDt, { selected: ui.selected, showPlans: ui.phase === 'waiting', lookup, threats });
   view.setRanges(detectionRings());
   view.render();
+  if (campaign && !campaignReady) { campaignReady = true; campaign.ready(releaseArena); }
 
   // som de combate e tambor de marcha
   if (ui.session && !ui.paused) {

@@ -153,6 +153,8 @@ kbd { font: 11px ui-monospace, monospace; color: var(--dim); border: 1px solid #
   <p data-t="prep.hint"></p>
   <p id="prep-warn" aria-live="polite"></p>
   <div class="row"><button id="start" data-t="prep.start">Start</button><button id="reset" data-t="prep.reset">Reset</button></div>
+  <button id="campaign-cancel" data-t="campaign.back" hidden>Back to campaign</button>
+  <p id="campaign-prep-error" role="status" hidden></p>
 </aside>
 
 <div id="hint" class="panel" hidden></div>
@@ -182,10 +184,12 @@ kbd { font: 11px ui-monospace, monospace; color: var(--dim); border: 1px solid #
   <dl id="r-stats"></dl>
   <div id="r-why"></div>
   <div class="row">
+    <button id="campaign-return" class="primary" data-t="campaign.back" hidden>Back to campaign</button>
     <button id="replay" class="primary" data-t="result.replay">Play again</button>
     <button id="plan" data-t="result.plan">Change plan</button>
     <button id="copy" data-t="result.copy">Copy results</button>
   </div>
+  <p id="campaign-result-error" role="status" hidden></p>
   <div id="copy-status" aria-live="polite"></div>
   <div id="r-ver"></div>
   <textarea id="copy-text" readonly hidden></textarea>
