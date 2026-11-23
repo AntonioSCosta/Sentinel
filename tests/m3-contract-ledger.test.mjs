@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { reconcileRoster } from '../tools/m3-contract-ledger.mjs';
+import { reconcileRoster } from '../src/campaign/tactical-roster.js';
 
 function example() {
   const band = { kind: 'band', id: 'band' };

@@ -164,3 +164,25 @@ export function applyResult(state, spec, result) {
   if (checkRuin(state)) events.push({ type: 'ruina' });
   return events;
 }
+
+/** The M3.1 engine reports actual losses for the frozen patrol and band rosters. */
+export function applyPatrolResult(state, spec, { alliedDead, romanDead, romanSurvivors, outcome }) {
+  spend(state, { men: alliedDead });
+  state.kills = (state.kills || 0) + romanDead;
+  state.battles = (state.battles || 0) + 1;
+  observe(state, spec);
+  if (romanSurvivors > 0) state.patrols.find(p => p.id === spec.foeId).men = romanSurvivors;
+  else state.patrols = state.patrols.filter(p => p.id !== spec.foeId);
+
+  const events = [{ type: 'emboscada-tatica', outcome, alliedDead, romanDead, romanSurvivors }];
+  if (outcome === 'vitoria') {
+    state.fame += 5;
+    const change = raiseAttention(state, 'patrulha');
+    if (change) events.push({ type: 'roma-atencao', ...change });
+  } else if (outcome === 'derrota') spend(state, DEFEAT);
+  else if (outcome === 'retirada') spend(state, RETREAT);
+  else if (outcome === 'escapou') spend(state, { fame: ESCAPED_FAME });
+  state.cooldown = 2;
+  if (checkRuin(state)) events.push({ type: 'ruina' });
+  return events;
+}

@@ -1,4 +1,4 @@
-// M3 audit proof of concept. Reconciles a frozen roster with a final result in memory.
+// Reconcile a frozen campaign roster with a final tactical result, without mutating either.
 const sourceSides = new Map([
   ['band', 'lusitanos'], ['patrol', 'romanos'], ['praetor', 'romanos'], ['garrison', 'romanos'],
 ]);

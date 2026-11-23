@@ -4,7 +4,8 @@ import { createCampaignMapView } from '../campaign-map-3d/campaign-view.js';
 // Ecrã da campanha: liga o HUD e o mapa ao Flow.
 import { makeView, drawMap, hitTest, toWorld, toScreen, agoLabel } from './map-view.js';
 import { intelView, estimateMen, SCOUTS, RECON_RANGE, RECON_RADIUS } from './intel.js';
-import { createFlow, loadFlow, clearSave, WIN_MEN, WIN_FAME } from './flow.js';
+import { createFlow, loadFlow, clearSave, STORAGE_KEY, WIN_MEN, WIN_FAME } from './flow.js';
+import { openTacticalArena } from './tactical-arena.js';
 import { campaignDateParts, dateLabel, season, daysLeft, YEAR_DAYS } from './clock.js';
 import { entryFor, CHRONICLE, SOURCE_LABELS, isUnlocked } from './chronicle.js';
 import { isBridged, isStory } from './bridge.js';
@@ -238,6 +239,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   const $ = id => doc.getElementById(id);
   const el = (tag, cls, text) => { const e = doc.createElement(tag); if (cls) e.className = cls; if (text !== undefined && text !== null) e.textContent = text; return e; };
   let flow = null, view = null, active = false, selected = null, logDirty = true;
+  let tacticalArena = null, tacticalNotice = null;
   let anim = null, shown = null, facing = 1, walk = 0, rafId = 0, hover = null, paintPending = false;
   let mode = null, reconClick = null, focus = null;   // mode: null | 'ir' | 'reconhecer'
   let dest = null, stance = null;                     // a ordem permanente do bando quando o tempo corre
@@ -264,6 +266,8 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   const placeDescription = (place, community) => community ? tMap(`community.${community.id}`)
     : KIND_NAMES[place.kind] ? tMap(`kind.${place.kind}`) : place.kind;
   const tMap = (key, params) => i18n.t(`map.${key}`, params);
+  const eventMessage = (ev, events) => ev.type === 'emboscada-tatica'
+    ? tMap(`tactical.outcome.${ev.outcome}`, ev) : eventText(ev, flow.state, events);
   const duration = count => tMap('days', { count });
   const settlement = id => flow.state.world.settlements.find(x => x.id === id);
   const communityAt = id => { const k = communityOf(flow.state, id); return k ? flow.state.communities[k] : null; };
@@ -300,7 +304,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const fx = { party: shown || flow.state.party, facing, step: walk, selected, hover, trail, reach: REACH,
       focus, recon: scouting, issues: issueMarks(), flash: fl, route: route() };
     if (map3d) {
-      if (flow.phase === 'mapa') map3d.paint(flow.state, fx);
+      if (flow.phase === 'mapa' || flow.tactical) map3d.paint(flow.state, fx);
       else map3d.suspend();
       return;
     }
@@ -433,10 +437,10 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   let lastSaid = null, repeat = 1;
   function say(events) {
     for (const ev of events || []) {
-      const t = eventText(ev, flow.state, events);
+      const t = eventMessage(ev, events);
       if (!t) continue;
       if (t === lastSaid && log.length) { repeat += 1; log[log.length - 1] = `${t} (${repeat}.º dia)`; }
-      else { lastSaid = t; repeat = 1; log.push(t); }
+      else { lastSaid = t; repeat = 1; log.push(ev.type === 'emboscada-tatica' ? () => eventMessage(ev) : t); }
       logDirty = true;
       if (ev.id && ['postura', 'castigo', 'ocupada', 'comunidade-queimada', 'comunidade-abandonada', 'tributo-pago', 'castigo-fim', 'ocupada-fim'].includes(ev.type)) flash[ev.id] = now();
     }
@@ -762,7 +766,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     let day = null;
     for (const e of [...flow.journal].reverse()) {
       if (e.day !== day) { day = e.day; ul.append(el('li', 'day', `${DIARY.dayHead(e.day)} · ${dateLabel(e.day)}`)); }
-      const t = eventText(e, flow.state); if (!t) continue;
+      const t = eventMessage(e); if (!t) continue;
       const li = el('li', `cat-${categoryOf(e.type)}`); li.append(el('span', 'chip', DIARY.cats[categoryOf(e.type)] ?? ''), el('span', null, ` ${t}`)); ul.append(li);
     }
     body.append(ul);
@@ -898,9 +902,22 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     m.classList.toggle('hidden', !on);
     if (!on) { delete m.dataset.shown; return; }
     const b = flow.battle, ep = isStory(b) && EPISODES[b.chapter];
-    $('mb-type').textContent = ep ? ep[0] : BATTLE_NAMES[b.type] || 'Batalha';
+    const tactical = flow.tactical;
+    m.querySelector('.kicker').textContent = tactical ? tMap('tactical.kicker') : 'BATALHA';
+    $('mb-type').textContent = tactical ? tMap('tactical.title') : ep ? ep[0] : BATTLE_NAMES[b.type] || 'Batalha';
+    $('mb-fight').textContent = tactical ? tMap('tactical.fight') : 'Lutar';
+    $('mb-fight').disabled = !!tacticalArena;
     if (!m.dataset.shown) { m.dataset.shown = '1'; $('mb-fight').focus?.(); }
-    $('mb-withdraw').classList.toggle('hidden', !!ep || !b.withdraw?.possible);
+    $('mb-withdraw').classList.toggle('hidden', !!tactical || !!ep || !b.withdraw?.possible);
+    if (tactical) {
+      const [band, patrol] = tactical.sources;
+      const deployed = { lusitanos: 0, romanos: 0 };
+      for (const group of tactical.groups) deployed[group.side] += group.men;
+      $('mb-info').textContent = tacticalNotice ? tMap(`tactical.${tacticalNotice}`) : tMap('tactical.brief', {
+        enemy: patrol.atStart, allies: band.atStart, romanDeployed: deployed.romanos, alliedDeployed: deployed.lusitanos,
+      });
+      return;
+    }
     if (ep) { $('mb-info').textContent = ep[1]; return; }
     $('mb-info').textContent = battleBrief(b, flow.state);
   }
@@ -926,8 +943,43 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     } else if (!won) chron.textContent = 'Os montes ficaram em silêncio.';
     if (!e.dataset.shown) { e.dataset.shown = '1'; $('mend-new').focus?.(); }
   }
+  function launchTactical() {
+    if (tacticalArena) return;
+    if (!flow.save()) { tacticalNotice = 'saveFailed'; renderBattle(); return; }
+    const encounterFlow = flow;
+    let request = flow.tactical;
+    const withWrite = fn => win.navigator?.locks ? win.navigator.locks.request(STORAGE_KEY, fn) : fn();
+    const isCurrent = () => tacticalArena === arena && flow === encounterFlow;
+    const returnToMap = (notice, events = []) => {
+      if (!isCurrent()) return;
+      arena.dispose(); tacticalArena = null;
+      tacticalNotice = notice;
+      active = true; $('map').classList.remove('hidden');
+      say(events); render();
+      $(notice || flow.tactical ? 'mb-fight' : 'm-diary')?.focus();
+    };
+    tacticalNotice = 'loading';
+    const arena = openTacticalArena({ document: doc, window: win, i18n, request,
+      onReady: suspend,
+      onPrepare: async placement => {
+        const prepared = await withWrite(() => isCurrent() && flow.prepareTactical(request, placement));
+        if (prepared) request = prepared;
+        return !!prepared;
+      },
+      onFinish: async result => {
+        const resolved = await withWrite(() => isCurrent() && flow.finishTactical(result));
+        if (!resolved || resolved.refused) return false;
+        returnToMap(null, resolved.events);
+        return true;
+      },
+      onExit: returnToMap,
+    });
+    tacticalArena = arena;
+    renderBattle();
+  }
   $('mb-fight').addEventListener('click', () => {
     if (!active || flow?.phase !== 'batalha') return;
+    if (flow.tactical) { launchTactical(); return; }
     if (isBridged(flow.battle) && startBattle(flow.battle)) return;
     log.push('Não há como travar esta batalha; o bando evita-a.'); logDirty = true;
     simulateBattle({ won: false, retreated: true, alliesLost: 0, enemiesKilled: 0 });
@@ -1034,6 +1086,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   });
 
   function open(f) {
+    tacticalArena?.dispose(); tacticalArena = null; tacticalNotice = null;
     pause();
     reconClick = null;
     flow = f; active = true; selected = null; log.length = 0; logDirty = true; lastSaid = null; repeat = 1;
@@ -1052,6 +1105,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   }
   function close() {
     if (!active) return;
+    tacticalArena?.dispose(); tacticalArena = null; tacticalNotice = null;
     pause(); map3d?.suspend(); stopMarch(); hover = null;
     $('mcron').classList.add('hidden'); cronOpener = null; $('mdiary').classList.add('hidden');
     active = false; $('map').classList.add('hidden');
@@ -1064,6 +1118,8 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     renderTop();
     renderStatus();
     renderLog();
+    if (flow.tactical) renderBattle();
+    if (diaryOpen()) renderDiary();
     const title = $('mctx').querySelector('h3');
     const back = $('mctx').querySelector('.back');
     if (title && selected) {

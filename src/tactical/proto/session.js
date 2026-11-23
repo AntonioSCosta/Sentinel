@@ -4,11 +4,9 @@ import { createBattle, command, step, summary, groupOf } from '../sim.js';
 import { ROLES } from '../data.js';
 import { routThreshold } from '../combat.js';
 import { createRomanStub, spotRange } from './roman-stub.js';
-import { BAND, COLUMN_VARIANTS, EXITS, FIELD, ROAD, coverAt, concealAt, canPlace, nearestPlaceable, roadPoint } from './field.js';
-import { makeRng } from '../../campaign/rng.js';
-
-/** Versão do protótipo, para os relatórios de playtest. */
-export const PROTO_VERSION = 'm1.2-proto-1';
+import { EXITS, FIELD, coverAt, canPlace, nearestPlaceable } from './field.js';
+import { defaultPlacement, startsHidden, columnVariant, marchingColumn, PROTO_VERSION } from './setup.js';
+export { defaultPlacement, startsHidden, columnVariant, PROTO_VERSION } from './setup.js';
 
 /** Segundos de jogo como «m:ss». */
 export const clockText = secs => { const n = Math.max(0, Math.floor(secs)); return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`; };
@@ -36,9 +34,6 @@ export function momentText(k) {
   }
 }
 
-/** Colocação inicial do bando (cópia, para a preparação poder mexer). */
-export const defaultPlacement = () => BAND.map(g => ({ ...g }));
-
 /** Move um grupo na preparação para o ponto válido mais próximo de (x, y). */
 export function placeGroup(placement, id, x, y) {
   const g = placement.find(p => p.id === id);
@@ -56,12 +51,6 @@ export function toggleRole(placement, id) {
   return true;
 }
 
-/** Ordem de marcha da coluna para esta semente (índice em COLUMN_VARIANTS). */
-export const columnVariant = seed => makeRng(((seed | 0) ^ 0xc01) >>> 0 || 1).int(0, COLUMN_VARIANTS.length - 1);
-
-/** Um grupo nesta posição começa escondido (está em mato ou rocha, não em campo aberto). */
-export const startsHidden = (x, y) => concealAt(x, y) > 0.5;
-
 /** Progresso da coluna ao longo do campo, de 0 (entrada) a 1 (saída), pela vanguarda (ou quem ainda estiver). */
 function columnProgress(battle) {
   const rom = battle.groups.filter(g => g.side === 'romanos' && g.left === null);
@@ -73,14 +62,9 @@ function columnProgress(battle) {
  * Cria a partida a partir da colocação feita na preparação.
  * Os grupos colocados em mato ou rocha começam escondidos; os outros estão à vista e a coluna pode vê-los.
  */
-export function createSession({ seed, placement = defaultPlacement() }) {
+export function createSession({ seed, placement = defaultPlacement(), column = marchingColumn(seed) }) {
   for (const p of placement) if (!canPlace(p.x, p.y)) throw new Error(`colocação inválida: ${p.id}`);
   const variant = columnVariant(seed);
-  const column = COLUMN_VARIANTS[variant].map(c => {
-    const at = roadPoint(c.along);
-    return { id: c.id, role: c.role, men: c.men, x: at.x, y: at.y, facing: at.facing,
-      order: { type: 'mover', path: ROAD.filter(p => p.x > at.x + 1), pace: 'marcha', leave: true } };
-  });
   const band = placement.map(p => ({ id: p.id, role: p.role, men: p.men, x: p.x, y: p.y, facing: p.y < 55 ? Math.PI / 2 : -Math.PI / 2, hidden: startsHidden(p.x, p.y) }));
   const battle = createBattle({ seed, groups: [...column, ...band], exits: EXITS, coverAt });
   const stub = createRomanStub();
