@@ -34,3 +34,7 @@ CHROME_PATH=/usr/bin/chromium PLAYWRIGHT_DIR=/caminho/para/playwright \
 ```
 
 O teste começa com uma gravação v1 perto de uma patrulha real, usa **Emboscar** no mapa, simula uma falha WebGL e recarrega o pendente. Depois usa a arena e as regras M1.2 para terminar a batalha. Testa uma falha na escrita do resultado, regressa ao mapa 3D, verifica o diário e volta a carregar a campanha resolvida. [Teste de browser](../../tools/e2e-campaign-tactical.mjs) · [Testes de contrato e campanha](../../tests/m31-campaign-tactical.test.mjs)
+
+### Evidência no Chromium
+
+O confronto com a semente `83026358` terminou em derrota. Morreram 12 dos 15 lusitanos e 10 dos 13 romanos em campo. A campanha passou de 22 para 10 homens, incluindo os sete em reserva, e a patrulha de 18 para oito, incluindo os cinco em reserva. O resultado foi registado uma vez no dia 1 e confirmou-se depois de recarregar. [Encontro no mapa](../../production/qa/evidence/m3-1/01-map-encounter.jpg) · [Combate](../../production/qa/evidence/m3-1/02-tactical-battle.jpg) · [Resultado](../../production/qa/evidence/m3-1/03-tactical-result.jpg) · [Regresso ao mapa e diário](../../production/qa/evidence/m3-1/04-map-diary.jpg)
