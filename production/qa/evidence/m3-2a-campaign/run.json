@@ -1,0 +1,911 @@
+{
+  "revision": "af211f58aa66b148975448c4417781b0344d1d0b",
+  "browser": "156.0.8078.79",
+  "seed": 20,
+  "checkpointOrders": [
+    {
+      "kind": "marchar",
+      "to": {
+        "x": 175.5405645724386,
+        "y": 368.2881566975266
+      }
+    },
+    {
+      "kind": "marchar",
+      "to": {
+        "x": 175.5405645724386,
+        "y": 368.2881566975266
+      }
+    },
+    {
+      "kind": "marchar",
+      "to": {
+        "x": 175.5405645724386,
+        "y": 368.2881566975266
+      }
+    },
+    {
+      "kind": "marchar",
+      "to": {
+        "x": 175.5405645724386,
+        "y": 368.2881566975266
+      }
+    }
+  ],
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "renderer": "SwiftShader (software)",
+  "stages": [
+    {
+      "action": "Continue English campaign at Castro do Cerro",
+      "day": 4,
+      "phase": "mapa",
+      "men": 14,
+      "food": 52,
+      "arms": 15,
+      "fame": 20,
+      "position": {
+        "x": 175.5405645724386,
+        "y": 368.2881566975266
+      },
+      "attention": 0,
+      "sightings": {
+        "patrulha-3": {
+          "kind": "patrulha",
+          "x": 74.89370094612241,
+          "y": 369.7847207125654,
+          "day": 4,
+          "men": 6,
+          "dir": "nordeste"
+        }
+      },
+      "reports": [
+        {
+          "id": 1,
+          "got": 0,
+          "src": "inicio"
+        },
+        {
+          "id": 2,
+          "got": 4,
+          "src": "rumor"
+        }
+      ],
+      "doctrine": {
+        "activity": 0,
+        "ambushes": 0
+      },
+      "patrols": [
+        {
+          "id": "patrulha-3",
+          "kind": "patrulha",
+          "men": 6,
+          "x": 74.89370094612241,
+          "y": 369.7847207125654
+        }
+      ],
+      "pending": null,
+      "battles": 0,
+      "kills": 0,
+      "journal": []
+    },
+    {
+      "action": "Ask for aid at the castro",
+      "day": 5,
+      "phase": "mapa",
+      "men": 14,
+      "food": 90,
+      "arms": 15,
+      "fame": 20,
+      "position": {
+        "x": 175.5405645724386,
+        "y": 368.2881566975266
+      },
+      "attention": 0,
+      "sightings": {
+        "patrulha-3": {
+          "kind": "patrulha",
+          "x": 103.96244111932364,
+          "y": 350.3162923427328,
+          "day": 5,
+          "men": 6,
+          "dir": "nordeste"
+        }
+      },
+      "reports": [
+        {
+          "id": 1,
+          "got": 0,
+          "src": "inicio"
+        },
+        {
+          "id": 2,
+          "got": 4,
+          "src": "rumor"
+        }
+      ],
+      "doctrine": {
+        "activity": 0,
+        "ambushes": 0
+      },
+      "patrols": [
+        {
+          "id": "patrulha-3",
+          "kind": "patrulha",
+          "men": 6,
+          "x": 103.96244111932364,
+          "y": 350.3162923427328
+        }
+      ],
+      "pending": null,
+      "battles": 0,
+      "kills": 0,
+      "journal": [
+        {
+          "type": "ajuda",
+          "id": "castro-1",
+          "food": 40,
+          "men": 0,
+          "day": 4
+        }
+      ]
+    },
+    {
+      "action": "March to road waypoint 4",
+      "day": 6,
+      "phase": "mapa",
+      "men": 14,
+      "food": 88,
+      "arms": 15,
+      "fame": 20,
+      "position": {
+        "x": 197.98331768997014,
+        "y": 361.5255213342607
+      },
+      "attention": 0,
+      "sightings": {
+        "patrulha-3": {
+          "kind": "patrulha",
+          "x": 131.90492000980026,
+          "y": 329.2398155627948,
+          "day": 6,
+          "men": 6,
+          "dir": "nordeste"
+        }
+      },
+      "reports": [
+        {
+          "id": 1,
+          "got": 0,
+          "src": "inicio"
+        },
+        {
+          "id": 2,
+          "got": 4,
+          "src": "rumor"
+        },
+        {
+          "id": 3,
+          "got": 7,
+          "src": "rumor"
+        }
+      ],
+      "doctrine": {
+        "activity": 0,
+        "ambushes": 0
+      },
+      "patrols": [
+        {
+          "id": "patrulha-3",
+          "kind": "patrulha",
+          "men": 6,
+          "x": 131.90492000980026,
+          "y": 329.2398155627948
+        }
+      ],
+      "pending": null,
+      "battles": 0,
+      "kills": 0,
+      "journal": [
+        {
+          "type": "ajuda",
+          "id": "castro-1",
+          "food": 40,
+          "men": 0,
+          "day": 4
+        }
+      ]
+    },
+    {
+      "action": "Wait in ambush and receive a report",
+      "day": 7,
+      "phase": "mapa",
+      "men": 14,
+      "food": 86,
+      "arms": 15,
+      "fame": 20,
+      "position": {
+        "x": 197.98331768997014,
+        "y": 361.5255213342607
+      },
+      "attention": 0,
+      "sightings": {
+        "patrulha-3": {
+          "kind": "patrulha",
+          "x": 159.01847976810996,
+          "y": 315.6555325586153,
+          "day": 7,
+          "men": 6,
+          "dir": "sudeste"
+        }
+      },
+      "reports": [
+        {
+          "id": 1,
+          "got": 0,
+          "src": "inicio"
+        },
+        {
+          "id": 2,
+          "got": 4,
+          "src": "rumor"
+        },
+        {
+          "id": 3,
+          "got": 7,
+          "src": "rumor"
+        }
+      ],
+      "doctrine": {
+        "activity": 0,
+        "ambushes": 0
+      },
+      "patrols": [
+        {
+          "id": "patrulha-3",
+          "kind": "patrulha",
+          "men": 6,
+          "x": 159.01847976810996,
+          "y": 315.6555325586153
+        }
+      ],
+      "pending": null,
+      "battles": 0,
+      "kills": 0,
+      "journal": [
+        {
+          "type": "ajuda",
+          "id": "castro-1",
+          "food": 40,
+          "men": 0,
+          "day": 4
+        }
+      ]
+    },
+    {
+      "action": "Wait in ambush and intercept patrulha-3",
+      "day": 8,
+      "phase": "batalha",
+      "men": 14,
+      "food": 84,
+      "arms": 15,
+      "fame": 20,
+      "position": {
+        "x": 197.98331768997014,
+        "y": 361.5255213342607
+      },
+      "attention": 0,
+      "sightings": {
+        "patrulha-3": {
+          "kind": "patrulha",
+          "x": 181.67785041595369,
+          "y": 342.33048189021923,
+          "day": 8,
+          "men": 6,
+          "dir": "sudeste"
+        }
+      },
+      "reports": [
+        {
+          "id": 1,
+          "got": 0,
+          "src": "inicio"
+        },
+        {
+          "id": 2,
+          "got": 4,
+          "src": "rumor"
+        },
+        {
+          "id": 3,
+          "got": 7,
+          "src": "rumor"
+        }
+      ],
+      "doctrine": {
+        "activity": 0,
+        "ambushes": 0
+      },
+      "patrols": [
+        {
+          "id": "patrulha-3",
+          "kind": "patrulha",
+          "men": 6,
+          "x": 181.67785041595369,
+          "y": 342.33048189021923
+        }
+      ],
+      "pending": {
+        "type": "emboscada",
+        "engine": "m3.1-patrol",
+        "seed": 826356531
+      },
+      "battles": 0,
+      "kills": 0,
+      "journal": [
+        {
+          "type": "ajuda",
+          "id": "castro-1",
+          "food": 40,
+          "men": 0,
+          "day": 4
+        }
+      ]
+    },
+    {
+      "action": "Return from tactical victory",
+      "day": 8,
+      "phase": "mapa",
+      "men": 12,
+      "food": 84,
+      "arms": 15,
+      "fame": 25,
+      "position": {
+        "x": 197.98331768997014,
+        "y": 361.5255213342607
+      },
+      "attention": 10,
+      "sightings": {},
+      "reports": [
+        {
+          "id": 1,
+          "got": 0,
+          "src": "inicio"
+        },
+        {
+          "id": 2,
+          "got": 4,
+          "src": "rumor"
+        },
+        {
+          "id": 3,
+          "got": 7,
+          "src": "rumor"
+        }
+      ],
+      "doctrine": {
+        "activity": 1,
+        "ambushes": 1
+      },
+      "patrols": [],
+      "pending": null,
+      "battles": 1,
+      "kills": 6,
+      "journal": [
+        {
+          "type": "ajuda",
+          "id": "castro-1",
+          "food": 40,
+          "men": 0,
+          "day": 4
+        },
+        {
+          "type": "emboscada-tatica",
+          "outcome": "vitoria",
+          "alliedDead": 2,
+          "romanDead": 6,
+          "romanSurvivors": 0,
+          "day": 8
+        }
+      ]
+    },
+    {
+      "action": "Hide and consume one day of supplies",
+      "day": 9,
+      "phase": "mapa",
+      "men": 12,
+      "food": 83,
+      "arms": 15,
+      "fame": 25,
+      "position": {
+        "x": 197.98331768997014,
+        "y": 361.5255213342607
+      },
+      "attention": 10,
+      "sightings": {},
+      "reports": [
+        {
+          "id": 1,
+          "got": 0,
+          "src": "inicio"
+        },
+        {
+          "id": 2,
+          "got": 4,
+          "src": "rumor"
+        },
+        {
+          "id": 3,
+          "got": 7,
+          "src": "rumor"
+        }
+      ],
+      "doctrine": {
+        "activity": 0.9659363289248456,
+        "ambushes": 0.9885140203528962
+      },
+      "patrols": [],
+      "pending": null,
+      "battles": 1,
+      "kills": 6,
+      "journal": [
+        {
+          "type": "ajuda",
+          "id": "castro-1",
+          "food": 40,
+          "men": 0,
+          "day": 4
+        },
+        {
+          "type": "emboscada-tatica",
+          "outcome": "vitoria",
+          "alliedDead": 2,
+          "romanDead": 6,
+          "romanSurvivors": 0,
+          "day": 8
+        }
+      ]
+    },
+    {
+      "action": "Hide and sight the new Roman patrol",
+      "day": 10,
+      "phase": "mapa",
+      "men": 12,
+      "food": 82,
+      "arms": 15,
+      "fame": 25,
+      "position": {
+        "x": 197.98331768997014,
+        "y": 361.5255213342607
+      },
+      "attention": 9,
+      "sightings": {
+        "patrulha-9": {
+          "kind": "patrulha",
+          "x": 74.89370094612241,
+          "y": 369.7847207125654,
+          "day": 10,
+          "men": 6,
+          "dir": "nordeste"
+        }
+      },
+      "reports": [
+        {
+          "id": 1,
+          "got": 0,
+          "src": "inicio"
+        },
+        {
+          "id": 2,
+          "got": 4,
+          "src": "rumor"
+        },
+        {
+          "id": 3,
+          "got": 7,
+          "src": "rumor"
+        },
+        {
+          "id": 4,
+          "got": 11,
+          "src": "rumor"
+        }
+      ],
+      "doctrine": {
+        "activity": 0.9330329915368075,
+        "ambushes": 0.977159968434246
+      },
+      "patrols": [
+        {
+          "id": "patrulha-9",
+          "kind": "patrulha",
+          "men": 6,
+          "x": 74.89370094612241,
+          "y": 369.7847207125654
+        }
+      ],
+      "pending": null,
+      "battles": 1,
+      "kills": 6,
+      "journal": [
+        {
+          "type": "ajuda",
+          "id": "castro-1",
+          "food": 40,
+          "men": 0,
+          "day": 4
+        },
+        {
+          "type": "emboscada-tatica",
+          "outcome": "vitoria",
+          "alliedDead": 2,
+          "romanDead": 6,
+          "romanSurvivors": 0,
+          "day": 8
+        }
+      ]
+    },
+    {
+      "action": "Next map order triggers the scheduled Captives chapter",
+      "day": 10,
+      "phase": "batalha",
+      "men": 12,
+      "food": 82,
+      "arms": 15,
+      "fame": 25,
+      "position": {
+        "x": 197.98331768997014,
+        "y": 361.5255213342607
+      },
+      "attention": 9,
+      "sightings": {
+        "patrulha-9": {
+          "kind": "patrulha",
+          "x": 74.89370094612241,
+          "y": 369.7847207125654,
+          "day": 10,
+          "men": 6,
+          "dir": "nordeste"
+        }
+      },
+      "reports": [
+        {
+          "id": 1,
+          "got": 0,
+          "src": "inicio"
+        },
+        {
+          "id": 2,
+          "got": 4,
+          "src": "rumor"
+        },
+        {
+          "id": 3,
+          "got": 7,
+          "src": "rumor"
+        },
+        {
+          "id": 4,
+          "got": 11,
+          "src": "rumor"
+        }
+      ],
+      "doctrine": {
+        "activity": 0.9330329915368075,
+        "ambushes": 0.977159968434246
+      },
+      "patrols": [
+        {
+          "id": "patrulha-9",
+          "kind": "patrulha",
+          "men": 6,
+          "x": 74.89370094612241,
+          "y": 369.7847207125654
+        }
+      ],
+      "pending": {
+        "type": "historica",
+        "chapter": "cativos",
+        "engine": "legacy",
+        "seed": 1529697326
+      },
+      "battles": 1,
+      "kills": 6,
+      "journal": [
+        {
+          "type": "ajuda",
+          "id": "castro-1",
+          "food": 40,
+          "men": 0,
+          "day": 4
+        },
+        {
+          "type": "emboscada-tatica",
+          "outcome": "vitoria",
+          "alliedDead": 2,
+          "romanDead": 6,
+          "romanSurvivors": 0,
+          "day": 8
+        }
+      ]
+    },
+    {
+      "action": "Abandon the legacy battle using the pause menu",
+      "day": 10,
+      "phase": "mapa",
+      "men": 11,
+      "food": 79,
+      "arms": 15,
+      "fame": 20,
+      "position": {
+        "x": 197.98331768997014,
+        "y": 361.5255213342607
+      },
+      "attention": 9,
+      "sightings": {
+        "patrulha-9": {
+          "kind": "patrulha",
+          "x": 74.89370094612241,
+          "y": 369.7847207125654,
+          "day": 10,
+          "men": 6,
+          "dir": "nordeste"
+        }
+      },
+      "reports": [
+        {
+          "id": 1,
+          "got": 0,
+          "src": "inicio"
+        },
+        {
+          "id": 2,
+          "got": 4,
+          "src": "rumor"
+        },
+        {
+          "id": 3,
+          "got": 7,
+          "src": "rumor"
+        },
+        {
+          "id": 4,
+          "got": 11,
+          "src": "rumor"
+        }
+      ],
+      "doctrine": {
+        "activity": 1.9330329915368076,
+        "ambushes": 0.977159968434246
+      },
+      "patrols": [
+        {
+          "id": "patrulha-9",
+          "kind": "patrulha",
+          "men": 6,
+          "x": 74.89370094612241,
+          "y": 369.7847207125654
+        }
+      ],
+      "pending": null,
+      "battles": 2,
+      "kills": 6,
+      "journal": [
+        {
+          "type": "ajuda",
+          "id": "castro-1",
+          "food": 40,
+          "men": 0,
+          "day": 4
+        },
+        {
+          "type": "emboscada-tatica",
+          "outcome": "vitoria",
+          "alliedDead": 2,
+          "romanDead": 6,
+          "romanSurvivors": 0,
+          "day": 8
+        },
+        {
+          "type": "derrota",
+          "lost": 1,
+          "day": 10
+        }
+      ]
+    },
+    {
+      "action": "Continue hiding after returning to the map",
+      "day": 11,
+      "phase": "mapa",
+      "men": 11,
+      "food": 78,
+      "arms": 15,
+      "fame": 20,
+      "position": {
+        "x": 197.98331768997014,
+        "y": 361.5255213342607
+      },
+      "attention": 9,
+      "sightings": {
+        "patrulha-9": {
+          "kind": "patrulha",
+          "x": 103.96244111932364,
+          "y": 350.3162923427328,
+          "day": 11,
+          "men": 6,
+          "dir": "nordeste"
+        }
+      },
+      "reports": [
+        {
+          "id": 1,
+          "got": 0,
+          "src": "inicio"
+        },
+        {
+          "id": 2,
+          "got": 4,
+          "src": "rumor"
+        },
+        {
+          "id": 3,
+          "got": 7,
+          "src": "rumor"
+        },
+        {
+          "id": 4,
+          "got": 11,
+          "src": "rumor"
+        }
+      ],
+      "doctrine": {
+        "activity": 1.8671867915356761,
+        "ambushes": 0.9659363289248456
+      },
+      "patrols": [
+        {
+          "id": "patrulha-9",
+          "kind": "patrulha",
+          "men": 6,
+          "x": 103.96244111932364,
+          "y": 350.3162923427328
+        }
+      ],
+      "pending": null,
+      "battles": 2,
+      "kills": 6,
+      "journal": [
+        {
+          "type": "ajuda",
+          "id": "castro-1",
+          "food": 40,
+          "men": 0,
+          "day": 4
+        },
+        {
+          "type": "emboscada-tatica",
+          "outcome": "vitoria",
+          "alliedDead": 2,
+          "romanDead": 6,
+          "romanSurvivors": 0,
+          "day": 8
+        },
+        {
+          "type": "derrota",
+          "lost": 1,
+          "day": 10
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "warnings": [
+    "[WebGL]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+    "THREE.WebGLRenderer: The property .useLegacyLights has been deprecated. Migrate your lighting according to the following guide: https://discourse.threejs.org/t/updates-to-lighting-in-three-js-r155/53733.",
+    "[WebGL]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+  ],
+  "cosmeticRequests": [
+    {
+      "path": "/favicon.ico",
+      "status": 404
+    },
+    {
+      "path": "/favicon.ico",
+      "status": 404
+    },
+    {
+      "path": "/favicon.ico",
+      "status": 404
+    }
+  ],
+  "tacticalReport": {
+    "version": "m1.2-proto-1",
+    "seed": 826356531,
+    "columnOrder": 1,
+    "outcome": "vitoria",
+    "time": 78,
+    "signalAt": 14,
+    "signalColumnProgress": 0.27,
+    "combatSeconds": 64,
+    "orders": 4,
+    "refusedOrders": 0,
+    "charges": 5,
+    "slingVolleys": 14,
+    "discovered": [],
+    "seen": [],
+    "placement": [
+      {
+        "id": "lobos",
+        "role": "guerreiro",
+        "men": 4,
+        "x": 82,
+        "y": 35,
+        "hidden": true
+      },
+      {
+        "id": "javalis",
+        "role": "guerreiro",
+        "men": 4,
+        "x": 70,
+        "y": 73,
+        "hidden": true
+      },
+      {
+        "id": "corvos",
+        "role": "guerreiro",
+        "men": 3,
+        "x": 100,
+        "y": 79,
+        "hidden": true
+      },
+      {
+        "id": "fundeiros",
+        "role": "fundeiro",
+        "men": 3,
+        "x": 110,
+        "y": 42,
+        "hidden": true
+      }
+    ],
+    "flanks": {
+      "lusitanos": 2,
+      "romanos": 0
+    },
+    "fallBacks": 0,
+    "romanResponses": [
+      {
+        "type": "cerra",
+        "group": "velites",
+        "target": "vanguarda",
+        "ally": null,
+        "t": 17
+      }
+    ],
+    "keyMoments": [
+      {
+        "code": "signal",
+        "t": 14,
+        "percent": 27,
+        "count": 3
+      }
+    ],
+    "lusitanians": {
+      "start": 14,
+      "alive": 12,
+      "dead": 2,
+      "fled": 0,
+      "withdrawn": 0,
+      "escaped": 0
+    },
+    "romans": {
+      "start": 6,
+      "alive": 0,
+      "dead": 6,
+      "fled": 0,
+      "withdrawn": 0,
+      "escaped": 0
+    }
+  }
+}
