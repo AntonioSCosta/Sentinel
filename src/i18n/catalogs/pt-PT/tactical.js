@@ -1,4 +1,13 @@
 export default {
+  "camera.title": "Câmara de batalha experimental",
+  "camera.strategic": "Estratégica",
+  "camera.immersive": "Imersiva",
+  "camera.follow": "Seguir",
+  "camera.group": "Grupo a seguir",
+  "camera.selected": "Grupo selecionado",
+  "camera.strategyHelp": "C · Imersiva   G · Seguir grupo",
+  "camera.groundHelp": "Arrasta para olhar · WASD para deslocar · Esc para comandar",
+  "camera.following": "A seguir {group}. Arrasta para rodar · Esc para comandar",
   "campaign.subtitle": "Batalha de campanha",
   "campaign.back": "Voltar à campanha",
   "campaign.saveFailed": "Não foi possível guardar a campanha. Tenta de novo ou recarrega se a campanha estiver aberta noutro separador.",
