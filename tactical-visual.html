@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Troop language — Sentinel M2 study</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./vendor/fonts/fonts.css">
+<style>
+/*
+  VOICE: a field notebook, not a game screen — ivory on umber, bronze rules, one accent per faction.
+  IDEA: the soldiers must do the talking. A/B/C show no labels or rings, so the only identity on the field
+  is silhouette, equipment, colour and formation.
+  LAYOUT: top bar (representation / distance), right column (what is being measured), bottom bar (state),
+  bottom-left key. Everything else is battlefield.
+*/
+:root { --panel: rgba(26, 21, 15, .88); --edge: #6d5a3c; --ink: #f1e6c8; --dim: #b5a684; --bronze: #d8b46a; --rome: #d8483c; --lus: #c9c08a; --ok: #a9c48d; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #17130e; color: var(--ink); font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+.panel { background: var(--panel); border: 1px solid var(--edge); border-radius: 8px; box-shadow: 0 8px 28px rgba(0, 0, 0, .38); }
+button { font: inherit; color: var(--ink); background: #382c1e; border: 1px solid var(--edge); border-radius: 6px; padding: 6px 11px; cursor: pointer; min-height: 32px; }
+button:hover { background: #4a3a27; border-color: var(--bronze); }
+button:focus-visible { outline: 2px solid var(--bronze); outline-offset: 2px; }
+button.on { background: #6d5330; border-color: var(--bronze); box-shadow: 0 0 0 1px var(--bronze) inset; }
+kbd { font: 10px ui-monospace, monospace; color: var(--dim); border: 1px solid #5c4a32; border-radius: 3px; padding: 0 3px; margin-left: 5px; }
+
+#top { position: fixed; left: 12px; right: 12px; top: 10px; display: flex; align-items: center; gap: 16px; padding: 8px 12px; flex-wrap: wrap; z-index: 3; }
+#top .brand { min-width: 210px; }
+#top h1 { font: 700 19px/1 Cinzel, Georgia, serif; margin: 0; letter-spacing: .04em; color: var(--bronze); }
+#top .sub { font-size: 11px; color: var(--dim); margin-top: 3px; }
+.group { display: flex; gap: 6px; align-items: center; }
+.group .cap { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); margin-right: 2px; }
+#top .spacer { flex: 1; }
+#style-btns button { min-width: 46px; font-weight: 700; }
+#style-btns button[data-style="m1"] { min-width: 60px; font-weight: 400; font-size: 12px; }
+
+#info { position: fixed; left: 12px; right: 12px; bottom: 76px; padding: 11px 15px 12px; z-index: 3; display: grid; grid-template-columns: minmax(190px, 250px) minmax(260px, 1fr) minmax(220px, 280px); gap: 20px; align-items: start; }
+#info h2 { font: 700 16px/1.2 Cinzel, Georgia, serif; margin: 0 0 3px; color: var(--bronze); }
+#style-tag { font-size: 10.5px; color: var(--dim); letter-spacing: .04em; text-transform: uppercase; }
+#style-desc { margin: 7px 0 7px; font-size: 12px; color: var(--ink); }
+#metrics { display: grid; grid-template-columns: 1fr auto 1fr auto; gap: 4px 8px; margin: 0; padding: 0; }
+#metrics dt { color: var(--dim); font-size: 11.5px; white-space: nowrap; }
+#metrics dd { margin: 0 8px 0 0; text-align: right; font: 600 12px ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+#budget { width: 100%; border-collapse: collapse; font: 11.5px ui-monospace, monospace; }
+#budget th { color: var(--dim); font-weight: 400; text-align: right; font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; padding-bottom: 3px; }
+#budget th:first-child { text-align: left; }
+#budget td { padding: 2px 0; text-align: right; border-top: 1px solid #3c3020; color: #d9cdb0; }
+#budget td:first-child { text-align: left; color: var(--dim); }
+#budget tr.on td { color: var(--bronze); font-weight: 700; }
+#style-note { font-size: 11px; color: var(--dim); border-top: 1px solid #4d3e29; padding-top: 7px; margin: 0; }
+.micro { margin: 6px 0 0; font-size: 10px; line-height: 1.35; color: #8f8163; }
+
+#key { position: fixed; right: 12px; top: 78px; padding: 9px 12px; z-index: 3; display: grid; gap: 6px; max-width: 330px; }
+#key .row { display: flex; align-items: center; gap: 8px; font-size: 11.5px; }
+#key .row span { color: var(--ink); }
+#key .sw { width: 24px; height: 15px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, .45); flex: none; }
+#key .sw.rom { background: linear-gradient(105deg, #9c2c26 0 40%, #d8cdad 40% 100%); }
+#key .sw.lus { background: linear-gradient(105deg, #6f6b44 0 45%, #7d5836 45% 100%); border-radius: 50% / 45%; }
+#key b { font-size: 9.5px; letter-spacing: .1em; color: var(--dim); font-weight: 700; flex: none; width: 82px; }
+
+#bar { position: fixed; left: 12px; right: 12px; bottom: 10px; display: flex; align-items: center; gap: 10px; padding: 8px 12px; flex-wrap: wrap; z-index: 3; }
+#bar .hint { margin-left: auto; font-size: 11.5px; color: var(--dim); text-align: right; }
+#pause { min-width: 40px; font-weight: 700; }
+#pause.on { background: #6d5330; border-color: var(--bronze); }
+
+@media (max-width: 980px) {
+  #info { grid-template-columns: minmax(170px, 220px) 1fr; gap: 16px; }
+  #info .col.budget { display: none; }
+  #style-desc { display: none; }
+  #key { display: none; }
+}
+@media (max-width: 760px) {
+  #info { display: none; }
+  #top .sub { display: none; }
+  #top .group .cap { display: none; }
+}
+</style>
+<script type="importmap">{"imports":{"three":"./vendor/three/three.module.js"}}</script>
+</head>
+<body>
+<canvas id="view" aria-label="Isolated troop comparison"></canvas>
+
+<header id="top" class="panel">
+  <div class="brand">
+    <h1>Troop language</h1>
+    <div class="sub">Sentinel · M2 visual study · isolated, no game rules</div>
+  </div>
+  <div class="group" id="style-btns">
+    <span class="cap">Representation</span>
+    <button data-style="m1" title="The current prototype soldier">M1.2</button>
+    <button data-style="a" title="Simple geometry, one merged body">A<kbd>2</kbd></button>
+    <button data-style="b" title="Articulated low-poly, one mesh per part">B<kbd>3</kbd></button>
+    <button data-style="c" title="Hybrid: articulated kit, instanced">C<kbd>4</kbd></button>
+  </div>
+  <div class="spacer"></div>
+  <div class="group" id="dist-btns">
+    <span class="cap">Camera</span>
+    <button data-dist="40" title="Close inspection">40 m<kbd>Q</kbd></button>
+    <button data-dist="65" title="Tactical reading">65 m<kbd>W</kbd></button>
+    <button data-dist="110" title="The prototype's default distance">110 m<kbd>E</kbd></button>
+  </div>
+</header>
+
+<aside id="info" class="panel">
+  <div class="col intro">
+    <h2 id="style-name">Hybrid</h2>
+    <div id="style-tag">Articulated kit · faction equipment · instanced parts</div>
+    <p id="style-desc"></p>
+    <p id="style-note"></p>
+  </div>
+  <dl id="metrics">
+    <dt>Soldiers</dt><dd>36</dd>
+    <dt>Troop draw calls</dt><dd id="stat-calls">–</dd>
+    <dt>Troop triangles</dt><dd id="stat-tris">–</dd>
+    <dt>Triangles / soldier</dt><dd id="stat-soldier">–</dd>
+    <dt>Soldier on screen</dt><dd id="stat-px">–</dd>
+    <dt>Renderer total</dt><dd id="stat-total">–</dd>
+    <dt>Frame</dt><dd id="stat-frame">–</dd>
+    <dt>Distance</dt><dd id="stat-dist">–</dd>
+  </dl>
+  <div class="col budget">
+    <table id="budget" aria-label="Cost of each representation for these two groups"></table>
+    <p class="micro">Troop calls/tris are per frame for these 36 soldiers. Renderer total adds ground, grass and the shadow pass.</p>
+  </div>
+</aside>
+
+<aside id="key" class="panel">
+  <div class="row"><span class="sw rom"></span><b>ROMANS</b><span>oval scutum · red crest · pilum · signum</span></div>
+  <div class="row"><span class="sw lus"></span><b>LUSITANIANS</b><span>round caetra · olive cloak · spear · sling staff</span></div>
+  <div class="row"><b>SCALE</b><span>same 36 soldiers in every representation</span></div>
+</aside>
+
+<footer id="bar" class="panel">
+  <div class="group" id="state-btns">
+    <span class="cap">State</span>
+    <button data-state="march">March</button>
+    <button data-state="charge">Charge</button>
+    <button data-state="melee">Melee</button>
+    <button data-state="withdraw">Withdraw</button>
+    <button data-state="rout">Rout</button>
+  </div>
+  <button id="pause" title="Pause (Space)">❚❚</button>
+  <div class="hint">Drag to orbit · wheel to zoom · 1–4 representations · Q/W/E distances · Space pause</div>
+</footer>
+
+<script type="module" src="./src/tactical/visual/main.js"></script>
+</body>
+</html>
