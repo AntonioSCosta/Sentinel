@@ -949,29 +949,32 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const encounterFlow = flow;
     let request = flow.tactical;
     const withWrite = fn => win.navigator?.locks ? win.navigator.locks.request(STORAGE_KEY, fn) : fn();
+    const isCurrent = () => tacticalArena === arena && flow === encounterFlow;
     const returnToMap = (notice, events = []) => {
-      tacticalArena?.dispose(); tacticalArena = null;
+      if (!isCurrent()) return;
+      arena.dispose(); tacticalArena = null;
       tacticalNotice = notice;
       active = true; $('map').classList.remove('hidden');
       say(events); render();
       $(notice || flow.tactical ? 'mb-fight' : 'm-diary')?.focus();
     };
     tacticalNotice = 'loading';
-    tacticalArena = openTacticalArena({ document: doc, window: win, i18n, request,
+    const arena = openTacticalArena({ document: doc, window: win, i18n, request,
       onReady: suspend,
       onPrepare: async placement => {
-        const prepared = await withWrite(() => tacticalArena && flow === encounterFlow && flow.prepareTactical(request, placement));
+        const prepared = await withWrite(() => isCurrent() && flow.prepareTactical(request, placement));
         if (prepared) request = prepared;
         return !!prepared;
       },
       onFinish: async result => {
-        const resolved = await withWrite(() => tacticalArena && flow === encounterFlow && flow.finishTactical(result));
+        const resolved = await withWrite(() => isCurrent() && flow.finishTactical(result));
         if (!resolved || resolved.refused) return false;
         returnToMap(null, resolved.events);
         return true;
       },
       onExit: returnToMap,
     });
+    tacticalArena = arena;
     renderBattle();
   }
   $('mb-fight').addEventListener('click', () => {

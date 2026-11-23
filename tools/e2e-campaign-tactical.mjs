@@ -59,11 +59,28 @@ try {
   await fight.click();
   await iframe.locator('#start').waitFor({ timeout: 30000 });
   assert.equal(await iframe.locator('h1').textContent(), 'The Ambush');
+
+  // Keep the first arena's preparation queued until a second arena has opened.
+  const saveKey = 'viriato.campaign';
+  await page.evaluate(key => new Promise(locked => {
+    void navigator.locks.request(key, () => new Promise(release => {
+      window.releaseCampaignWrite = release;
+      locked();
+    }));
+  }), saveKey);
+  await iframe.locator('#view').evaluate(() => window.__proto.place('lobos', 82, 35));
+  await iframe.locator('#start').evaluate(button => button.click());
+  await page.waitForFunction(async key => (await navigator.locks.query()).pending.some(lock => lock.name === key), saveKey);
   await iframe.locator('#campaign-cancel').click();
   await fight.waitFor();
   assert.deepEqual(await save(), pending);
   await fight.click();
   await iframe.locator('#start').waitFor({ timeout: 30000 });
+  await page.evaluate(async key => {
+    window.releaseCampaignWrite();
+    await navigator.locks.request(key, () => {});
+  }, saveKey);
+  assert.deepEqual(await save(), pending, 'the closed arena must not write into the reopened encounter');
   await iframe.locator('#pause').click();
   await iframe.locator('#view').evaluate(() => {
     const p = window.__proto;
