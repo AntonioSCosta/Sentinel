@@ -1,5 +1,5 @@
 {
-  "revision": "af211f58aa66b148975448c4417781b0344d1d0b",
+  "revision": "7fd762d5025da1a46a5d2296b183946c6de5e1ba",
   "browser": "156.0.8078.79",
   "seed": 20,
   "checkpointOrders": [
@@ -39,7 +39,7 @@
   "renderer": "SwiftShader (software)",
   "stages": [
     {
-      "action": "Continue English campaign at Castro do Cerro",
+      "action": "Continue English campaign at Penedo Hillfort",
       "day": 4,
       "phase": "mapa",
       "men": 14,
