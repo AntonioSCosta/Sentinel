@@ -2,7 +2,7 @@
 // Módulo puro (sem DOM nem Three.js) e determinista: a mesma semente e as mesmas ordens dão sempre a mesma batalha.
 import { makeRng } from '../campaign/rng.js';
 import { DT, SIDES, ROLES, TUNING } from './data.js';
-import { dist, bearing, wrap, contactDistance, inContact, disordered, routThreshold, meleeDamage, volleyDamage } from './combat.js';
+import { dist, bearing, wrap, contactDistance, inContact, disordered, routThreshold, meleeDamage, volleyDamage, sideOf } from './combat.js';
 
 /** Ordens que um grupo aceita. 'sinal' é do lado inteiro, não de um grupo. */
 export const ORDERS = ['atacar', 'manter', 'retirar', 'mover'];
@@ -53,7 +53,7 @@ export function createBattle({ seed, groups, exits, coverAt = () => 0, los = () 
       id: s.id, side: role.side, role: s.role, men, start: men, dead: 0, wounds: 0,
       x: s.x, y: s.y, facing: s.facing ?? 0,
       hidden: !!s.hidden, alerted: role.side === 'lusitanos',   // os romanos começam em marcha, sem alerta
-      state: 'ativo', left: null, disorderT: 0, chargeT: 0, run: 0, engaged: false, target: null,
+      state: 'ativo', left: null, disorderT: 0, chargeT: 0, run: 0, engaged: false, target: null, rough: false, flankOn: null,
       reloadT: 0, ammo: role.ranged ? role.ranged.ammo : 0,
       order: { type: 'manter' },
     };
@@ -90,6 +90,10 @@ function parseOrder(battle, g, cmd) {
     if (!Array.isArray(path) || !path.length || !path.every(p => finite(p?.x) && finite(p?.y))) return { why: 'caminho' };
     return { order: { type: 'mover', path: path.map(p => ({ x: p.x, y: p.y })), pace: cmd.pace === 'marcha' ? 'marcha' : 'corrida', leave: !!cmd.leave } };
   }
+  if (cmd.type === 'retirar' && (cmd.x !== undefined || cmd.y !== undefined)) {   // recuar para um ponto: larga o combate mas fica no campo
+    if (!finite(cmd.x) || !finite(cmd.y)) return { why: 'alvo' };
+    return { order: { type: 'retirar', x: cmd.x, y: cmd.y } };
+  }
   return { order: { type: cmd.type } };
 }
 
@@ -98,7 +102,8 @@ export const groupOf = (battle, id) => battle.groups.find(g => g.id === id) || n
 
 /**
  * Dá uma ordem. `cmd.type`: 'sinal' (do lado) ou uma de ORDERS com `cmd.group`.
- * atacar: `target` (id de grupo inimigo) ou `x`,`y`; mover: `path` [{x,y}…], `pace` 'marcha'|'corrida', `leave` (sai no fim).
+ * atacar: `target` (id de grupo inimigo) ou `x`,`y`; mover: `path` [{x,y}…], `pace` 'marcha'|'corrida', `leave` (sai no fim);
+ * retirar: sem ponto sai do campo pela saída mais próxima; com `x`,`y` larga o combate, recua até lá e fica a manter.
  * Um grupo escondido aceita a ordem mas só a cumpre depois do sinal (ou de ser descoberto).
  * @returns {{ok:true} | {ok:false, why:string}}
  */
@@ -140,6 +145,27 @@ function surprise(battle, g) {
   g.disorderT = TUNING.surprise;
 }
 
+/**
+ * Revela um grupo escondido que o inimigo descobriu (por exemplo, a IA romana a ver alguém fora do mato).
+ * `by`: id do grupo inimigo que o viu, que fica alerta sem surpresa. Devolve true se o grupo estava escondido.
+ */
+export function reveal(battle, id, by = null) {
+  const g = groupOf(battle, id);
+  if (!g || !onField(g) || !g.hidden) return false;
+  g.hidden = false;
+  const finder = by === null ? null : groupOf(battle, by);
+  if (finder && finder.side !== g.side && onField(finder)) finder.alerted = true;
+  return true;
+}
+
+/** Põe um grupo em alerta sem o desordenar (viu o inimigo antes de ser atacado). Devolve true se mudou. */
+export function alert(battle, id) {
+  const g = groupOf(battle, id);
+  if (!g || !onField(g) || g.alerted) return false;
+  g.alerted = true;
+  return true;
+}
+
 /** Saída mais próxima do lado do grupo. */
 const exitOf = (battle, g) => nearest(g, battle.exits[g.side]);
 
@@ -175,9 +201,13 @@ function act(battle, g, events) {
     return null;
   }
   if (g.hidden) return null;
-  if (g.order.type === 'retirar') {   // retirada em ordem: não combate, sai pela saída mais próxima
+  if (g.order.type === 'retirar') {   // retirada: larga o combate (vira as costas) e sai pela saída mais próxima, ou recua até um ponto
     g.engaged = false;
-    if (moveTo(g, exitOf(battle, g), role.speed)) leave(g, 'retirou', events);
+    const to = g.order.x !== undefined ? { x: g.order.x, y: g.order.y } : exitOf(battle, g);
+    if (moveTo(g, to, role.speed, false)) {
+      if (g.order.x !== undefined) { g.order = { type: 'manter' }; events.push({ type: 'recuou', group: g.id }); }
+      else leave(g, 'retirou', events);
+    }
     return null;
   }
   const foes = foesOf(battle, g);
@@ -231,7 +261,7 @@ function fire(battle, g, foes) {
 
 /**
  * Avança a batalha um passo de DT segundos.
- * @returns {object[]} acontecimentos do passo (revelado, carga, salva, baixas, quebrou, saiu, fim)
+ * @returns {object[]} acontecimentos do passo (revelado, terreno, carga, flanco, salva, baixas, quebrou, saiu, fim)
  */
 export function step(battle) {
   if (battle.over) return [];
@@ -243,6 +273,9 @@ export function step(battle) {
     g.disorderT = Math.max(0, g.disorderT - DT);
     g.chargeT = Math.max(0, g.chargeT - DT);
     g.reloadT = Math.max(0, g.reloadT - DT);
+    const c = battle.env.coverAt(g.x, g.y), rough = Number.isFinite(c) && c >= TUNING.roughCover;
+    if (rough !== g.rough && ROLES[g.role].formation) events.push({ type: 'terreno', group: g.id, rough });   // a formação desfaz-se ou refaz-se
+    g.rough = rough;
   }
   // escondidos tocados por um inimigo são descobertos (quem os encontra fica alerta, sem surpresa)
   for (const g of battle.groups) {
@@ -260,6 +293,9 @@ export function step(battle) {
     if (!a || !able(g)) continue;
     if (a.melee) {
       hit(a.melee, meleeDamage(g, a.melee, DT) * jitter());
+      const side = sideOf(a.melee, g);   // um ataque pelo flanco ou pelas costas é anunciado uma vez por alvo
+      if (side !== 'frente' && g.flankOn !== a.melee.id) { g.flankOn = a.melee.id; events.push({ type: 'flanco', group: g.id, target: a.melee.id, side }); }
+      else if (side === 'frente' && g.flankOn === a.melee.id) g.flankOn = null;
       surprise(battle, a.melee);
     } else if (a.volley) {
       const t = a.volley, r = ROLES[g.role].ranged;

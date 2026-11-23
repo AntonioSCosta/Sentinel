@@ -22,8 +22,15 @@ prologue (Galba's massacre, 150 BC), I Os Cativos (149 BC), II A Emboscada
 - Characters are the CC0 Quaternius rig, dressed at runtime (`src/rig.js`), with
   authored pose offsets in `src/moves.js` fitted to the damage arc in `src/swing.js`.
 - `node tools/shot.mjs <scenario> /home/claude/shots` renders screenshots.
-- The playable build is published as a Claude artifact
-  (slug 54e32c29-16b4-4c7a-8038-e60eb36d627e) by publishing the changed files.
+- Two Claude artifacts, published by publishing the changed files. Do not mix them up:
+  - **Tactical demo** (`tactical-proto.html`, PR #24, the M1.2 build used for external
+    playtests): "The Ambush — Sentinel prototype", slug 8565b8c3-42ee-4ef7-a8fb-dc4d26811942
+    (https://claude.ai/artifact/HUQQFyDtNaqSnWVFP3Nauo). Published as `index.html` with
+    three.js 0.160.0 from jsDelivr; its `sentinel-build` meta names the source commit.
+    Frozen at `3be9857` for the first five playtests; private until the maintainer shares it.
+  - **Legacy first/third-person game** (`index.html`, prologue and chapters I–III):
+    "Viriato — A Guerra dos Montes Hermínios", slug 54e32c29-16b4-4c7a-8038-e60eb36d627e.
+    It does not contain the tactical prototype.
 
 ## Technology Stack
 
