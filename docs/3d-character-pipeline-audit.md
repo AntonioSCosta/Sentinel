@@ -278,4 +278,76 @@ Nenhuma fase altera a simulação tática ou a campanha.
 - `tools/pack-chars.mjs`, `tools/vendor-deps.mjs`, `tools/vendor-three.mjs`.
 - `assets/CREDITS.md` — licenças.
 - `tests/rig.test.mjs`, `tests/lod.test.mjs`, `tests/chunks.test.mjs`, `tests/moves.test.mjs`, `tests/swing.test.mjs`, `tests/combat.test.mjs`.
+
+---
+
+## 9. Pipeline antigo vs. protótipo tático (M1.2)
+
+### 9.1 Pipeline de personagens do motor antigo (terceira pessoa)
+
+O pipeline atual do Sentinel é o do combate em primeira/terceira pessoa (estilo Mount & Blade):
+
+- Esqueleto completo de **65 ossos** (Quaternius), clonado por personagem via `SkeletonUtils.clone`.
+- **`AnimationMixer` por soldado**, com 3 camadas (`lo`/`up`/`sh`) e ~20 clips da UAL 1/2.
+- Poses authored em `moves.js` (windup/strike/recovery) + IK do braço (`solveArm`), twist das pernas, escudo, arremesso, bloqueio, morte.
+- Materiais PBR/texturas pintadas, túnicas procedurais (`shellGeometry`, `weaveTexture`), cabelo e equipamento anexados por osso.
+- Sombras por personagem (`cullCharacters`, 42 m), pose a 1/2/4 frames por distância (`lod.js`).
+- Custo por soldado: 1 mixer + 3 layers + skinning de 65 ossos + vários draw calls (corpo, túnica, cabelo, arma, escudo, capacete).
+
+É um pipeline de **alta fidelidade, desenhado para close-ups** (câmera a < 5 m do lutador).
+
+### 9.2 Representação atualmente utilizada no protótipo tático M1.2
+
+O repositório atual **não contém ainda um renderer tático isométrico dedicado**. O que existe hoje:
+
+- **Mapa de campanha**: canvas 2D (`src/campaign/map-view.js`, `ui.js`) — sem personagens 3D.
+- **Combate**: a cena 3D em primeira/terceira pessoa descrita em 9.1 (personagens completos).
+- **Inimigos/aliados** na cena 3D: soldados com rig completo, até algumas dezenas por missão.
+
+Ou seja, no estado atual, o "tático" reutiliza o mesmo pipeline de alta fidelidade do combate close-up, aplicado a pequenos grupos. Não existe ainda um modo isométrico com representação simplificada.
+
+### 9.3 Componentes do pipeline antigo realmente reutilizáveis no novo combate
+
+| Componente | Reutilizável? | Notas |
+|---|---|---|
+| Esqueleto canónico (Quaternius) e nomes de ossos | Sim, como referência | Serve de base para animações e retargeting |
+| Clips UAL 1/2 (CC0) | Sim | Podem ser reutilizados ou simplificados (subconjunto de loops) |
+| `SkeletonUtils.clone` | Sim | Partilha de esqueleto base |
+| `splitClips` (3 camadas) | Parcial | Útil se mantiver animação por camadas; dispensável em representação simplificada |
+| `driveState` / `locomotion` (escolha de loop por velocidade) | Sim | Lógica pura, independente do renderer |
+| `legTwist`, `attackTime` | Parcial | Úteis se mantiver poses authored; dispensáveis se usar animações baked |
+| Material/textura de corpo (`loadMaterials`, outfits) | Sim | Reutilizáveis para LOD alto |
+| Slots de equipamento (arma/escudo/capacete por osso) | Sim | Conceito reutilizável, mesmo com rig simplificado |
+| `cullCharacters`, `poseEvery`, `shouldPose` | Sim | Estratégias de LOD aplicáveis a qualquer representação |
+| `instanced` (cenário) | Sim | Padrão reutilizável para soldados distantes |
+| Licenças (CC0/MIT/Apache/OFL) | Sim | Sem restrições |
+
+### 9.4 Componentes que seria melhor não transportar
+
+| Componente | Porquê não transportar |
+|---|---|
+| `shellGeometry` (túnica procedural, 14 iterações de smoothing) | Custo alto de CPU/memória; para grupos pequenos em isométrico, túnicas simples (mesh estático ou vertex color) bastam |
+| `paintBody` / `addFace` (face detalhada colada) | Detalhe facial invisível a distância isométrica |
+| `weaveTexture` (tecido procedural 64×64) | Desnecessário para grupos pequenos; textura simples ou cor sólida |
+| `slimBody` (escala de ossos para civis) | Só relevante em close-up |
+| Painéis dinâmicos de saia (`rig.dyn`) | Física de cloth procedural cara; substituir por mesh estático ou animação baked |
+| IK do braço (`solveArm`) e poses authored (`moves.js`) | Só fazem sentido em combate close-up com direções de ataque |
+| `AnimationMixer` por soldado com 3 camadas | Custo alto; para grupos pequenos em isométrico, animações baked de corpo inteiro ou até sprites são mais eficientes |
+| `AttackTime` sincronizado com `swing.js` | Acoplamento desnecessário se a animação for apenas visual |
+
+### 9.5 Esqueleto completo (65 ossos) vs. solução simplificada para grupos pequenos em câmara isométrica
+
+**Recomendação: solução simplificada para o renderer tático.**
+
+Justificação:
+
+1. **Visibilidade**: numa câmara isométrica, os soldados ocupam poucos píxeis. Detalhes de dedos, expressões faciais e twist de cintura são invisíveis.
+2. **Custo**: 65 ossos × N soldados × skinning por frame. Mesmo com `poseEvery`, o custo de skinning e de draw calls (corpo + túnica + cabelo + arma + escudo + capacete) é desproporcional ao detalhe visível.
+3. **Alternativas mais eficientes para grupos pequenos**:
+   - **Mesh simplificado** (10–20 ossos ou até estático) com animação baked (walk/idle/attack/death) — suficiente para grupos pequenos vistos de cima.
+   - **Sprites/billboards animados** (2D ou impostor 3D) — mais barato ainda, adequado para dezenas de soldados.
+   - **Instancing** com pose partilhada para soldados idênticos (formação).
+4. **Quando manter o rig completo**: apenas para o herói e personagens principais em close-up (combate first-person), e para cinemáticas. O combate tático não precisa desse nível de detalhe.
+
+**Conclusão técnica**: para o novo renderer tático, recomendo uma **representação simplificada** (mesh low-poly com animações baked ou impostor) para grupos pequenos, reutilizando apenas os componentes listados em 9.3 (locomotion, materiais, slots de equipamento, culling/LOD). O pipeline completo de 65 ossos deve ser reservado ao combate close-up e a personagens de destaque. Esta decisão final fica para comparar com o relatório do FreeBuff.
 "
