@@ -68,7 +68,7 @@ try {
   await page.goto(url);
   await openMap();
   assert.equal(await page.locator('html').getAttribute('lang'), 'en');
-  const start = await record('Continue English campaign at Castro do Cerro');
+  const start = await record('Continue English campaign at Penedo Hillfort');
   await shot('01-checkpoint');
   const castro = page.locator('#campaign-map-3d [data-id="castro-1"]');
   await castro.evaluate(button => button.click());
