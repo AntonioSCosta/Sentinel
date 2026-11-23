@@ -1,4 +1,13 @@
 export default {
+  "camera.title": "Experimental battle camera",
+  "camera.strategic": "Strategic",
+  "camera.immersive": "Immersive",
+  "camera.follow": "Follow",
+  "camera.group": "Group to follow",
+  "camera.selected": "Selected group",
+  "camera.strategyHelp": "C · Immersive   G · Follow group",
+  "camera.groundHelp": "Drag to look · WASD to move · Esc to command",
+  "camera.following": "Following {group}. Drag to orbit · Esc to command",
   "campaign.subtitle": "Campaign battle",
   "campaign.back": "Back to campaign",
   "campaign.saveFailed": "The campaign could not be saved. Try again or reload if the campaign is open in another tab.",

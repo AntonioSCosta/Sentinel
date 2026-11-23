@@ -524,7 +524,7 @@ export function createView(canvas) {
     get camera() { return cam; },
 
     /** Desenha um fotograma. */
-    render() { resize(); placeCamera(); renderer.render(scene, camera); },
+    render(cameraEffect) { resize(); placeCamera(); cameraEffect?.(camera); renderer.render(scene, camera); },
     /** Estatísticas do renderer (para medir desempenho). */
     info: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles }),
   };
