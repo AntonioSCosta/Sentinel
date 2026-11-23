@@ -34,3 +34,15 @@ CHROME_PATH=/usr/bin/chromium PLAYWRIGHT_DIR=/caminho/para/playwright \
 ```
 
 O E2E repete a mesma semente e sequência de ordens com e sem o modo experimental. Compara o passo final, o desfecho, o registo de ordens e todo o estado final dos grupos. Exercita marcha romana, combate e retirada lusitana, recuperação das ordens no terreno, `F`, `Escape`, 1280 × 720, 640 × 480, inglês e PT-PT. [Teste Chromium](../../tools/e2e-tactical-camera.mjs)
+
+## Capturas e desempenho
+
+As três capturas mostram a mesma batalha no passo 340 (0:34), com a semente `83026358`. A simulação ficou pausada durante a comparação e a câmara continuou a atualizar-se. [Estratégica](../../production/qa/evidence/camara-m2-1b/01-strategic.jpg) · [Seguimento](../../production/qa/evidence/camara-m2-1b/02-following.jpg) · [Imersiva](../../production/qa/evidence/camara-m2-1b/03-immersive.jpg)
+
+| Perspetiva | Mediana do intervalo entre fotogramas | P95 | Chamadas de desenho | Triângulos |
+| --- | ---: | ---: | ---: | ---: |
+| Estratégica | 250,0 ms | 283,4 ms | 27 | 107 872 |
+| Seguimento | 283,4 ms | 350,1 ms | 26 | 107 776 |
+| Imersiva | 316,6 ms | 383,3 ms | 28 | 108 102 |
+
+O Chromium 156 em modo headless usou SwiftShader a 1280 × 720. São 30 intervalos de `requestAnimationFrame` por vista. O número de triângulos variou pouco e as vistas próximas apresentaram intervalos maiores nesta amostra. A amostra serve para comparar as três vistas neste ambiente. A avaliação em GPU física fica por fazer. [Dados brutos](../../production/qa/evidence/camara-m2-1b/measurement.json)
