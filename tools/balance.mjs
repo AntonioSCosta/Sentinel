@@ -13,6 +13,7 @@ import { COMMUNITY_IDS, recruitLimit, communityAt, bandOrigins, diag } from '../
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { HELP_GAP } from '../src/campaign/simulation.js';
 import { ensureDoctrine, sectorOf, SECTORS } from '../src/campaign/doctrine.js';
+import { finishBalanceBattle } from './balance-battle.mjs';
 
 const SEEDS = +(process.env.BALANCE_SEEDS || 20);
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -21,6 +22,7 @@ const nearest = (list, p) => list.reduce((b, s) => (!b || dist(s, p) < dist(b, p
 const EDGE = { emboscada: 1.8, 'assalto-coluna': 1.6, 'defesa-aldeia': 1.2, 'campo-aberto': 1, decisiva: 1, historica: 1.3 };
 const VIRIATO = 4;
 const FLEE = 80;   // a esta distância o pretor apanha o bando em dois ou três dias
+const MAX_STEPS = 2000;
 
 /** Probabilidade de vitória (Lanchester ao quadrado) e um resultado sorteado com baixas proporcionais. */
 function fight(spec, rng) {
@@ -113,7 +115,10 @@ function variado(s, mem) {
 const BOTS = { atual, repetidor, variado };
 
 function play(seed, bot = 'atual', off = false) {
-  const flow = createFlow({ seed }), s = flow.state, rng = makeRng(seed * 101 + 7);
+  // Tactical reconciliation commits to storage before returning to the map.
+  let saved = null;
+  const storage = { getItem: () => saved, setItem: (_key, value) => { saved = value; } };
+  const flow = createFlow({ seed, storage }), s = flow.state, rng = makeRng(seed * 101 + 7);
   ensureDoctrine(s).off = off;
   const mem = { lastRecruit: -99 }, policy = BOTS[bot];
   const tally = { spotted: 0, counters: {}, hunters: 0, ambushes: 0, lostInBattle: 0 };
@@ -140,15 +145,21 @@ function play(seed, bot = 'atual', off = false) {
     for (const id of COMMUNITY_IDS) if (s.communities[id].trust !== pre.trust[id] && !by[id]) row(id).trust = s.communities[id].trust;   // só a confiança mudou
     rows.push(...Object.values(by));
   };
-  while (flow.phase !== 'fim' && guard++ < 2000) {
+  while (flow.phase !== 'fim' && guard++ < MAX_STEPS) {
     if (flow.phase === 'batalha') {
       diag.loss = [];
       const preB = { trust: snapshot() };
-      types[flow.battle.type] = (types[flow.battle.type] || 0) + 1;
-      if (flow.battle.type === 'emboscada' || flow.battle.type === 'assalto-coluna') tally.ambushes++;
+      const { type } = flow.battle;
       const m0 = s.men;
-      const evB = flow.finishBattle(fight(flow.battle, rng).result);
-      record(s.day, preB, evB.events ?? [], diag.loss); diag.loss = null;
+      const evB = finishBalanceBattle(flow, fight(flow.battle, rng).result);
+      const battleLosses = diag.loss;
+      diag.loss = null;
+      if (evB.refused || flow.phase === 'batalha') {
+        throw new Error(`Resultado recusado no dia ${s.day} (${type}, semente ${seed}, robô ${bot}, contramedidas ${!off})`);
+      }
+      types[type] = (types[type] || 0) + 1;
+      if (type === 'emboscada' || type === 'assalto-coluna') tally.ambushes++;
+      record(s.day, preB, evB.events, battleLosses);
       losses.push({ day: s.day, batalha: m0 - s.men, fome: 0 });
       tally.lostInBattle += Math.max(0, m0 - s.men); eq.bat += Math.max(0, m0 - s.men);
       continue;
@@ -177,6 +188,7 @@ function play(seed, bot = 'atual', off = false) {
     }
     if (s.day <= 30) burnt30 = Object.values(s.villages).filter(v => v.burnt).length;
   }
+  if (flow.phase !== 'fim') throw new Error(`Campanha sem desfecho após ${MAX_STEPS} passos (dia ${s.day}, semente ${seed}, robô ${bot}, contramedidas ${!off})`);
   const burnt = Object.values(s.villages).filter(v => v.burnt).length;
   const recent = losses.filter(l => l.day > s.day - 30), sum = k => recent.reduce((a, l) => a + Math.max(0, l[k]), 0);
   const cause = s.over === 'vitoria' ? (s.decisivaWon ? 'decisiva' : 'ano')
