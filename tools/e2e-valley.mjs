@@ -71,15 +71,19 @@ for (const vp of [{ width: 1366, height: 768 }, { width: 844, height: 390 }]) {
   check(`${tag}: 4 · ação indisponível com o motivo real`, await rb.isDisabled() && /receosa: não dá homens/.test(why), why);
   await page.keyboard.press('Escape');
 
-  // 5: um tributo pendente na coluna; abrir o assunto leva ao lugar; pagar usa rome.payTribute e vai ao Diário
+  // 5: um tributo abre no centro; adiar deixa o assunto disponível; pagar usa rome.payTribute e vai ao Diário
   await page.evaluate(() => { const c = window.__game.campaign, s = c.flow.state, v = s.communities.vau; v.situation = 'tributada'; v.due = { food: 6, day: s.day + 5 }; v.food = 30; c.render(); });
+  const decision = page.locator('#mtribute');
+  await decision.waitFor();
+  const ct = await decision.textContent();
+  check(`${tag}: 5 · a decisão diz origem, prazo e consequência`, /Roma exige tributo a Aldeia do Vau/.test(ct) && /prazo: 5 dias/.test(ct) && /castigada/.test(ct), ct.slice(0, 140));
+  await page.keyboard.press('Escape');
   if (narrow && !(await page.locator('#mside').isVisible())) await page.click('#m-side-toggle');
   const card = page.locator('#missues-list .issue.t-tributo');
-  const ct = await card.textContent();
-  check(`${tag}: 5 · o assunto diz origem, prazo e consequência`, /Roma exige tributo a Aldeia do Vau/.test(ct) && /prazo: 5 dias/.test(ct) && /castigada/.test(ct), ct.slice(0, 120));
   await card.locator('.head').click();
   check(`${tag}: 5 · abrir o assunto seleciona o lugar`, (await page.locator('#mctx h3').textContent()) === 'Aldeia do Vau');
-  await page.click('#mctx [data-act="pagar"]');
+  await page.click('#mctx [data-act="ver-decisao"]');
+  await decision.locator('[data-act="pagar"]').click();
   const paid = await page.evaluate(() => { const f = window.__game.campaign.flow, v = f.state.communities.vau; return { sit: v.situation, food: v.food, j: f.journal.some(e => e.type === 'tributo-pago' && e.auto === false), day: f.state.day }; });
   check(`${tag}: 5 · pagar tira a comida devida, a aldeia fica livre, não gasta o dia, fica no Diário`, paid.sit === 'livre' && paid.food === 24 && paid.j && paid.day === after.day, JSON.stringify(paid));
   const mv = await page.locator('#mctx .motives').textContent().catch(() => '');

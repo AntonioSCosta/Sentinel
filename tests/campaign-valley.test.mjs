@@ -13,7 +13,8 @@ import { punish, burn, ensureRome, TRIBUTE } from '../src/campaign/rome.js';
 import { MARCH_SPEED } from '../src/campaign/simulation.js';
 import { placeName, POSTURE_LABEL, SITUATION_LABEL } from '../src/campaign/strings.js';
 import { postureSnapshot, postureChanges, record, validJournal, JOURNAL_MAX, categoryOf } from '../src/campaign/journal.js';
-import { buildIssues, detectInterruptions, foodDays, LOW_FOOD_DAYS, RECENT_DAYS } from '../src/campaign/issues.js';
+import { buildIssues, detectInterruptions, foodDays, interruptionText, LOW_FOOD_DAYS, RECENT_DAYS } from '../src/campaign/issues.js';
+import { createI18n } from '../src/i18n/index.js';
 import { SPEEDS, DAY_MS, SPEED_KEY, loadSpeed, saveSpeed, standingOrder } from '../src/campaign/pace.js';
 import { eventText } from '../src/campaign/ui.js';
 
@@ -205,6 +206,25 @@ test('assuntos: uma força romana só aparece se o jogador a conhece', () => {
   s.intel.known.p9 = { kind: 'patrulha', x: p.x + 5, y: p.y, day: s.day, men: 6 };
   const t = buildIssues(s, f.journal).find(i => i.type === 'ameaca');
   assert.ok(t); assert.equal(t.community, 'souto');
+});
+
+test('o idioma muda os textos da decisão e da mesma interrupção sem mudar o estado ou as opções', () => {
+  const { state, journal } = quietFlow();
+  const { vau } = state.communities;
+  Object.assign(vau, { situation: 'tributada', due: { day: 4, food: 6 } });
+  const before = JSON.stringify({ state, journal });
+  const locale = createI18n({ languages: ['en'] });
+  const events = [{ type: 'tributo-exigido', id: vau.settlement, food: 6, day: 4 }, { type: 'colheita', season: 'outono', total: 9 }];
+  const reasons = detectInterruptions({ state, events });
+  const [en] = buildIssues(state, journal, { i18n: locale });
+  assert.match(en.title, /Rome demands tribute from Vau Village/);
+  assert.match(interruptionText(reasons[1], state, locale), /autumn harvest added 9 food/);
+  locale.setLocale('pt-PT');
+  const [pt] = buildIssues(state, journal, { i18n: locale });
+  assert.match(pt.title, /Roma exige tributo a Aldeia do Vau/);
+  assert.match(interruptionText(reasons[1], state, locale), /colheita de outono acrescentou 9/);
+  assert.deepEqual([en.key, en.deadline, en.actions.map(a => a.id)], [pt.key, pt.deadline, pt.actions.map(a => a.id)]);
+  assert.equal(JSON.stringify({ state, journal }), before);
 });
 
 // ——— interrupções ———
