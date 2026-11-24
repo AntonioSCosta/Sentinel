@@ -1,0 +1,102 @@
+{
+  "data": "2026-11-24",
+  "versao": "M3.2-B",
+  "metodo": "Chromium (cloud browser), campanha com seed 1234, pt-PT, dia 7 para os mapas e para o exemplo político; demonstração injectada por demo.js. Etiquetas medidas por getBoundingClientRect depois do layout do mapa.",
+  "resolucoes": {
+    "1440x900": {
+      "viewport": { "w": 1440, "h": 900 },
+      "barraTopo": { "altura": 48, "larguraConteudo": 316, "semTransbordo": true },
+      "barraFundo": { "altura": 56 },
+      "mapaAtual": { "etiquetasVisiveis": 25, "sobreposicoes": 0, "cortadas": 0 },
+      "mapaEssencial": { "etiquetasVisiveis": 8, "etiquetasEscondidas": 17, "comunidadesVisiveis": 5, "sobreposicoes": 0, "cortadas": 0, "acessoAlternativo": false },
+      "politica": {
+        "fonte": { "postura": "colabora", "lado": "roma", "fundo": "rgb(102, 44, 37)", "contraste": 10.76 },
+        "ribeira": { "postura": "receosa", "lado": "roma", "fundo": "rgb(117, 53, 45)", "contraste": 9.12 },
+        "vau": { "postura": "amiga", "lado": "viriato", "fundo": "rgb(56, 118, 67)", "contraste": 5.47 },
+        "penedo": { "postura": "neutra", "lado": "independente", "fundo": "rgb(30, 27, 24)", "contraste": 17.14 },
+        "souto": { "postura": "amiga", "lado": "viriato", "fundo": "rgb(51, 110, 62)", "contraste": 6.1 }
+      },
+      "modal": { "largura": 560, "dentroDoEcra": true, "scroll": false, "sobrepoeBarras": false },
+      "marcha": { "x": 12, "y": 56, "w": 520, "h": 100, "interrompida": { "w": 520, "h": 120 }, "sobrepoeBarraTopo": false, "sobrepoeBarraFundo": false, "sobrepoeColuna": false },
+      "contraste": { "tituloModal": 14.87, "contextoModal": 13.23, "efeitoModal": 8.31, "faixaMarcha": 15.24, "etiquetaSelecionada": 14.79, "linhaForca": 11.88 }
+    },
+    "1280x800": {
+      "viewport": { "w": 1280, "h": 800 },
+      "barraTopo": { "altura": 48, "larguraConteudo": 304, "semTransbordo": true },
+      "barraFundo": { "altura": 56 },
+      "mapaAtual": { "etiquetasVisiveis": 23, "sobreposicoes": 0, "cortadas": 0 },
+      "mapaEssencial": { "etiquetasVisiveis": 7, "etiquetasEscondidas": 17, "comunidadesVisiveis": 4, "sobreposicoes": 0, "cortadas": 0, "acessoAlternativo": true, "caixaAcesso": { "x": 12, "y": 85, "w": 458, "h": 33 } },
+      "politica": {
+        "fonte": { "postura": "colabora", "lado": "roma", "fundo": "rgb(102, 44, 37)", "contraste": 10.76 },
+        "ribeira": { "postura": "receosa", "lado": "roma", "fundo": "rgb(117, 53, 45)", "contraste": 9.12 },
+        "vau": { "postura": "amiga", "lado": "viriato", "fundo": "rgb(56, 118, 67)", "contraste": 5.47 },
+        "souto": { "postura": "amiga", "lado": "viriato", "fundo": "rgb(51, 110, 62)", "contraste": 6.1 }
+      },
+      "modal": { "largura": 560, "dentroDoEcra": true, "scroll": false, "sobrepoeBarras": false },
+      "marcha": { "x": 12, "y": 56, "w": 520, "h": 100, "interrompida": { "w": 520, "h": 120 }, "sobrepoeBarraTopo": false, "sobrepoeBarraFundo": false, "sobrepoeColuna": false },
+      "contraste": { "tituloModal": 14.87, "contextoModal": 13.23, "efeitoModal": 8.31, "faixaMarcha": 15.24 }
+    },
+    "1024x600": {
+      "viewport": { "w": 1024, "h": 600 },
+      "barraTopo": { "altura": 48, "larguraConteudo": 304, "semTransbordo": true },
+      "barraFundo": { "altura": 56 },
+      "mapaAtual": { "etiquetasVisiveis": 17, "sobreposicoes": 0, "cortadas": 0 },
+      "mapaEssencial": { "etiquetasVisiveis": 6, "etiquetasEscondidas": 19, "comunidadesVisiveis": 3, "sobreposicoes": 0, "cortadas": 0, "acessoAlternativo": true, "caixaAcesso": { "x": 12, "y": 85, "w": 458, "h": 33 } },
+      "politica": {
+        "fonte": { "postura": "colabora", "lado": "roma", "fundo": "rgb(102, 44, 37)", "contraste": 10.76 },
+        "ribeira": { "postura": "receosa", "lado": "roma", "fundo": "rgb(117, 53, 45)", "contraste": 9.12 },
+        "vau": { "postura": "amiga", "lado": "viriato", "fundo": "rgb(56, 118, 67)", "contraste": 5.47 }
+      },
+      "modal": { "largura": 560, "dentroDoEcra": true, "scroll": false, "sobrepoeBarras": false },
+      "marcha": { "x": 12, "y": 56, "w": 460, "h": 100, "interrompida": { "w": 460, "h": 120 }, "sobrepoeBarraTopo": false, "sobrepoeBarraFundo": false, "sobrepoeColuna": false },
+      "contraste": { "tituloModal": 14.87, "contextoModal": 13.23, "efeitoModal": 8.31, "faixaMarcha": 15.24 }
+    },
+    "844x390": {
+      "viewport": { "w": 844, "h": 390 },
+      "barraTopo": { "altura": 67, "larguraConteudo": 611, "semTransbordo": true, "nota": "grelha de duas linhas do language.css; 67 px é a altura real" },
+      "barraFundo": { "altura": 48 },
+      "mapaAtual": { "etiquetasVisiveis": 11, "sobreposicoes": 0, "cortadas": 0 },
+      "mapaEssencial": { "etiquetasVisiveis": 4, "comunidadesVisiveis": 2, "sobreposicoes": 0, "cortadas": 0, "acessoAlternativo": true, "caixaAcesso": { "x": 8, "y": 101, "w": 417, "h": 30 } },
+      "politica": {
+        "fonte": { "postura": "colabora", "lado": "roma", "fundo": "rgb(102, 44, 37)", "contraste": 10.76 },
+        "vau": { "postura": "amiga", "lado": "viriato", "fundo": "rgb(56, 118, 67)", "contraste": 5.47 }
+      },
+      "modal": { "x": 142, "y": 74, "w": 560, "h": 265, "dentroDoEcra": true, "scroll": false, "sobrepoeBarras": false },
+      "marcha": { "x": 8, "y": 75, "w": 828, "h": 79, "interrompida": { "w": 828, "h": 99 }, "sobrepoeBarraTopo": false, "sobrepoeBarraFundo": false, "sobrepoeColuna": false, "comColunaAberta": { "x": 8, "y": 75, "w": 460, "h": 99, "sobrepoeColuna": false } },
+      "contraste": { "tituloModal": 14.87, "contextoModal": 13.23, "efeitoModal": 8.31, "faixaMarcha": 15.24 }
+    }
+  },
+  "exemploPolitico": {
+    "descricao": "Uma comunidade em cada degrau, com valores plausíveis; fixture declarada, não é o estado da campanha.",
+    "comprometida": { "fundo": "rgb(32, 77, 43)", "contraste": 9.73, "margem": 70 },
+    "amiga": { "fundo": "rgb(56, 118, 67)", "contraste": 5.47, "margem": 20 },
+    "neutra": { "fundo": "rgb(30, 27, 24)", "contraste": 17.14, "margem": 10 },
+    "receosa": { "fundo": "rgb(108, 48, 40)", "contraste": 10.04, "margem": -37 },
+    "colabora": { "fundo": "rgb(90, 37, 32)", "contraste": 12.21, "margem": -60 }
+  },
+  "interrupcao": {
+    "844x390": {
+      "colunaAberta": { "visivel": true, "x": 8, "y": 75, "w": 460, "h": 99, "sobrepoeColuna": false, "povoacaoSelecionada": true, "assuntosPendentes": 2, "mIntRects": 0 },
+      "colunaFechada": { "visivel": true, "x": 8, "y": 75, "w": 828, "h": 99, "sobrepoeColuna": false, "povoacaoSelecionada": true, "assuntosPendentes": 2, "mIntRects": 0 }
+    },
+    "1440x900": {
+      "colunaAberta": { "visivel": true, "x": 12, "y": 56, "w": 520, "h": 120, "sobrepoeColuna": false, "povoacaoSelecionada": true, "assuntosPendentes": 2, "mIntRects": 0 },
+      "colunaFechada": { "visivel": true, "x": 12, "y": 56, "w": 520, "h": 120, "sobrepoeColuna": false, "povoacaoSelecionada": true, "assuntosPendentes": 2, "mIntRects": 0 }
+    },
+    "motivo": "O bando ficou sem comida.",
+    "regra": "campaign.interrupt / detectInterruptions; a pausa não foi alterada"
+  },
+  "problemasEncontrados": [
+    "O layout de positionLabels não consegue colocar as cinco comunidades em 1280/1024/844: 4/5, 3/5 e 2/5. Esconder a etiqueta do bando não resolve (testado: 4/3/2 continuam), porque as colisões são com a força confirmada e entre comunidades vizinhas. A demonstração acrescenta um acesso alternativo (select) e documenta o compromisso; a produção precisa de reservar espaço/prioridade no scene.js.",
+    "As etiquetas em inglês são mais curtas e cabem 3 comunidades a 844 (em pt-PT cabem 2): a contagem depende do texto, o que confirma que o problema é de largura/layout e não de dados.",
+    "Quando uma povoação está seleccionada, renderIssues esconde #missues e, com ela, #m-int: a interrupção real não aparece. A faixa de marcha mostra o motivo; a produção deve dar precedência a #m-int ou fechar o painel.",
+    "A 844×390 o acesso alternativo (select) fica por cima da etiqueta do bando; é uma limitação visual menor do fallback, não esconde comunidades.",
+    "A barra de cima a 844 tem 67 px (grelha do language.css), não 42; a faixa e o modal usam a altura real."
+  ],
+  "naoTestado": [
+    "Combates.",
+    "Leitores de ecrã, teclado real, Firefox/Safari.",
+    "Capturas em inglês (as chaves estão no relatório; a interface foi testada em pt-PT).",
+    "Testes de produção: nenhum ficheiro de src/ foi alterado; não se correu npm test."
+  ]
+}

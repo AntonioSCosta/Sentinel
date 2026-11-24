@@ -1,0 +1,476 @@
+/* ============================================================================
+   SENTINEL · Protótipo de clareza da campanha
+   Ficheiro de demonstração. Não é carregado pelo jogo; entra só por demo.js.
+   Paleta e tipografia iguais às do jogo (index.html / campaign-view.css).
+   ========================================================================== */
+
+:root {
+  --cl-gold: #e0a64a;
+  --cl-ink: #efe4d2;
+  --cl-dim: #b9ab96;
+  --cl-panel: rgba(21, 17, 13, .97);
+  --cl-line: #4a3a2a;
+  --cl-red: #c8382a;
+  --cl-amber: #d99a3a;
+  --cl-green: #a9d08a;
+  --cl-serif: 'EB Garamond', Georgia, serif;
+  --cl-display: 'Cinzel', serif;
+}
+
+/* ---------------------------------------------------------------------------
+   A · Painel central de decisão
+   ------------------------------------------------------------------------- */
+#clareza-modal.cl-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(5, 4, 3, .78);
+  backdrop-filter: blur(1.5px);
+}
+#clareza-modal .cl-dialog {
+  width: min(560px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 18px 22px 16px;
+  background: var(--cl-panel);
+  border: 1px solid #6a5238;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .65);
+}
+#clareza-modal .cl-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-family: var(--cl-display);
+  font-size: 11px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: #ff8a70;
+}
+#clareza-modal .cl-kicker::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px rgba(255, 138, 112, .18);
+}
+#clareza-modal .cl-kicker .cl-pause {
+  margin-left: auto;
+  font-family: var(--cl-serif);
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--cl-dim);
+  border: 1px solid var(--cl-line);
+  padding: 1px 8px;
+}
+#clareza-modal h2 {
+  margin: 0 0 6px;
+  font-family: var(--cl-display);
+  font-size: 21px;
+  line-height: 1.22;
+  font-weight: 400;
+  color: var(--cl-ink);
+  letter-spacing: .01em;
+}
+#clareza-modal .cl-context {
+  margin: 0 0 12px;
+  font-size: 15px;
+  line-height: 1.35;
+  color: #e6d7c1;
+}
+#clareza-modal .cl-context b { color: var(--cl-gold); font-weight: 400; }
+#clareza-modal .cl-options {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+#clareza-modal .cl-option {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 52px;
+  padding: 8px 12px 9px;
+  text-align: left;
+  letter-spacing: 0;
+  font-family: var(--cl-serif);
+  border: 1px solid #5a4630;
+  background: #1d1711;
+  color: var(--cl-ink);
+}
+#clareza-modal .cl-option:hover,
+#clareza-modal .cl-option:focus-visible {
+  border-color: var(--cl-gold);
+  background: #241c13;
+  outline: none;
+}
+#clareza-modal .cl-opt-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+#clareza-modal .cl-opt-top b {
+  font-family: var(--cl-display);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: .04em;
+}
+#clareza-modal .cl-opt-cost {
+  font-size: 13px;
+  color: var(--cl-gold);
+  white-space: nowrap;
+}
+#clareza-modal .cl-effect {
+  display: block;
+  margin-top: 3px;
+  font-size: 13.5px;
+  line-height: 1.3;
+  color: var(--cl-dim);
+}
+#clareza-modal .cl-effect b { color: #e6c9a8; font-weight: 400; }
+#clareza-modal .cl-option[data-opt="recusar"]:hover { border-color: #b5544a; }
+#clareza-modal .cl-note {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: #9c8f7c;
+}
+#clareza-modal .cl-note b { color: var(--cl-dim); font-weight: 400; }
+#clareza-modal .cl-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--cl-line);
+  padding-top: 10px;
+}
+#clareza-modal .cl-later {
+  min-height: 34px;
+  padding: 3px 10px;
+  font-family: var(--cl-serif);
+  font-size: 14px;
+  letter-spacing: 0;
+  color: var(--cl-dim);
+}
+#clareza-modal .cl-hint { font-size: 12px; color: #8d7f6c; }
+
+/* ---------------------------------------------------------------------------
+   A · Notificação discreta (sem decisão)
+   ------------------------------------------------------------------------- */
+#clareza-toast.cl-toast {
+  position: absolute;
+  top: 60px;
+  left: 50%;
+  transform: translate(-50%, -6px);
+  z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: min(440px, calc(100% - 24px));
+  box-sizing: border-box;
+  padding: 8px 12px;
+  background: rgba(16, 13, 10, .94);
+  border: 1px solid #4a3a2a;
+  border-left: 3px solid #8b9a6d;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, .5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .22s ease, transform .22s ease;
+}
+#clareza-toast.cl-on { opacity: 1; transform: translate(-50%, 0); }
+#clareza-toast .cl-toast-mark {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #8b9a6d;
+  border-radius: 50%;
+  font-size: 11px;
+  color: #c3d3a4;
+}
+#clareza-toast .cl-toast-body { min-width: 0; }
+#clareza-toast .cl-toast-tag {
+  display: block;
+  font-family: var(--cl-display);
+  font-size: 9px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--cl-dim);
+  margin-bottom: 1px;
+}
+#clareza-toast p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.3;
+  color: #e6d9c4;
+}
+
+/* ---------------------------------------------------------------------------
+   C · Faixa de marcha
+   ------------------------------------------------------------------------- */
+#clareza-march.cl-march {
+  position: absolute;
+  top: 58px;
+  left: 12px;
+  z-index: 3;
+  width: min(520px, calc(100% - 356px));
+  box-sizing: border-box;
+  padding: 8px 12px 9px;
+  background: rgba(16, 13, 10, .93);
+  border: 1px solid var(--cl-line);
+  border-left: 3px solid #7fa8b8;
+  font-size: 14px;
+  color: var(--cl-ink);
+}
+#clareza-march .cl-march-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+#clareza-march .cl-march-kicker {
+  flex: none;
+  font-family: var(--cl-display);
+  font-size: 9px;
+  letter-spacing: .18em;
+  color: #9fc3d1;
+  text-transform: uppercase;
+}
+#clareza-march .cl-march-dest {
+  font-family: var(--cl-display);
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--cl-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#clareza-march .cl-march-day {
+  margin-left: auto;
+  flex: none;
+  font-size: 12.5px;
+  color: var(--cl-dim);
+}
+#clareza-march .cl-bar {
+  height: 5px;
+  margin: 6px 0 7px;
+  background: #241d16;
+  border: 1px solid #3d3024;
+  overflow: hidden;
+}
+#clareza-march .cl-bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(#9fc3d1, #5d8b9c);
+  transition: width .25s ease;
+}
+#clareza-march .cl-march-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 18px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.35;
+}
+#clareza-march .cl-march-facts div { display: flex; gap: 5px; }
+#clareza-march dt { color: var(--cl-dim); }
+#clareza-march dd { margin: 0; color: #e6d9c4; }
+#clareza-march .cl-march-status {
+  margin: 5px 0 0;
+  font-size: 12px;
+  color: #9c8f7c;
+}
+#clareza-march[data-state="interrompida"] {
+  border-left-color: var(--cl-gold);
+  box-shadow: 0 0 0 1px rgba(224, 166, 74, .18);
+}
+#clareza-march[data-state="interrompida"] .cl-march-kicker { color: var(--cl-gold); }
+#clareza-march[data-state="interrompida"] .cl-bar i { background: linear-gradient(#e0a64a, #a8702a); }
+#clareza-march[data-state="interrompida"] .cl-march-status { color: #ffc27a; }
+#clareza-march .cl-march-reason {
+  margin: 3px 0 0;
+  font-size: 13px;
+  line-height: 1.3;
+  color: #f0d5ac;
+}
+
+/* ---------------------------------------------------------------------------
+   B · Modos do mapa
+   ------------------------------------------------------------------------- */
+#clareza-mapnote {
+  position: absolute;
+  top: 58px;
+  left: 12px;
+  z-index: 2;
+  padding: 3px 9px;
+  background: rgba(16, 13, 10, .92);
+  border: 1px solid var(--cl-line);
+  font-size: 12.5px;
+  color: var(--cl-dim);
+  pointer-events: none;
+}
+#clareza-mapnote b {
+  font-family: var(--cl-display);
+  font-weight: 400;
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--cl-gold);
+  margin-right: 6px;
+}
+
+/* alinhamento político: o fundo vem do demo.js (postura + margem); o nome fica branco.
+   Não se mexe na tipografia, no tamanho nem no padding das etiquetas. */
+#campaign-map-3d .map-label.community.cl-political { color: #fff; }
+
+/* acesso alternativo às comunidades quando o layout não deixa ver as cinco */
+#clareza-communities {
+  position: absolute;
+  left: 12px;
+  z-index: 3;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  max-width: calc(100% - 24px);
+  box-sizing: border-box;
+  padding: 3px 8px;
+  background: rgba(16, 13, 10, .94);
+  border: 1px solid var(--cl-line);
+  font-size: 12.5px;
+  color: var(--cl-dim);
+}
+#clareza-communities[hidden] { display: none; }
+#clareza-communities label { display: flex; gap: 5px; align-items: baseline; white-space: nowrap; }
+#clareza-communities b {
+  font-family: var(--cl-display);
+  font-weight: 400;
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--cl-gold);
+}
+#clareza-communities select {
+  max-width: min(270px, 52vw);
+  padding: 2px 5px;
+  background: #1d1711;
+  color: var(--cl-ink);
+  border: 1px solid #5a4630;
+  font-family: var(--cl-serif);
+  font-size: 13px;
+}
+
+/* mapa essencial: ficam as cinco comunidades, o bando, as forças e os relatos;
+   tudo o que é só terreno ou aldeia sem gente para dar sai do mapa */
+#campaign-map-3d.clareza-essencial .map-label.cl-secondary { display: none !important; }
+#campaign-map-3d.clareza-essencial .map-label { font-size: 10px; padding: 1px 6px; }
+@media (max-width: 900px), (max-height: 480px) {
+  #campaign-map-3d.clareza-essencial .map-label { padding: 1px 5px; }
+}
+
+/* um objecto escolhido: o resto recua, o escolhido ganha bordo */
+#campaign-map-3d.clareza-foco .map-label { opacity: .34; transition: opacity .18s ease; }
+#campaign-map-3d.clareza-foco .map-label.selected,
+#campaign-map-3d.clareza-foco .map-label.party-label { opacity: 1; }
+#campaign-map-3d.clareza-foco .map-label.selected {
+  border-color: var(--cl-gold);
+  box-shadow: 0 0 0 1px rgba(224, 166, 74, .55), 0 4px 14px rgba(0, 0, 0, .5);
+  background: #2a1e12;
+  color: #fff3dd;
+}
+
+/* painel da força romana, na coluna dos assuntos */
+#clareza-force {
+  padding: 10px 16px 16px;
+}
+#clareza-force .cl-force-kicker {
+  margin: 6px 0 0;
+  font-family: var(--cl-display);
+  font-size: 10px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: #d98d80;
+}
+#clareza-force h3 {
+  margin: 4px 0 3px;
+  font-family: var(--cl-display);
+  font-size: 19px;
+  font-weight: 400;
+  color: var(--cl-gold);
+}
+#clareza-force .cl-force-sub { margin: 0 0 8px; font-size: 14px; color: var(--cl-dim); }
+#clareza-force .cl-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+#clareza-force .cl-chip {
+  padding: 1px 8px;
+  border: 1px solid #6a5238;
+  font-size: 13px;
+  color: var(--cl-ink);
+}
+#clareza-force .cl-chip.ok { border-color: #6f9a52; color: var(--cl-green); }
+#clareza-force .cl-chip.est { border-color: #c9a23a; color: #f0c45a; border-style: dashed; }
+#clareza-force .cl-chip.warn { border-color: #b5544a; color: #ff9a7a; }
+#clareza-force .cl-force-line { margin: 0 0 8px; font-size: 14px; line-height: 1.35; color: #e6c9a8; }
+#clareza-force dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 8px 0; font-size: 14px; }
+#clareza-force dt { color: var(--cl-dim); }
+#clareza-force dd { margin: 0; }
+#clareza-force .cl-force-actions { display: grid; gap: 6px; margin-top: 10px; }
+#clareza-force .cl-force-actions button {
+  width: 100%;
+  min-height: 38px;
+  padding: 5px 12px;
+  text-align: left;
+  font-family: var(--cl-serif);
+  font-size: 16px;
+  letter-spacing: 0;
+}
+#clareza-force .cl-force-why { margin: 5px 0 0; font-size: 12.5px; color: #9c8f7c; }
+#clareza-force .cl-force-note { margin: 10px 0 0; font-size: 12.5px; color: #8d7f6c; font-style: italic; }
+
+/* ---------------------------------------------------------------------------
+   Resoluções alvo
+   ------------------------------------------------------------------------- */
+@media (max-width: 1100px) {
+  #clareza-march.cl-march { width: min(460px, calc(100% - 310px)); }
+}
+@media (max-width: 900px), (max-height: 480px) {
+  #clareza-modal.cl-backdrop { padding: 8px; }
+  #clareza-modal .cl-dialog { padding: 12px 14px 10px; }
+  #clareza-modal h2 { font-size: 17px; margin-bottom: 4px; }
+  #clareza-modal .cl-context { font-size: 13.5px; margin-bottom: 8px; }
+  #clareza-modal .cl-options { gap: 6px; }
+  #clareza-modal .cl-option { min-height: 42px; padding: 6px 10px; }
+  #clareza-modal .cl-opt-top b { font-size: 13.5px; }
+  #clareza-modal .cl-effect { font-size: 12.5px; }
+  #clareza-modal .cl-note { display: none; }
+  #clareza-modal .cl-foot { padding-top: 7px; }
+  #clareza-march.cl-march { left: 8px; right: 8px; width: auto; padding: 5px 9px 6px; }
+  #clareza-march .cl-march-kicker { display: none; }
+  #clareza-march .cl-march-dest { font-size: 13.5px; }
+  #clareza-march .cl-bar { margin: 4px 0 4px; height: 4px; }
+  #clareza-march .cl-march-facts { gap: 0 12px; font-size: 12px; }
+  #clareza-march .cl-march-status { margin-top: 2px; font-size: 11px; }
+  #clareza-mapnote { font-size: 11.5px; padding: 2px 7px; }
+  #clareza-communities { left: 8px; gap: 5px; padding: 2px 6px; font-size: 11.5px; }
+  #clareza-communities b { font-size: 9px; }
+  #clareza-communities select { max-width: 48vw; font-size: 12px; }
+  #clareza-force { padding: 8px 12px 12px; }
+  #clareza-force h3 { font-size: 17px; }
+  #clareza-force dl { font-size: 13px; }
+}
+@media (max-width: 640px) {
+  #clareza-march .cl-march-facts div:nth-child(2) { display: none; }
+}
+@media (max-height: 480px) {
+  /* em ecrãs baixos o diálogo começa abaixo da barra (67 px a 844×390), nunca por cima dela */
+  #clareza-modal.cl-backdrop { align-items: flex-start; padding: 74px 8px 8px; overflow-y: auto; }
+  #clareza-modal .cl-dialog { max-height: none; }
+}
