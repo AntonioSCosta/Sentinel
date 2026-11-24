@@ -555,12 +555,13 @@ Exemplo de ligação directa: [pasta das capturas](shots/) · [02 a 844×390](sh
 
 ## 13. Publicação
 
-- Branch: `demo/playtest-clarity-m3-2-b`, criada a partir de `origin/main` (`57f1cd9`).
-- PR: **não criado** — o `gh` deste ambiente não tem sessão GitHub e não há `GH_TOKEN`/
-  `GITHUB_TOKEN`; o `cloud_git` só empurra a branch. O URL de comparação fica no fim da entrega.
+- Branch publicada: `demo/playtest-clarity-m3-2-b`, a partir de `origin/main` (`57f1cd9`),
+  commit `f0e608f`.
+- PR: o `gh` deste ambiente não tem sessão GitHub nem `GH_TOKEN`/`GITHUB_TOKEN`; a branch foi
+  empurrada pelo `cloud_git` e o PR é aberto pela página de comparação indicada no fim.
 - Só `artifacts/playtest-clarity/` é incluído; nenhum ficheiro de `src/`, `index.html`, `tests/` ou
-  `tools/` foi tocado. O commit é único e contém o relatório, a demonstração, o CSS, as medições e
-  as capturas finais.
+  `tools/` foi tocado. O commit contém o relatório, a demonstração, o CSS, as medições e as 47
+  capturas finais.
 
 > **Nota para o Codex:** a branch e o commit são a fonte; o PR não existe. Abrir
 > `https://github.com/AntonioSCosta/Sentinel/compare/main...demo/playtest-clarity-m3-2-b?expand=1`
