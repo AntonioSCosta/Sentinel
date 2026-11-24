@@ -1,0 +1,58 @@
+{
+  "1440x900": {
+    "labels": 25,
+    "communities": 4,
+    "known": 2,
+    "posts": 2,
+    "rumors": 2,
+    "overlaps": 0,
+    "clipped": 0,
+    "party": true,
+    "dockOverlap": null,
+    "actionsVisible": 0,
+    "actionsOnTop": true,
+    "hudFits": true
+  },
+  "1280x800": {
+    "labels": 22,
+    "communities": 3,
+    "known": 2,
+    "posts": 2,
+    "rumors": 2,
+    "overlaps": 0,
+    "clipped": 0,
+    "party": true,
+    "dockOverlap": null,
+    "actionsVisible": 0,
+    "actionsOnTop": true,
+    "hudFits": true
+  },
+  "1024x600": {
+    "labels": 17,
+    "communities": 3,
+    "known": 2,
+    "posts": 2,
+    "rumors": 2,
+    "overlaps": 0,
+    "clipped": 0,
+    "party": true,
+    "dockOverlap": null,
+    "actionsVisible": 0,
+    "actionsOnTop": true,
+    "hudFits": true
+  },
+  "844x390": {
+    "labels": 11,
+    "communities": 1,
+    "known": 2,
+    "posts": 2,
+    "rumors": 0,
+    "overlaps": 0,
+    "clipped": 0,
+    "party": true,
+    "dockOverlap": null,
+    "actionsVisible": 0,
+    "actionsOnTop": true,
+    "hudFits": true
+  }
+}

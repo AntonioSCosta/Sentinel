@@ -24,6 +24,15 @@ export function positionLabels(labels, width, height, reserved = []) {
     if (x < 0 || y < 0 || x > width || y > height) continue;
     const positions = [[x - w / 2, y - h - 8], [x + 12, y - h / 2],
       [x - w - 12, y - h / 2], [x - w / 2, y + 14]];
+    // Essential labels can move farther from their marker, with a leader line.
+    if (label.reposition) {
+      for (const offset of [22, 44, 66, 88, 110]) {
+        positions.push([x - w / 2, y - h - offset], [x - w / 2, y + offset]);
+        for (const left of [x - w - offset, x + offset]) {
+          positions.push([left, y - h / 2], [left, y - h - offset], [left, y + offset]);
+        }
+      }
+    }
     for (const [left, top] of positions) {
       const box = { x: left, y: top, w, h };
       if (left < 4 || top < 4 || left + w > width - 4 || top + h > height - 4 ||

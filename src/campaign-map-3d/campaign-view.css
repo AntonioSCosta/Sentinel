@@ -13,18 +13,39 @@
 #campaign-map-3d .estimated { color: #ead6ba; background: #423527ed; border-color: #ac9474; border-style: dashed; }
 #campaign-map-3d .has-issue::after { content: ' ◆'; color: #efb977; }
 #campaign-map-3d .selected, #campaign-map-3d .map-label:hover { color: #fff4d4; background: #43513f; border-color: #e9cb83; z-index: 1; }
-#campaign-map-3d .map-controls {
-  position: absolute; right: 10px; bottom: 8px; display: flex; gap: 4px;
+#campaign-map-3d .community[data-posture] { color: #fff; background: var(--posture-background); }
+#campaign-map-3d [data-posture="comprometida"] { --posture-background: #23432f; }
+#campaign-map-3d [data-posture="amiga"] { --posture-background: #3b754d; }
+#campaign-map-3d [data-posture="neutra"] { --posture-background: #262626; }
+#campaign-map-3d [data-posture="receosa"] { --posture-background: #86463f; }
+#campaign-map-3d [data-posture="colabora"] { --posture-background: #592a2b; }
+#campaign-map-3d [data-posture="queimada"], #campaign-map-3d [data-posture="abandonada"] {
+  --posture-background: #555b64; border-style: dashed;
 }
+#campaign-map-3d .confirmed:is(.selected, :hover) { background: #482b28f2; }
+#campaign-map-3d .estimated:is(.selected, :hover) { background: #423527ed; }
+#campaign-map-3d .map-dock { position: absolute; right: 10px; bottom: 8px; z-index: 1; display: grid; gap: 5px; }
+#campaign-map-3d :is(.map-access, .map-controls) { display: flex; justify-content: flex-end; gap: 4px; }
 #campaign-map-3d .map-controls[hidden] { display: none; }
-#campaign-map-3d .map-controls button {
+#campaign-map-3d[data-status="error"] .map-dock { display: none; }
+#campaign-map-3d .map-dock button, #campaign-map-3d .map-access select {
   padding: 3px 7px; background: #283328; color: #f6df9d; border: 1px solid #837452; border-radius: 3px;
 }
+#campaign-map-3d .map-access :is(button, select) { font: 12px system-ui, sans-serif; min-height: 30px; }
+#campaign-map-3d .map-access select { max-width: min(180px, 48vw); }
+#campaign-map-3d .map-access [aria-pressed="true"] { border-color: #edd598; background: #43513f; }
 #campaign-map-3d .map-preview {
-  position: absolute; bottom: 57px; right: 10px; margin: 0; max-width: 72%; pointer-events: none;
+  position: absolute; bottom: 87px; right: 10px; margin: 0; max-width: 72%; pointer-events: none;
   padding: 3px 8px; background: #202820ed; border-radius: 3px; color: #f6df9d; font: 12px system-ui, sans-serif;
 }
 #campaign-map-3d .map-preview:empty { display: none; }
+#map #m-int { max-height: calc(100% - var(--map-compact-header, 48px) - var(--map-compact-footer, 56px) - 104px); }
+@media (min-width: 620px) and (max-width: 900px), (min-width: 620px) and (max-height: 480px) {
+  #map:has(#mside:not(.closed)) #campaign-map-3d :is(.map-dock, .map-preview) { right: 350px; }
+}
+@media (max-width: 900px) {
+  #map #mlog { max-width: max(100px, calc(100% - 305px)); }
+}
 #campaign-map-3d .map-error {
   position: absolute; top: 42%; left: 50%; transform: translate(-50%, -50%); width: min(84%, 410px);
   margin: 0; padding: 16px 20px; color: #f3dfc8; background: #382921; border: 1px solid #b37a5d; text-align: center;

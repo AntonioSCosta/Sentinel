@@ -155,6 +155,7 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
   };
   let model, terrain, relief, edge, projection, markers, intelligence, planning, targets, labels = [], selected;
   let placesKey, intelKey, planningKey, focusedPlace, issues, partyLabel, labelLocale;
+  let campaignLabels, showMapDetails, communityPostures;
   let surfaceWidth = 0, surfaceHeight = 0;
   let zoom = 1, angle = defaultAngle, treeCount = 0;
   let screenWidth = 1, screenHeight = 1, halfHeight = 1;
@@ -203,7 +204,9 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
     }).filter(box => box.w && box.h && box.x < screenWidth && box.y < screenHeight &&
       box.x + box.w > 0 && box.y + box.h > 0);
     const visibleLabels = partyLabel ? [...labels, partyLabel] : labels;
-    if (labelLocale !== i18n.locale) {
+    const mainRumor = campaignLabels && labels.find(({ marker }) => marker.userData.className === 'rumor-zone');
+    const languageChanged = labelLocale !== i18n.locale;
+    if (languageChanged) {
       labelLocale = i18n.locale;
       for (const { marker, element } of visibleLabels) element.textContent = markerLabel(marker);
     }
@@ -212,16 +215,36 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
       element.classList.toggle('has-issue', selection?.type === 'settlement' && !!issues?.[selection.id]);
       element.classList.toggle('selected', !!selection &&
         (selection === selected || (selection.type === 'settlement' && selection.id === focusedPlace)));
+      if (campaignLabels && marker.userData.place?.community) {
+        const posture = communityPostures?.[selection.id];
+        if (posture && (element.dataset.posture !== posture || languageChanged)) {
+          element.dataset.posture = posture;
+          const description = ['queimada', 'abandonada'].includes(posture)
+            ? i18n.t(`map.inactive.${posture}`) : i18n.t(`map.issuesCopy.posture.${posture}`);
+          element.title = description;
+          element.setAttribute('aria-label', `${element.textContent} · ${description}`);
+        }
+      }
     }
-    const candidates = visibleLabels.map(({ marker, element, key }) => {
+    const candidates = visibleLabels.map(label => {
+      const { marker, element, key } = label;
+      const { place, force, priority, className, ring } = marker.userData;
+      const highlighted = element.classList.contains('selected');
+      const decision = issues?.[place?.id] === 'decisao';
+      const essential = place?.community || place?.kind === 'posto' || !!force || label === partyLabel || decision || highlighted;
+      if (ring) ring.visible = !campaignLabels || showMapDetails || label === mainRumor || className === 'scouted-zone';
+      if (campaignLabels && !showMapDetails && !essential && label !== mainRumor) return null;
       projected.copy(marker.position);
       projected.y += marker.userData.lift;
       projected.project(camera);
+      const rank = campaignLabels
+        ? Math.max(priority, force ? 11 : 0, decision ? 10 : 0, highlighted ? 9 : 0)
+        : highlighted ? 10 : priority;
       return { id: key, x: (projected.x + 1) * screenWidth / 2, y: (1 - projected.y) * screenHeight / 2,
-        w: element.offsetWidth, h: element.offsetHeight,
-        priority: element.classList.contains('selected') ? 10 : marker.userData.priority };
+        w: element.offsetWidth, h: element.offsetHeight, priority: rank,
+        reposition: campaignLabels && (essential || label === mainRumor) };
     });
-    const boxes = positionLabels(candidates, screenWidth, screenHeight, reserved);
+    const boxes = positionLabels(candidates.filter(Boolean), screenWidth, screenHeight, reserved);
     for (const [i, { element, key, line }] of visibleLabels.entries()) {
       const box = boxes.get(key);
       element.style.visibility = box ? 'visible' : 'hidden';
@@ -348,6 +371,10 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
     setView(view);
     focusedPlace = fx.selected;
     issues = fx.issues;
+    campaignLabels = fx.campaignLabels;
+    showMapDetails = fx.showMapDetails;
+    // Presentation metadata stays outside the geometry cache keyed by view.places.
+    communityPostures = view.communityPostures;
     if (!partyLabel) {
       partyLabel = makeLabel(partyMarker, true);
       mountLabels();

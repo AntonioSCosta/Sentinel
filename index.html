@@ -325,6 +325,7 @@
       <span class="r"><b data-i18n="map.men">Homens</b><span id="m-men"></span></span>
       <span class="r" id="m-food-box"><b data-i18n="map.food">Comida</b><span id="m-food"></span><small id="m-food-raw"></small></span>
       <span class="r"><b data-i18n="map.arms">Armas</b><span id="m-arms"></span></span>
+      <span class="r" id="m-fame-box"><b data-i18n="map.fame">Fama</b><span id="m-fame"></span></span>
     </div>
     <button type="button" id="m-side-toggle" aria-controls="mside" aria-expanded="true" data-i18n="map.issues">Assuntos</button>
     <label class="language-option map-language" for="map-language"><span data-i18n="interface.language">Idioma</span> <select id="map-language" data-language><option value="en" lang="en">English</option><option value="pt-PT" lang="pt-PT">Português (Portugal)</option></select></label>
@@ -333,12 +334,18 @@
   <div id="campaign-map-3d">
     <canvas id="m-scene" tabindex="0" aria-label="Mapa do vale em 3D. Seleciona uma povoação ou clica no terreno para marchar. O Diário lista os lugares." data-i18n-aria="map.a11y.canvas"></canvas>
     <div class="map-labels" aria-label="Locais e forças conhecidas" data-i18n-aria="map.a11y.labels"></div>
-    <div class="map-controls" role="group" aria-label="Câmara do mapa" data-i18n-aria="map.a11y.camera" data-reserve-labels>
-      <button type="button" data-camera="left" aria-label="Rodar para a esquerda" data-i18n-aria="map.a11y.left">↶</button>
-      <button type="button" data-camera="right" aria-label="Rodar para a direita" data-i18n-aria="map.a11y.right">↷</button>
-      <button type="button" data-camera="out" aria-label="Afastar" data-i18n-aria="map.a11y.out">−</button>
-      <button type="button" data-camera="in" aria-label="Aproximar" data-i18n-aria="map.a11y.in">+</button>
-      <button type="button" data-camera="reset" data-i18n="map.center">Centrar</button>
+    <div class="map-dock" data-reserve-labels>
+      <div class="map-access">
+        <button type="button" id="m-map-details" data-i18n="map.mapDetails" aria-pressed="false">Detalhes do mapa</button>
+        <select id="m-community" aria-label="Selecionar comunidade" data-i18n-aria="map.selectCommunity"></select>
+      </div>
+      <div class="map-controls" role="group" aria-label="Câmara do mapa" data-i18n-aria="map.a11y.camera">
+        <button type="button" data-camera="left" aria-label="Rodar para a esquerda" data-i18n-aria="map.a11y.left">↶</button>
+        <button type="button" data-camera="right" aria-label="Rodar para a direita" data-i18n-aria="map.a11y.right">↷</button>
+        <button type="button" data-camera="out" aria-label="Afastar" data-i18n-aria="map.a11y.out">−</button>
+        <button type="button" data-camera="in" aria-label="Aproximar" data-i18n-aria="map.a11y.in">+</button>
+        <button type="button" data-camera="reset" data-i18n="map.center">Centrar</button>
+      </div>
     </div>
     <p class="map-preview" data-reserve-labels></p>
     <p class="map-error" role="alert" hidden></p>
