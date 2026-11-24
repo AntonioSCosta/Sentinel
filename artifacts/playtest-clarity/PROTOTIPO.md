@@ -556,9 +556,10 @@ Exemplo de ligação directa: [pasta das capturas](shots/) · [02 a 844×390](sh
 ## 13. Publicação
 
 - Branch publicada: `demo/playtest-clarity-m3-2-b`, a partir de `origin/main` (`57f1cd9`),
-  commit `f0e608f`.
-- PR: o `gh` deste ambiente não tem sessão GitHub nem `GH_TOKEN`/`GITHUB_TOKEN`; a branch foi
-  empurrada pelo `cloud_git` e o PR é aberto pela página de comparação indicada no fim.
+  commits `f0e608f`, `54e01f1` e o commit final deste relatório.
+- PR: **não criado** — o `gh` não tem sessão GitHub, não há `GH_TOKEN`/`GITHUB_TOKEN` e a página
+  do GitHub no browser está com «Sign in». A branch está no remoto e a comparação está pronta:
+  https://github.com/AntonioSCosta/Sentinel/compare/main...demo/playtest-clarity-m3-2-b?expand=1
 - Só `artifacts/playtest-clarity/` é incluído; nenhum ficheiro de `src/`, `index.html`, `tests/` ou
   `tools/` foi tocado. O commit contém o relatório, a demonstração, o CSS, as medições e as 47
   capturas finais.
