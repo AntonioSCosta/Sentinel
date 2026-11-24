@@ -22,6 +22,8 @@ for (const vp of [{ width: 1366, height: 768 }, { width: 1280, height: 800 }, { 
     c.flow.journal.push({ day: s.day, type: 'castigo', id: s.communities.vau.settlement, why: 'apoio' }); c.render();
   });
   await page.waitForSelector('#campaign-map-3d');
+  await page.locator('#mtribute:not(.hidden)').waitFor();
+  await page.keyboard.press('Escape'); // postpone the decision while checking the sidebar itself
   const box = sel => page.locator(sel).boundingBox().catch(() => null);
   if (narrow) {
     check(`${tag}: ecrã pequeno: a coluna começa fechada e o mapa ocupa a largura`, !(await page.locator('#mside').isVisible()), fmt(await box('#campaign-map-3d')));
