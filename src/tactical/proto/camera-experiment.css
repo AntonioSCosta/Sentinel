@@ -1,0 +1,27 @@
+#camera-experiment {
+  position: fixed;
+  top: 72px;
+  right: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  max-width: min(430px, calc(100vw - 24px));
+  padding: 8px;
+}
+#camera-experiment select { min-width: 0; max-width: 100%; }
+#preview-troops-error { flex-basis: 100%; color: var(--ink); font-size: 12px; }
+#camera-experiment button[aria-pressed='true'] { background: #6b5330; border-color: var(--bronze); }
+#camera-status { flex-basis: 100%; color: var(--dim); font-size: 12px; }
+#view[data-close-camera='true'] { cursor: grab !important; }
+#view[data-close-camera='true']:active { cursor: grabbing !important; }
+#view[data-close-camera='true'] ~ #hint { display: none; }
+@media (max-width: 760px) {
+  #camera-experiment { top: 74px; max-width: min(280px, calc(100vw - 24px)); }
+  #camera-experiment select { flex: 1; }
+}
+@media (max-width: 615px) {
+  #camera-experiment { left: 12px; width: auto; max-width: none; }
+  body:has(#camera-experiment) #prep { top: 185px; }
+}

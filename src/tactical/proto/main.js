@@ -538,17 +538,27 @@ function detectionRings() {
 }
 
 // --- ciclo ---
+let cameraExperiment;
+const previewParams = new URLSearchParams(location.search);
+if (!campaign && window === window.top && previewParams.get('visual') === 'm21c') {
+  import('./hybrid-preview.js').then(({ mountHybridPreview }) => {
+    cameraExperiment = mountHybridPreview({ view, canvas, i18n, nameOf, selected: () => ui.selected, endTerrainDrag: endDrag,
+      initialTroops: previewParams.get('troops') });
+  });
+}
 let last = performance.now(), uiT = 0, clashT = 0, campaignReady = false;
 function frame(now) {
   const real = Math.min(0.1, (now - last) / 1000); last = now;
   // câmara pelo teclado
-  const k = view.camera.dist / 60 * real * 40;
-  if (keys.has('KeyW') || keys.has('ArrowUp')) view.pan(0, -k);
-  if (keys.has('KeyS') || keys.has('ArrowDown')) view.pan(0, k);
-  if (keys.has('KeyA') || keys.has('ArrowLeft')) view.pan(-k, 0);
-  if (keys.has('KeyD') || keys.has('ArrowRight')) view.pan(k, 0);
-  if (keys.has('KeyQ')) view.rotate(real * 1.2);
-  if (keys.has('KeyE')) view.rotate(-real * 1.2);
+  if (!cameraExperiment?.busy) {
+    const k = view.camera.dist / 60 * real * 40;
+    if (keys.has('KeyW') || keys.has('ArrowUp')) view.pan(0, -k);
+    if (keys.has('KeyS') || keys.has('ArrowDown')) view.pan(0, k);
+    if (keys.has('KeyA') || keys.has('ArrowLeft')) view.pan(-k, 0);
+    if (keys.has('KeyD') || keys.has('ArrowRight')) view.pan(k, 0);
+    if (keys.has('KeyQ')) view.rotate(real * 1.2);
+    if (keys.has('KeyE')) view.rotate(-real * 1.2);
+  }
 
   let simDt = 0;
   if (ui.session && !ui.session.battle.over && !ui.paused) {
@@ -560,10 +570,11 @@ function frame(now) {
     simDt = real * ui.speed * slow;
   }
   const visDt = ui.paused ? 0 : (ui.session ? Math.max(simDt, real * 0.3) : real);
-  const threats = new Set(groupsNow().filter(g => threatOf(g)).map(g => g.id));
-  view.sync(groupsNow(), visDt, { selected: ui.selected, showPlans: ui.phase === 'waiting', lookup, threats });
+  const groups = groupsNow();
+  const threats = new Set(groups.filter(g => threatOf(g)).map(g => g.id));
+  view.sync(groups, visDt, { selected: ui.selected, showPlans: ui.phase === 'waiting', lookup, threats });
   view.setRanges(detectionRings());
-  view.render();
+  view.render(cameraExperiment?.effect(real, groups));
   if (campaign && !campaignReady) { campaignReady = true; campaign.ready(releaseArena); }
 
   // som de combate e tambor de marcha
@@ -594,6 +605,7 @@ requestAnimationFrame(frame);
 // Gancho para testes automáticos e para o playtest (consola): não faz parte da interface.
 window.__proto = {
   get ui() { return ui; }, view, i18n,
+  get cameraExperiment() { return cameraExperiment?.snapshot(); },
   seed(n) { ui.seed = n; applyTexts(); },
   start: startBattle, signal: giveSignal, order: (id, cmd) => { ui.selected = id; order(cmd); },
   place: (id, x, y) => placeGroup(ui.placement, id, x, y), role: id => toggleRole(ui.placement, id),

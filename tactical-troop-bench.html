@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sentinel · Troop render benchmark</title>
+<link rel="icon" href="data:,">
+<style>
+body{margin:0;background:#27231b;color:#f0e6ce;font:16px system-ui,sans-serif}
+canvas{position:fixed;inset:0;width:100%;height:100%}
+aside{position:fixed;top:12px;left:12px;background:#251f17;padding:10px 14px;border:1px solid #877253;border-radius:6px}
+label{margin-right:.5rem}
+</style>
+<script type="importmap">{"imports":{"three":"./vendor/three/three.module.js"}}</script>
+</head>
+<body>
+<canvas id="view" aria-label="Visual troop benchmark"></canvas>
+<aside><label for="troop-style">Troops</label><select id="troop-style"><option value="m1">M1.2</option><option value="c">Hybrid C</option></select>
+<output id="count"></output></aside>
+<script type="module" src="./src/tactical/visual/bench.js"></script>
+</body>
+</html>
