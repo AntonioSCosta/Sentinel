@@ -149,9 +149,10 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
   const leaders = document.createElementNS(svg, 'svg');
   leaders.setAttribute('class', 'map-leaders');
   leaders.setAttribute('aria-hidden', 'true');
+  const partySelection = { type: 'party' };
   const partyMarker = {
     position: new THREE.Vector3(),
-    userData: { key: 'party', labelKey: 'map.band', className: 'party-label', priority: 12, lift: 17 },
+    userData: { key: 'party', selection: partySelection, labelKey: 'map.band', className: 'party-label', priority: 12, lift: 19 },
   };
   let model, terrain, relief, edge, projection, markers, intelligence, planning, partyVisual, targets, labels = [], selected;
   const counts = { planningBuilds: 0, partyBuilds: 0, poseUpdates: 0, releasedGroups: 0 };
@@ -191,6 +192,7 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
   }
 
   function labelFor(selection) {
+    if (selection?.type === 'party') return i18n.t('map.band');
     const marker = targets?.find(({ userData }) =>
       userData.selection.type === selection?.type && userData.selection.id === selection?.id);
     return marker ? markerLabel(marker) : '';
@@ -374,8 +376,9 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
       intelKey = nextIntelKey;
     }
     selected = null;
-    targets = [...markers.children, ...intelligence.targets];
-    labels = [...targets.map(marker => makeLabel(marker, true)), ...intelligence.annotations.map(marker => makeLabel(marker))];
+    targets = [...markers.children, ...intelligence.targets, ...(partyVisual ? [partyVisual] : [])];
+    labels = [...targets.filter(marker => marker !== partyVisual).map(marker => makeLabel(marker, true)),
+      ...intelligence.annotations.map(marker => makeLabel(marker))];
     mountLabels();
   }
 
@@ -409,9 +412,11 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
     if (!terrain) return;
     if (!partyVisual) {
       partyVisual = makeParty(terrain, projection, fx.party);
+      partyVisual.userData.selection = partySelection;
       model.add(partyVisual);
+      targets?.push(partyVisual);
       counts.partyBuilds++;
-    } else partyVisual.userData.updateParty(fx.party);
+    } else partyVisual.userData.updateParty(fx.party, fx.step);
     planning?.userData.updateParty(fx.party);
     const party = projection.toScene(fx.party, terrain.heightAt(fx.party.x, fx.party.y));
     partyMarker.position.set(party.x, party.y, party.z);
@@ -493,7 +498,8 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
   }
 
   function metrics() {
-    return { ...counts, geometries: renderer.info.memory.geometries, calls: renderer.info.render.calls };
+    return { ...counts, geometries: renderer.info.memory.geometries, calls: renderer.info.render.calls,
+      party: partyVisual && { ...partyVisual.userData.stats, heading: partyVisual.userData.heading } };
   }
 
   return { load, present, setPartyPose, resize, reset, pan, zoomBy, rotate, pick, hit, measure, metrics, labelFor, redraw: draw };

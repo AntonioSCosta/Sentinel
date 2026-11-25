@@ -10,24 +10,37 @@ const party = { x: 300, y: 300 };
 const other = { x: 330, y: 310 };
 const vertices = mesh => Array.from(mesh.geometry.getAttribute('position').array.slice(0, mesh.geometry.drawRange.count * 3));
 
-test('party token, ring and materials persist across pose updates and dispose on scene replacement', () => {
+test('four figures, selection ring and shared resources persist across pose updates and dispose on world replacement', () => {
   const visual = makeParty(terrain, projection, party);
-  const [ring, token] = visual.children;
-  const ringGeometry = ring.geometry, tokenGeometry = token.geometry;
-  const ringMaterial = ring.material, tokenMaterial = token.material;
-  const oldPosition = token.position.clone();
-  visual.userData.updateParty(other);
-  assert.deepEqual(visual.children, [ring, token]);
+  const [ring, warband] = visual.children;
+  const ringGeometry = ring.geometry;
+  const oldPosition = warband.position.clone();
+  const oldResources = new Set();
+  visual.traverse(child => { if (child.isMesh) { oldResources.add(child.geometry); oldResources.add(child.material); } });
+  assert.equal(warband.children.length, 4);
+  assert.ok(visual.userData.stats.meshes <= 16);
+  assert.ok(visual.userData.stats.triangles <= 3000);
+  assert.equal(visual.userData.stats.materials, 2);
+  visual.userData.updateParty(other, 1);
+  assert.deepEqual(visual.children, [ring, warband]);
+  assert.notDeepEqual(warband.position, oldPosition);
+  assert.equal(warband.rotation.y, Math.atan2(other.x - party.x, other.y - party.y));
+  assert.notEqual(warband.children[0].children[1].rotation.x, 0, 'legs stride with the existing tween phase');
+  const afterResources = new Set();
+  visual.traverse(child => { if (child.isMesh) { afterResources.add(child.geometry); afterResources.add(child.material); } });
+  assert.deepEqual(afterResources, oldResources);
+  visual.userData.updateParty(other, 0);
+  assert.equal(warband.children[0].children[1].rotation.x, 0, 'legs rest without changing the march duration');
   assert.equal(ring.geometry, ringGeometry);
-  assert.equal(token.geometry, tokenGeometry);
-  assert.notDeepEqual(token.position, oldPosition);
+  assert.deepEqual(new Set([...oldResources].filter(resource => resource.isBufferGeometry)).size,
+    visual.userData.stats.geometries);
   assert.deepEqual(vertices(ring), vertices(tacticalStroke(ringPoints({ ...other, r: 11 }), terrain, projection,
     { color: '#ffea9b', width: 2.4 })));
   const released = new Set();
-  for (const resource of [ringGeometry, tokenGeometry, ringMaterial, tokenMaterial])
+  for (const resource of oldResources)
     resource.addEventListener('dispose', () => released.add(resource));
   disposeGroup(visual);
-  assert.equal(released.size, 4);
+  assert.equal(released.size, oldResources.size);
 });
 
 test('moving planning strokes keep their geometries and match the previous terrain-following route', () => {

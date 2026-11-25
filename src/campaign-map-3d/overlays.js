@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { subdivideLine } from './terrain.js';
 import { ringPoints, strokeVertices, tacticalRing, tacticalStroke } from './tactical-lines.js';
+import { makeWarband } from './party.js';
 
 const RUMOR = { color: '#ffbc75', width: 1.9, dash: 11, gap: 6 };
 const SCOUTED = { color: '#a6e2bf', width: 1.7 };
@@ -130,22 +131,29 @@ export function makePlanning(fx, terrain, projection) {
   return group;
 }
 
-/** Keep the old token and ring while updating their existing scene objects. */
+/** Keep the selection ring and the new four-figure warband alive for the loaded world. */
 export function makeParty(terrain, projection, position) {
   const group = new THREE.Group();
   const ring = mutableStroke(terrain, projection, { color: '#ffea9b', width: 2.4 },
     18 * (ringPoints({ x: 0, y: 0, r: 11 }).length - 1));
   group.add(ring.mesh);
-  const token = new THREE.Mesh(new THREE.CylinderGeometry(4, 7.5, 11, 4),
-    new THREE.MeshBasicMaterial({ color: '#ffe698' }));
-  token.rotation.y = Math.PI / 4;
-  group.add(token);
-  group.userData.updateParty = party => {
-    const p = projection.toScene(party, terrain.heightAt(party.x, party.y) + 9.5);
-    token.position.set(p.x, p.y, p.z);
+  const warband = makeWarband();
+  group.add(warband);
+  let previous, heading = 0;
+  group.userData.updateParty = (party, step = 0) => {
+    const dx = party.x - (previous?.x ?? party.x), dy = party.y - (previous?.y ?? party.y);
+    if (Math.hypot(dx, dy) > 0.01) heading = Math.atan2(dx, dy);
+    previous = { x: party.x, y: party.y };
+    group.userData.heading = heading;
+    const p = projection.toScene(party, terrain.heightAt(party.x, party.y));
+    warband.position.set(p.x, p.y, p.z);
+    warband.userData.update(party, heading, step, terrain);
     ring.update(ringPoints({ ...party, r: 11 }));
   };
   group.userData.updateParty(position);
+  group.userData.stats = { ...warband.userData.stats, meshes: warband.userData.stats.meshes + 1,
+    triangles: warband.userData.stats.triangles + ring.mesh.geometry.drawRange.count / 3,
+    materials: warband.userData.stats.materials + 1, geometries: warband.userData.stats.geometries + 1 };
   return group;
 }
 

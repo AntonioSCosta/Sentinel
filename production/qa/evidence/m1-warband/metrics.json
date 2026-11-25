@@ -1,0 +1,83 @@
+{
+  "base": "156f2d007bb00f6add12c61e15bd534ec6b99aac",
+  "seed": 1234,
+  "renderer": "Chromium headless / SwiftShader (software)",
+  "party": {
+    "figures": 4,
+    "meshes": 13,
+    "triangles": 1061,
+    "materials": 2,
+    "geometries": 6,
+    "heading": 0
+  },
+  "resolutions": [
+    {
+      "size": "1440x900",
+      "sameStrategicState": true,
+      "sameSave": true,
+      "liveGeometriesBefore": 16,
+      "liveGeometriesAfter": 20,
+      "drawCallsBefore": 51,
+      "drawCallsAfter": 62,
+      "headingEast": 1.5707963267948966,
+      "headingWest": -1.5707963267948966,
+      "errors": []
+    },
+    {
+      "size": "1280x800",
+      "sameStrategicState": true,
+      "sameSave": true,
+      "liveGeometriesBefore": 16,
+      "liveGeometriesAfter": 20,
+      "drawCallsBefore": 51,
+      "drawCallsAfter": 62,
+      "headingEast": 1.5707963267948966,
+      "headingWest": -1.5707963267948966,
+      "errors": []
+    },
+    {
+      "size": "1024x600",
+      "sameStrategicState": true,
+      "sameSave": true,
+      "liveGeometriesBefore": 16,
+      "liveGeometriesAfter": 20,
+      "drawCallsBefore": 51,
+      "drawCallsAfter": 62,
+      "headingEast": 1.5707963267948966,
+      "headingWest": -1.5707963267948966,
+      "errors": []
+    },
+    {
+      "size": "844x390",
+      "sameStrategicState": true,
+      "sameSave": true,
+      "liveGeometriesBefore": 16,
+      "liveGeometriesAfter": 20,
+      "drawCallsBefore": 51,
+      "drawCallsAfter": 62,
+      "headingEast": 1.5707963267948966,
+      "headingWest": -1.5707963267948966,
+      "errors": []
+    }
+  ],
+  "poseBufferCheck": {
+    "createdInitial": 61,
+    "createdAfterThreeDays": 67,
+    "deletedInitial": 0,
+    "deletedAfterThreeDays": 5,
+    "perDayPoseOnlyBufferChanges": [
+      {
+        "created": 0,
+        "deleted": 0
+      },
+      {
+        "created": 0,
+        "deleted": 0
+      },
+      {
+        "created": 0,
+        "deleted": 0
+      }
+    ]
+  }
+}
