@@ -293,7 +293,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const scouting = mode === 'reconhecer' && flow.phase === 'mapa' ? { range: RECON_RANGE, radius: RECON_RADIUS, ok: !!hover && inRecon(hover) } : null;
     const fl = {}, t = now();
     for (const [id, t0] of Object.entries(flash)) { const k = 1 - (t - t0) / 1600; if (k > 0) fl[id] = k; else delete flash[id]; }
-    const fx = { party: shown || flow.state.party, facing, step: walk, selected, hover, trail, reach: REACH,
+    const fx = { party: shown || flow.state.party, logicalParty: flow.state.party, facing, step: walk, selected, hover, trail, reach: REACH,
       focus, recon: scouting, issues: issueMarks(), flash: fl, route: route(), showMapDetails };
     if (map3d) {
       if (flow.phase === 'mapa' || flow.tactical) map3d.paint(flow.state, fx);
@@ -341,10 +341,10 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const e = t < 0.5 ? 2 * t * t : 1 - ((-2 * t + 2) ** 2) / 2;
     shown = { x: anim.from.x + (anim.to.x - anim.from.x) * e, y: anim.from.y + (anim.to.y - anim.from.y) * e };
     walk = t * Math.PI * 5;
-    paint();
+    if (map3d) map3d.pose({ party: shown }); else paint();
     if (t < 1) { rafId = win.requestAnimationFrame(frame); return; }
     shown = { x: anim.to.x, y: anim.to.y }; anim = null; walk = 0;
-    paint();
+    if (map3d) map3d.pose({ party: shown }); else paint();
   }
   function stopMarch() { if (rafId) win.cancelAnimationFrame?.(rafId); rafId = 0; anim = null; walk = 0; }
 
@@ -1281,7 +1281,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     /** O tempo: pause(), play(n?) com n em SPEEDS, e o estado. step() dá um dia com a ordem permanente (testes). */
     pause, play, step: () => step(standingOrder({ dest, stance })), get running() { return running; }, get speed() { return speed; },
     get dest() { return dest; }, get stance() { return stance; }, get interrupt() { return interrupt.slice(); },
-    get flow() { return flow; }, get active() { return active; },
+    get flow() { return flow; }, get active() { return active; }, mapMetrics: () => map3d?.metrics(),
     hasSave: () => !!loadFlow(storage),
     saveState: () => { const f = loadFlow(storage); return f ? (f.phase === 'fim' ? 'fim' : 'meio') : null; },
     resume: () => { const f = loadFlow(storage); if (f) open(f); return !!f; },

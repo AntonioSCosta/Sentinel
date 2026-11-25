@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { subdivideLine } from './terrain.js';
-import { tacticalRing, tacticalStroke } from './tactical-lines.js';
+import { ringPoints, strokeVertices, tacticalRing, tacticalStroke } from './tactical-lines.js';
 
 const RUMOR = { color: '#ffbc75', width: 1.9, dash: 11, gap: 6 };
 const SCOUTED = { color: '#a6e2bf', width: 1.7 };
@@ -78,37 +78,92 @@ export function makePlanning(fx, terrain, projection) {
     const { x, y, z } = projection.toScene(p, terrain.heightAt(p.x, p.y) + lift);
     return new THREE.Vector3(x, y, z);
   };
-  function line(points, color) {
-    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points.map(p => point(p))),
-      new THREE.LineBasicMaterial({ color })));
+  const { route, trail, reach, focus, recon, hover } = fx;
+  const moving = [];
+  if (trail?.length) {
+    const geometry = new THREE.BufferGeometry();
+    const maxStep = Math.hypot(terrain.w, terrain.h);
+    const capacity = 3 * (1 + trail.length * (Math.ceil(maxStep / 3) + 1));
+    const position = new THREE.Float32BufferAttribute(new Float32Array(capacity), 3);
+    position.setUsage(THREE.DynamicDrawUsage);
+    geometry.setAttribute('position', position);
+    const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: '#afaf7e' }));
+    line.frustumCulled = false;
+    group.add(line);
+    moving.push(party => {
+      const points = [...trail, party].flatMap((p, i, all) =>
+        i ? subdivideLine([all[i - 1], p], 3).slice(1) : [p]);
+      if (points.length * 3 > position.array.length) throw new Error('Map trail exceeds its vertex budget');
+      const vertices = points.flatMap(p => { const v = point(p); return [v.x, v.y, v.z]; });
+      position.array.set(vertices);
+      position.needsUpdate = true;
+      geometry.setDrawRange(0, points.length);
+    });
   }
-  const { party, route, trail, reach, focus, recon, hover } = fx;
-  if (trail?.length) line([...trail, party].flatMap((p, i, points) =>
-    i ? subdivideLine([points[i - 1], p], 3).slice(1) : [p]), '#afaf7e');
   if (route) {
-    const points = subdivideLine([party, route.to], 2);
-    group.add(
-      tacticalStroke(points, terrain, projection, { ...ROUTE, color: '#163b43', width: 5 }),
-      tacticalStroke(points, terrain, projection, ROUTE),
-      tacticalRing({ ...route.to, r: 6.5 }, terrain, projection, { color: ROUTE.color, width: 2 }),
-    );
+    const capacity = 18 * (Math.ceil(Math.hypot(terrain.w, terrain.h) / 2) + 1);
+    for (const style of [{ ...ROUTE, color: '#163b43', width: 5 }, ROUTE]) {
+      const stroke = mutableStroke(terrain, projection, style, capacity);
+      group.add(stroke.mesh);
+      moving.push(party => stroke.update(subdivideLine([party, route.to], 2)));
+    }
+    group.add(tacticalRing({ ...route.to, r: 6.5 }, terrain, projection, { color: ROUTE.color, width: 2 }));
   }
-  if (reach) group.add(tacticalRing({ ...party, r: reach }, terrain, projection,
-    { color: '#d7d6ab', width: 0.65, dash: 2, gap: 4 }));
+  if (reach) {
+    const stroke = mutableStroke(terrain, projection, { color: '#d7d6ab', width: 0.65, dash: 2, gap: 4 },
+      18 * (ringPoints({ x: 0, y: 0, r: reach }).length - 1));
+    group.add(stroke.mesh);
+    moving.push(party => stroke.update(ringPoints({ ...party, r: reach })));
+  }
   if (focus) group.add(tacticalRing({ ...focus, r: Math.max(12, focus.r || 0) }, terrain, projection,
     { color: '#faf0a1', width: 1.3, dash: 2, gap: 5 }));
   if (recon) {
-    group.add(tacticalRing({ ...party, r: recon.range }, terrain, projection, { ...SCOUTED, dash: 7, gap: 5 }));
+    const stroke = mutableStroke(terrain, projection, { ...SCOUTED, dash: 7, gap: 5 },
+      18 * (ringPoints({ x: 0, y: 0, r: recon.range }).length - 1));
+    group.add(stroke.mesh);
+    moving.push(party => stroke.update(ringPoints({ ...party, r: recon.range })));
     if (hover) group.add(tacticalRing({ ...hover, r: recon.radius }, terrain, projection,
       { ...SCOUTED, color: recon.ok ? SCOUTED.color : '#eea98e' }));
   }
-  group.add(tacticalRing({ ...party, r: 11 }, terrain, projection, { color: '#ffea9b', width: 2.4 }));
+  group.userData.updateParty = party => { for (const update of moving) update(party); };
+  group.userData.updateParty(fx.party);
+  return group;
+}
+
+/** Keep the old token and ring while updating their existing scene objects. */
+export function makeParty(terrain, projection, position) {
+  const group = new THREE.Group();
+  const ring = mutableStroke(terrain, projection, { color: '#ffea9b', width: 2.4 },
+    18 * (ringPoints({ x: 0, y: 0, r: 11 }).length - 1));
+  group.add(ring.mesh);
   const token = new THREE.Mesh(new THREE.CylinderGeometry(4, 7.5, 11, 4),
     new THREE.MeshBasicMaterial({ color: '#ffe698' }));
   token.rotation.y = Math.PI / 4;
-  token.position.copy(point(party, 9.5));
   group.add(token);
+  group.userData.updateParty = party => {
+    const p = projection.toScene(party, terrain.heightAt(party.x, party.y) + 9.5);
+    token.position.set(p.x, p.y, p.z);
+    ring.update(ringPoints({ ...party, r: 11 }));
+  };
+  group.userData.updateParty(position);
   return group;
+}
+
+function mutableStroke(terrain, projection, style, capacity) {
+  const geometry = new THREE.BufferGeometry();
+  const position = new THREE.Float32BufferAttribute(new Float32Array(capacity), 3);
+  position.setUsage(THREE.DynamicDrawUsage);
+  geometry.setAttribute('position', position);
+  const mesh = new THREE.Mesh(geometry,
+    new THREE.MeshBasicMaterial({ color: style.color, side: THREE.DoubleSide, depthWrite: false }));
+  mesh.frustumCulled = false;
+  return { mesh, update(points) {
+    const vertices = strokeVertices(points, terrain, projection, style);
+    if (vertices.length > capacity) throw new Error('Map stroke exceeds its vertex budget');
+    position.array.set(vertices);
+    position.needsUpdate = true;
+    geometry.setDrawRange(0, vertices.length / 3);
+  } };
 }
 
 /** Dispose the shared and per-instance GPU resources of a removed scene group. */

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { createMapProjection, createCampaignTerrain, subdivideLine } from './terrain.js';
 import { levelRoundhouseSite, loadRoundhouse, roundhousePlacement } from './roundhouse.js';
 import { generateVegetation } from './strategic.js';
-import { disposeGroup, makeForest, makeIntelligence, makePlanning } from './overlays.js';
+import { disposeGroup, makeForest, makeIntelligence, makeParty, makePlanning } from './overlays.js';
 import { leaderPath, pickStrategicPoint, positionLabels } from './interaction.js';
 
 function indexedGeometry(positions, indices) {
@@ -153,7 +153,8 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
     position: new THREE.Vector3(),
     userData: { key: 'party', labelKey: 'map.band', className: 'party-label', priority: 12, lift: 17 },
   };
-  let model, terrain, relief, edge, projection, markers, intelligence, planning, targets, labels = [], selected;
+  let model, terrain, relief, edge, projection, markers, intelligence, planning, partyVisual, targets, labels = [], selected;
+  const counts = { planningBuilds: 0, partyBuilds: 0, poseUpdates: 0, releasedGroups: 0 };
   let placesKey, intelKey, planningKey, focusedPlace, issues, partyLabel, labelLocale;
   let campaignLabels, showMapDetails, communityPostures;
   let surfaceWidth = 0, surfaceHeight = 0;
@@ -390,18 +391,32 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
       partyLabel = makeLabel(partyMarker, true);
       mountLabels();
     }
-    const party = projection.toScene(fx.party, terrain.heightAt(fx.party.x, fx.party.y));
-    partyMarker.position.set(party.x, party.y, party.z);
-    const frame = { party: fx.party, route: fx.route && { to: fx.route.to }, trail: fx.trail, reach: fx.reach,
+    const frame = { logicalParty: fx.logicalParty ?? fx.party, route: fx.route && { to: fx.route.to }, trail: fx.trail, reach: fx.reach,
       focus: fx.focus, recon: fx.recon, hover: fx.recon && fx.hover && { x: fx.hover.x, y: fx.hover.y } };
     const nextPlanningKey = JSON.stringify(frame);
     if (nextPlanningKey !== planningKey) {
-      if (planning) { model.remove(planning); disposeGroup(planning); }
-      planning = makePlanning(frame, terrain, projection);
+      if (planning) { model.remove(planning); disposeGroup(planning); counts.releasedGroups++; }
+      planning = makePlanning({ ...frame, party: fx.party }, terrain, projection);
       model.add(planning);
       planningKey = nextPlanningKey;
+      counts.planningBuilds++;
     }
+    setPartyPose(fx, false);
     draw();
+  }
+
+  function setPartyPose(fx, redraw = true) {
+    if (!terrain) return;
+    if (!partyVisual) {
+      partyVisual = makeParty(terrain, projection, fx.party);
+      model.add(partyVisual);
+      counts.partyBuilds++;
+    } else partyVisual.userData.updateParty(fx.party);
+    planning?.userData.updateParty(fx.party);
+    const party = projection.toScene(fx.party, terrain.heightAt(fx.party.x, fx.party.y));
+    partyMarker.position.set(party.x, party.y, party.z);
+    counts.poseUpdates++;
+    if (redraw) draw();
   }
 
   function load(seed, world, view) {
@@ -430,11 +445,12 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
     if (model) {
       scene.remove(model);
       disposeGroup(model);
+      counts.releasedGroups++;
     }
     terrain = nextTerrain;
     model = group;
     scene.add(model);
-    markers = intelligence = planning = null;
+    markers = intelligence = planning = partyVisual = null;
     placesKey = intelKey = planningKey = undefined;
     focusedPlace = issues = partyLabel = undefined;
     setView(view);
@@ -472,9 +488,13 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
       draw();
       count++;
     } while (count < 60 && (count < 3 || performance.now() - start < 4000));
-    return { fps: count * 1000 / (performance.now() - start), frames: count, calls: renderer.info.render.calls,
+    return { fps: count * 1000 / (performance.now() - start), frames: count, ...metrics(),
       trees: treeCount, instances: treeCount * 2 };
   }
 
-  return { load, present, resize, reset, pan, zoomBy, rotate, pick, hit, measure, labelFor, redraw: draw };
+  function metrics() {
+    return { ...counts, geometries: renderer.info.memory.geometries, calls: renderer.info.render.calls };
+  }
+
+  return { load, present, setPartyPose, resize, reset, pan, zoomBy, rotate, pick, hit, measure, metrics, labelFor, redraw: draw };
 }
