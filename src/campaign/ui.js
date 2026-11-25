@@ -1284,6 +1284,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     get flow() { return flow; }, get active() { return active; }, mapMetrics: () => map3d?.metrics(),
     hasSave: () => !!loadFlow(storage),
     saveState: () => { const f = loadFlow(storage); return f ? (f.phase === 'fim' ? 'fim' : 'meio') : null; },
+    savedState: () => loadFlow(storage)?.state ?? null,
     resume: () => { const f = loadFlow(storage); if (f) open(f); return !!f; },
     fresh: seed => { open(createFlow({ storage, seed })); return flow; },
   };

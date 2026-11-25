@@ -56,7 +56,7 @@ async function scenario(browserLocale, initial, next) {
     assert.equal(await page.locator('#start').textContent(), initial === 'en' ? 'PLAY' : 'COMEÇAR');
     if (captures) {
       await page.setViewportSize({ width: 390, height: 730 });
-      await assertControls(page, [['#menu', '#menu .menu-foot button']]);
+      await assertControls(page, [['#menu', '#menu .menu-nav button'], ['#menu', '#sec-campaign button']]);
       await page.screenshot({ path: join(captures, `menu-${initial}.png`) });
       await page.setViewportSize({ width: 1366, height: 768 });
     }
