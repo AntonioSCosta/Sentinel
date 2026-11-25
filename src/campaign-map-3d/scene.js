@@ -4,7 +4,7 @@ import { createMapProjection, createCampaignTerrain, subdivideLine } from './ter
 import { levelRoundhouseSite, loadRoundhouse, roundhousePlacement } from './roundhouse.js';
 import { generateVegetation } from './strategic.js';
 import { disposeGroup, makeForest, makeIntelligence, makePlanning } from './overlays.js';
-import { labelLeader, pickStrategicPoint, positionLabels } from './interaction.js';
+import { leaderPath, pickStrategicPoint, positionLabels } from './interaction.js';
 
 function indexedGeometry(positions, indices) {
   const geometry = new THREE.BufferGeometry();
@@ -198,6 +198,10 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
   function layoutLabels() {
     const area = canvas.getBoundingClientRect();
     const scope = canvas.closest('#map') || canvas.parentElement;
+    const indicator = campaignLabels && scope.querySelector('#m-community-count');
+    const total = labels.filter(({ marker }) => marker.userData.place?.community).length;
+    if (indicator && (!indicator.textContent || labelLocale !== i18n.locale))
+      indicator.textContent = i18n.t('map.communitiesVisible', { count: 0, total });
     const reserved = [...scope.querySelectorAll('[data-reserve-labels]:not(.faded)')].map(element => {
       const rect = element.getBoundingClientRect();
       return { x: rect.left - area.left, y: rect.top - area.top, w: rect.width, h: rect.height };
@@ -238,26 +242,31 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
       projected.y += marker.userData.lift;
       projected.project(camera);
       const rank = campaignLabels
-        ? Math.max(priority, force ? 11 : 0, decision ? 10 : 0, highlighted ? 9 : 0)
+        ? Math.max(priority, place?.community ? 12 : 0, force ? 11 : 0, decision ? 13 : 0, highlighted ? 14 : 0)
         : highlighted ? 10 : priority;
       return { id: key, x: (projected.x + 1) * screenWidth / 2, y: (1 - projected.y) * screenHeight / 2,
         w: element.offsetWidth, h: element.offsetHeight, priority: rank,
         reposition: campaignLabels && (essential || label === mainRumor) };
     });
     const boxes = positionLabels(candidates.filter(Boolean), screenWidth, screenHeight, reserved);
-    for (const [i, { element, key, line }] of visibleLabels.entries()) {
+    if (campaignLabels) {
+      const communities = visibleLabels.filter(({ marker }) => marker.userData.place?.community);
+      const count = communities.filter(({ key }) => boxes.has(key)).length;
+      if (indicator) indicator.textContent = i18n.t('map.communitiesVisible', { count, total: communities.length });
+    }
+    for (const [i, { element, key, line, origin }] of visibleLabels.entries()) {
       const box = boxes.get(key);
       element.style.visibility = box ? 'visible' : 'hidden';
       if (box) element.style.transform = `translate(${Math.round(box.x)}px, ${Math.round(box.y)}px)`;
       if (!line) continue;
       const anchor = candidates[i];
-      const end = box && labelLeader(anchor, box);
-      line.style.visibility = end ? 'visible' : 'hidden';
-      if (!end) continue;
-      line.setAttribute('x1', anchor.x);
-      line.setAttribute('y1', anchor.y);
-      line.setAttribute('x2', end.x);
-      line.setAttribute('y2', end.y);
+      const obstacles = [...reserved, ...[...boxes].filter(([id]) => id !== key).map(([, value]) => value)];
+      const path = box && anchor && leaderPath(anchor, box, obstacles);
+      line.style.visibility = origin.style.visibility = path ? 'visible' : 'hidden';
+      if (!path) continue;
+      line.setAttribute('d', path);
+      origin.setAttribute('cx', anchor.x);
+      origin.setAttribute('cy', anchor.y);
     }
   }
 
@@ -334,13 +343,15 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
       element.dataset.id = selection.id;
       element.addEventListener('click', event => select(selection, event.detail ? event : undefined));
     }
-    const line = connect ? document.createElementNS(svg, 'line') : null;
-    return { marker, element, line, key: selection ? `${selection.type}:${selection.id}` : key };
+    const line = connect ? document.createElementNS(svg, 'path') : null;
+    const origin = connect ? document.createElementNS(svg, 'circle') : null;
+    if (origin) origin.setAttribute('r', '2.5');
+    return { marker, element, line, origin, key: selection ? `${selection.type}:${selection.id}` : key };
   }
 
   function mountLabels() {
     const all = partyLabel ? [...labels, partyLabel] : labels;
-    leaders.replaceChildren(...all.map(label => label.line).filter(Boolean));
+    leaders.replaceChildren(...all.flatMap(label => [label.line, label.origin]).filter(Boolean));
     labelLayer.replaceChildren(leaders, ...all.map(label => label.element));
   }
 

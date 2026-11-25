@@ -109,6 +109,7 @@ export default {
   "fameGoal": "End-of-year victory requires {men} men and {fame} fame.",
   "mapDetails": "Map details",
   "communitiesSelect": "Communities…",
+  "communitiesVisible": "{count}/{total} visible",
   "selectCommunity": "Select a community",
   "inactive.queimada": "burned",
   "inactive.abandonada": "abandoned",

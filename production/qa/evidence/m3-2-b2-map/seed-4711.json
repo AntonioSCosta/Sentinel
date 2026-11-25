@@ -1,0 +1,17 @@
+{
+  "labels": 8,
+  "communities": 5,
+  "known": 0,
+  "posts": 2,
+  "rumors": 0,
+  "overlaps": 0,
+  "clipped": 0,
+  "party": true,
+  "dockOverlap": false,
+  "labelsUnderDock": 0,
+  "actionsVisible": 2,
+  "actionsOnTop": true,
+  "hudFits": true,
+  "hudOverlaps": 0,
+  "visibleCount": "5/5 visíveis"
+}

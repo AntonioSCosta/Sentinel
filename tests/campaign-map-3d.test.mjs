@@ -191,6 +191,16 @@ test('essential labels can use wider anchors before a secondary label claims the
   assert.equal(layout.has('secondary'), false);
 });
 
+test('leader avoids another label and disappears when every route is blocked', async () => {
+  const { leaderPath } = await import('../src/campaign-map-3d/interaction.js');
+  const anchor = { x: 20, y: 20 };
+  const box = { x: 100, y: 100, w: 40, h: 20 };
+  assert.match(leaderPath(anchor, box, []), /^M20,20 L/);
+  const blocker = { x: 54, y: 54, w: 16, h: 16 };
+  assert.match(leaderPath(anchor, box, [blocker]), / L20,100 L100,100/);
+  assert.equal(leaderPath(anchor, box, [{ x: 0, y: 0, w: 45, h: 45 }]), null);
+});
+
 test('political changes update presentation without changing strategic place geometry data', async () => {
   const { newCampaign } = await import('../src/campaign/state.js');
   const state = newCampaign(1234);

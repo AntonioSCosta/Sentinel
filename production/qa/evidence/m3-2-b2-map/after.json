@@ -9,9 +9,12 @@
     "clipped": 0,
     "party": true,
     "dockOverlap": false,
+    "labelsUnderDock": 0,
     "actionsVisible": 2,
     "actionsOnTop": true,
-    "hudFits": true
+    "hudFits": true,
+    "hudOverlaps": 0,
+    "visibleCount": "5/5 visíveis"
   },
   "1280x800": {
     "labels": 11,
@@ -23,9 +26,12 @@
     "clipped": 0,
     "party": true,
     "dockOverlap": false,
+    "labelsUnderDock": 0,
     "actionsVisible": 2,
     "actionsOnTop": true,
-    "hudFits": true
+    "hudFits": true,
+    "hudOverlaps": 0,
+    "visibleCount": "5/5 visíveis"
   },
   "1024x600": {
     "labels": 11,
@@ -37,9 +43,12 @@
     "clipped": 0,
     "party": true,
     "dockOverlap": false,
+    "labelsUnderDock": 0,
     "actionsVisible": 2,
     "actionsOnTop": true,
-    "hudFits": true
+    "hudFits": true,
+    "hudOverlaps": 0,
+    "visibleCount": "5/5 visíveis"
   },
   "844x390": {
     "labels": 11,
@@ -51,8 +60,28 @@
     "clipped": 0,
     "party": true,
     "dockOverlap": false,
+    "labelsUnderDock": 0,
     "actionsVisible": 2,
     "actionsOnTop": true,
-    "hudFits": true
+    "hudFits": true,
+    "hudOverlaps": 0,
+    "visibleCount": "5/5 visíveis"
+  },
+  "432x390": {
+    "labels": 9,
+    "communities": 5,
+    "known": 1,
+    "posts": 2,
+    "rumors": 0,
+    "overlaps": 0,
+    "clipped": 0,
+    "party": true,
+    "dockOverlap": false,
+    "labelsUnderDock": 0,
+    "actionsVisible": 2,
+    "actionsOnTop": true,
+    "hudFits": true,
+    "hudOverlaps": 0,
+    "visibleCount": "5/5 visíveis"
   }
 }

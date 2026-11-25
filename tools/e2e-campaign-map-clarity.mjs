@@ -8,7 +8,7 @@ const out = process.argv[2];
 const baseline = process.env.SENTINEL_MAP_BASELINE;
 if (out) await mkdir(out, { recursive: true });
 const { url, browser, close } = await startBrowser({ root: baseline });
-const sizes = [[1440, 900], [1280, 800], [1024, 600], [844, 390]];
+const sizes = [[1440, 900], [1280, 800], [1024, 600], [844, 390], [432, 390]];
 const shot = (page, name) => out && page.screenshot({ path: join(out, name + '.jpg'), type: 'jpeg', quality: 80 });
 const fixture = newCampaign(1234);
 fixture.day = 30;
@@ -44,8 +44,10 @@ function measure(page) {
     const stage = box(q('#campaign-map-3d'));
     const inside = r => r.left >= stage.left && r.top >= stage.top && r.right <= stage.right && r.bottom <= stage.bottom;
     const dock = q('.map-dock'), party = q('.party-label'), strip = q('#m-int');
+    const dockBox = box(dock);
     const actions = [q('#m-community'), q('#m-map-details')].filter(visible);
     const hud = q('#mtop'), resources = q('#mtop .res');
+    const hudItems = [q('#mtop .when'), q('#m-time'), resources, q('#m-side-toggle'), q('#mtop .map-language')].filter(visible).map(box);
     return {
       labels: labels.length,
       communities: labels.filter(el => el.classList.contains('community')).length,
@@ -57,12 +59,15 @@ function measure(page) {
       party: visible(party),
       dockOverlap: visible(dock) && ((visible(party) && overlaps(box(dock), box(party)))
         || (visible(strip) && overlaps(box(dock), box(strip)))),
+      labelsUnderDock: rects.filter(r => visible(dock) && overlaps(r, dockBox)).length,
       actionsVisible: actions.length,
       actionsOnTop: actions.every(el => {
         const r = box(el);
         return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
       }),
       hudFits: box(resources).right <= box(hud).right && Array.from(resources.children).every(el => box(el).right <= box(hud).right),
+      hudOverlaps: hudItems.reduce((n, r, i) => n + hudItems.slice(i + 1).filter(other => overlaps(r, other)).length, 0),
+      visibleCount: q('#m-community-count')?.textContent || '',
     };
   });
 }
@@ -101,7 +106,7 @@ try {
   const results = {};
   for (const [width, height] of sizes) {
     await campaign.setViewportSize({ width, height });
-    if (width === 844 && await campaign.locator('#mside').isVisible()) await campaign.locator('#m-side-toggle').click();
+    if (width <= 844 && await campaign.locator('#mside').isVisible()) await campaign.locator('#m-side-toggle').click();
     await settle(campaign);
     const id = width + 'x' + height;
     const value = results[id] = await measure(campaign);
@@ -109,16 +114,38 @@ try {
     assert.equal(value.overlaps, 0, id);
     assert.equal(value.clipped, 0, id);
     if (!baseline) {
-      assert.equal(value.known, 2, id);
-      assert.ok(value.posts && value.party && value.rumors, JSON.stringify({ id, ...value }));
-      assert.ok(!value.dockOverlap && value.hudFits && value.actionsVisible === 2 && value.actionsOnTop, id);
+      if (width > 432) assert.equal(value.known, 2, id);
+      assert.ok(value.posts && value.party && (width <= 432 || value.rumors), JSON.stringify({ id, ...value }));
+      assert.match(value.visibleCount, new RegExp(`^${value.communities}/5 `), id);
+      assert.ok(!value.dockOverlap && !value.labelsUnderDock && value.hudFits && !value.hudOverlaps && value.actionsVisible === 2 && value.actionsOnTop, id);
       assert.equal(await campaign.locator('#m-community option').count(), 6);
     }
   }
   if (out) await writeFile(join(out, 'metrics.json'), JSON.stringify(results, null, 2) + '\n');
   console.log(JSON.stringify(results));
 
+  if (baseline && process.env.SENTINEL_MAP_BLOCKER) {
+    await campaign.setViewportSize({ width: 844, height: 390 });
+    await campaign.locator('#map-language').selectOption('en');
+    await campaign.evaluate(id => {
+      const c = window.__game.campaign;
+      Object.assign(c.flow.state.communities.fonte, { situation: 'abandonada', families: 0 });
+      c.select(id);
+      c.flow.state.food = 2;
+      c.step();
+    }, fixture.communities.fonte.settlement);
+    await campaign.locator('#m-int:not(.hidden)').waitFor();
+    if (await campaign.locator('#mside').isVisible()) await campaign.locator('#m-side-toggle').click();
+    await settle(campaign);
+    const paused = await measure(campaign);
+    if (out) await writeFile(join(out, 'interruption.json'), JSON.stringify(paused, null, 2) + '\n');
+    await shot(campaign, 'before-844x390-interruption');
+    console.log(JSON.stringify({ beforePaused: paused }));
+  }
+
   if (!baseline) {
+    await campaign.setViewportSize({ width: 844, height: 390 });
+    await settle(campaign);
     const expectFame = new RegExp('^' + fixture.fame + ' / 30$');
     assert.match(await campaign.locator('#m-fame').textContent(), expectFame);
     assert.equal(await campaign.locator('.confirmed[data-id="patrol"]').isVisible(), true);
@@ -183,6 +210,7 @@ try {
     const hidden = await campaign.locator('.map-label.community').evaluateAll(els =>
       els.find(el => getComputedStyle(el).visibility === 'hidden')?.dataset.id);
     assert.ok(hidden);
+    assert.match(await campaign.locator('#m-community-count').textContent(), /^[0-4]\/5 visible$/);
     const select = campaign.locator('#m-community');
     await select.focus();
     assert.equal(await select.evaluate(el => el === document.activeElement), true);
@@ -200,10 +228,36 @@ try {
       c.step();
     });
     await campaign.locator('#m-int:not(.hidden)').waitFor();
+    if (await campaign.locator('#mside').isVisible()) await campaign.locator('#m-side-toggle').click();
     await settle(campaign);
     const paused = await measure(campaign);
+    console.log(JSON.stringify({ paused }));
     assert.ok(!paused.dockOverlap && paused.actionsOnTop && paused.party);
+    assert.equal(paused.communities, 5);
+    assert.equal(paused.known, 2);
+    assert.equal(paused.overlaps + paused.clipped, 0);
+    assert.equal(paused.labelsUnderDock, 0);
+    assert.match(paused.visibleCount, /^5\/5 /);
+    if (out) await writeFile(join(out, 'interruption.json'), JSON.stringify(paused, null, 2) + '\n');
     await shot(campaign, 'after-844x390-interruption');
+
+    const other = await browser.newPage({ viewport: { width: 844, height: 390 }, locale: 'pt-PT' });
+    other.on('pageerror', e => errors.push(e.message));
+    await other.addInitScript(save => localStorage.setItem('viriato.campaign', save),
+      JSON.stringify({ v: 1, phase: 'mapa', state: newCampaign(4711), battle: null }));
+    await other.goto(url);
+    await other.locator('#camp-cont:not(.hidden)').click();
+    await other.locator('#campaign-map-3d[data-status=ready]').waitFor();
+    if (await other.locator('#mside').isVisible()) await other.locator('#m-side-toggle').click();
+    await settle(other);
+    const otherResult = await measure(other);
+    assert.equal(otherResult.communities, 5);
+    assert.equal(otherResult.overlaps + otherResult.clipped, 0);
+    assert.equal(otherResult.labelsUnderDock, 0);
+    assert.match(otherResult.visibleCount, /^5\/5 /);
+    if (out) await writeFile(join(out, 'seed-4711.json'), JSON.stringify(otherResult, null, 2) + '\n');
+    await shot(other, 'after-seed-4711');
+    await other.close();
 
     const viewer = await browser.newPage({ viewport: { width: 1280, height: 800 }, locale: 'en' });
     viewer.on('pageerror', e => errors.push(e.message));
