@@ -4,6 +4,13 @@ const LIFT = 4.5;
 
 /** Draw a terrain-following stroke with map-unit width and optional dash/gap lengths. */
 export function tacticalStroke(points, terrain, projection, { color, width, dash, gap }) {
+  const vertices = strokeVertices(points, terrain, projection, { width, dash, gap });
+  const geometry = new BufferGeometry().setAttribute('position', new Float32BufferAttribute(vertices, 3));
+  return new Mesh(geometry, new MeshBasicMaterial({ color, side: DoubleSide, depthWrite: false }));
+}
+
+/** The same terrain-following vertices can be copied into a persistent buffer. */
+export function strokeVertices(points, terrain, projection, { width, dash, gap }) {
   const vertices = [];
   let travelled = 0;
   const cycle = dash ? dash + gap : 0;
@@ -35,16 +42,19 @@ export function tacticalStroke(points, terrain, projection, { color, width, dash
     }
     travelled += length;
   }
-  const geometry = new BufferGeometry().setAttribute('position', new Float32BufferAttribute(vertices, 3));
-  return new Mesh(geometry, new MeshBasicMaterial({ color, side: DoubleSide, depthWrite: false }));
+  return vertices;
 }
 
 /** Build a ring without changing the information radius or location in map space. */
 export function tacticalRing(zone, terrain, projection, style) {
+  return tacticalStroke(ringPoints(zone), terrain, projection, style);
+}
+
+export function ringPoints(zone) {
   const count = Math.min(600, Math.max(32, Math.ceil(zone.r * 2)));
   const points = Array.from({ length: count + 1 }, (_, i) => {
     const angle = 2 * Math.PI * i / count;
     return { x: zone.x + zone.r * Math.cos(angle), y: zone.y + zone.r * Math.sin(angle) };
   });
-  return tacticalStroke(points, terrain, projection, style);
+  return points;
 }
