@@ -17,7 +17,7 @@ import { buildIssues, detectInterruptions, foodDays, interruptionText, LOW_FOOD_
 import { dueScheduled } from './events.js';
 import { SPEEDS, DAY_MS, loadSpeed, saveSpeed, standingOrder } from './pace.js';
 import { categoryOf } from './journal.js';
-import { youth, topMotives, IDENTITY } from './communities.js';
+import { youth, topMotives, IDENTITY, COMMUNITY_IDS } from './communities.js';
 import { winterReserve } from './harvest.js';
 import { drawLegend } from './map-view.js';
 
@@ -242,6 +242,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   const reduceMotion = () => !!(win.matchMedia && win.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const ctx2d = () => $('mapcv').getContext('2d');
   const stage = $('campaign-map-3d');
+  let showMapDetails = false, communitiesKey = '';
   stage.classList.toggle('hidden', legacyMapForTests);
   $('mapcv').classList.toggle('hidden', !legacyMapForTests);
   const map3d = legacyMapForTests ? null : createCampaignMapView(stage, {
@@ -293,7 +294,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const fl = {}, t = now();
     for (const [id, t0] of Object.entries(flash)) { const k = 1 - (t - t0) / 1600; if (k > 0) fl[id] = k; else delete flash[id]; }
     const fx = { party: shown || flow.state.party, facing, step: walk, selected, hover, trail, reach: REACH,
-      focus, recon: scouting, issues: issueMarks(), flash: fl, route: route() };
+      focus, recon: scouting, issues: issueMarks(), flash: fl, route: route(), showMapDetails };
     if (map3d) {
       if (flow.phase === 'mapa' || flow.tactical) map3d.paint(flow.state, fx);
       else map3d.suspend();
@@ -354,6 +355,8 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     $('m-season').textContent = tMap(`season.${season(s.day)}`);
     $('m-left').textContent = tMap('remaining', { duration: duration(daysLeft(s.day)) });
     $('m-men').textContent = i18n.number(s.men); $('m-arms').textContent = i18n.number(s.arms);
+    $('m-fame').textContent = tMap('fameProgress', { fame: s.fame, target: WIN_FAME });
+    $('m-fame-box').title = tMap('fameGoal', { men: WIN_MEN, fame: WIN_FAME });
     const fd = foodDays(s);
     $('m-food').textContent = duration(fd);
     $('m-food-raw').textContent = `(${i18n.number(s.food)})`;
@@ -364,6 +367,23 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     $('m-time').dataset.state = running ? 'run' : 'pause';
     const n = currentIssues().filter(i => i.kind === 'decisao').length;
     $('m-side-toggle').textContent = n ? tMap('countIssues', { name: tMap('issues'), count: n }) : tMap('issues');
+  }
+
+  function renderMapAccess() {
+    const names = COMMUNITY_IDS.flatMap(id => {
+      const place = flow.state.communities[id]?.settlement;
+      return place ? [[place, displayName(place)]] : [];
+    });
+    const placeholder = tMap('communitiesSelect');
+    const key = JSON.stringify([placeholder, names]);
+    if (key === communitiesKey) return;
+    communitiesKey = key;
+    const options = [['', placeholder], ...names].map(([value, title]) => {
+      const option = el('option', null, title);
+      option.value = value;
+      return option;
+    });
+    $('m-community').replaceChildren(...options);
   }
 
   // --- barra de baixo: ordem permanente do bando ---
@@ -799,7 +819,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   function render() {
     if (!active || !flow) return;
     resize(); syncParty(); paint();
-    renderTop(); renderStatus();
+    renderTop(); renderMapAccess(); renderStatus();
     if (logDirty) {   // confirmação curta: as últimas linhas, que se apagam sozinhas (o Diário guarda a história)
       logDirty = false;
       const ul = $('mlog'); ul.classList.remove('faded');
@@ -1001,6 +1021,17 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   });
   $('mtribute-later').addEventListener('click', deferTribute);
   $('m-side-toggle').addEventListener('click', () => setSide(!sideOpen()));
+  $('m-map-details').addEventListener('click', () => {
+    if (!active || flow?.phase !== 'mapa' || decisionOverlay) return;
+    showMapDetails = !showMapDetails;
+    $('m-map-details').setAttribute('aria-pressed', String(showMapDetails));
+    schedulePaint();
+  });
+  $('m-community').addEventListener('change', event => {
+    const select = event.currentTarget;
+    if (!decisionOverlay && select.value) pick(select.value);
+    select.value = '';
+  });
 
   /** Só para testes (__game): termina a batalha pendente com um resultado já pronto. Nunca é mostrado ao jogador. */
   function simulateBattle(result) {

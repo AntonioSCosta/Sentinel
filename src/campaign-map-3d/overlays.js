@@ -38,12 +38,13 @@ export function makeIntelligence({ forces, zones }, terrain, projection) {
   const group = new THREE.Group(), targets = [], annotations = [];
   for (const zone of zones) {
     const recon = zone.src === 'batedores';
-    group.add(tacticalRing(zone, terrain, projection, recon ? SCOUTED : RUMOR));
+    const ring = tacticalRing(zone, terrain, projection, recon ? SCOUTED : RUMOR);
+    group.add(ring);
     const center = projection.toScene(zone, terrain.heightAt(zone.x, zone.y));
     annotations.push({
       position: new THREE.Vector3(center.x, center.y, center.z),
       userData: { key: `zone:${zone.id}`, labelKey: recon ? 'map.scouted' : zone.src === 'rumor' ? 'map.rumor' : 'map.approximate',
-        className: recon ? 'scouted-zone' : 'rumor-zone', priority: 3, lift: 4.5 },
+        className: recon ? 'scouted-zone' : 'rumor-zone', priority: 3, lift: 4.5, ring },
     });
   }
   for (const force of forces) {

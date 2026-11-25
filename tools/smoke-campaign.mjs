@@ -44,7 +44,7 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
     check('resize leaves the log DOM untouched', first && $('mlog').firstChild === first); }
   check('the map canvas has a size and was drawn', $('mapcv').width > 0 && $('mapcv').height > 0 && fills > 0);
   const num = id => +$(id).textContent.replace(/\D/g, '');
-  check('HUD shows men, food as days of autonomy, arms; fame left the bar (PR 5)', num('m-men') === s.men && /\d+ dias/.test($('m-food').textContent) && $('m-food-raw').textContent.includes(String(s.food)) && num('m-arms') === s.arms && !$('m-fame'));
+  check('HUD shows men, food autonomy, arms and fame toward the year-end goal', num('m-men') === s.men && /\d+ dias/.test($('m-food').textContent) && $('m-food-raw').textContent.includes(String(s.food)) && num('m-arms') === s.arms && $('m-fame').textContent === `${s.fame} / ${WIN_FAME}`);
   check('HUD shows date and season', $('m-date').textContent.length > 3 && $('m-season').textContent.length > 2);
   check('log is a live status region', $('mlog').getAttribute('role') === 'status');
   check('the bottom bar has only Ir, Emboscar, Esconder, Reconhecer and Diário (no Acampar)', ['m-go', 'm-ambush', 'm-hide', 'm-recon', 'm-diary'].every(id => $(id)?.tagName === 'BUTTON' && $(id).textContent.trim())

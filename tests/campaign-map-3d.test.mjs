@@ -180,6 +180,42 @@ test('label packing tries alternative positions and keeps high priority labels c
   assert.equal(labelLeader({ x: 30, y: 76 }, layout.get('village')), null);
 });
 
+test('essential labels can use wider anchors before a secondary label claims the space', async () => {
+  const { positionLabels } = await import('../src/campaign-map-3d/interaction.js');
+  const reserved = [{ x: 69, y: 21, w: 62, h: 65 }];
+  const village = { id: 'community', x: 100, y: 60, w: 53, h: 20, priority: 10 };
+  const other = { ...village, id: 'secondary', priority: 1 };
+  assert.equal(positionLabels([village, other], 220, 112, reserved).size, 0);
+  const layout = positionLabels([other, { ...village, reposition: true }], 220, 112, reserved);
+  assert.ok(layout.has('community'));
+  assert.equal(layout.has('secondary'), false);
+});
+
+test('leader avoids another label and disappears when every route is blocked', async () => {
+  const { leaderPath } = await import('../src/campaign-map-3d/interaction.js');
+  const anchor = { x: 20, y: 20 };
+  const box = { x: 100, y: 100, w: 40, h: 20 };
+  assert.match(leaderPath(anchor, box, []), /^M20,20 L/);
+  const blocker = { x: 54, y: 54, w: 16, h: 16 };
+  assert.match(leaderPath(anchor, box, [blocker]), / L20,100 L100,100/);
+  assert.equal(leaderPath(anchor, box, [{ x: 0, y: 0, w: 45, h: 45 }]), null);
+});
+
+test('political changes update presentation without changing strategic place geometry data', async () => {
+  const { newCampaign } = await import('../src/campaign/state.js');
+  const state = newCampaign(1234);
+  const community = state.communities.ribeira;
+  const a = strategicView(state);
+  community.posture = 'comprometida';
+  const b = strategicView(state);
+  assert.equal(b.communityPostures[community.settlement], 'comprometida');
+  assert.deepEqual(b.places, a.places);
+  community.situation = 'abandonada';
+  const c = strategicView(state);
+  assert.equal(c.communityPostures[community.settlement], 'abandonada');
+  assert.ok(c.places.find(place => place.id === community.settlement).burnt);
+});
+
 test('a tactical stroke keeps its dash spacing across terrain sampling segments', async () => {
   const { tacticalStroke } = await import('../src/campaign-map-3d/tactical-lines.js');
   const world = { w: 30, h: 30 };

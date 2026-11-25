@@ -112,7 +112,7 @@ export function createCampaignMapView(stage, { window, i18n, onPick, onHover, on
           seed = state.seed;
         }
         preview.textContent = fx.route?.label ?? fx.hover?.label ?? '';
-        scene.present(view, fx);
+        scene.present(view, { ...fx, campaignLabels: true });
         stage.dataset.status = 'ready';
       } catch (cause) {
         window.console.error('Erro ao desenhar o mapa da campanha', cause);

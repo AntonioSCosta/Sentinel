@@ -1,0 +1,16 @@
+{
+  "labels": 9,
+  "communities": 3,
+  "known": 2,
+  "posts": 2,
+  "rumors": 1,
+  "overlaps": 0,
+  "clipped": 0,
+  "party": true,
+  "dockOverlap": false,
+  "actionsVisible": 2,
+  "actionsOnTop": true,
+  "hudFits": true,
+  "hudOverlaps": 0,
+  "visibleCount": ""
+}
