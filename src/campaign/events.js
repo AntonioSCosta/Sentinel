@@ -15,23 +15,20 @@ export const SCHEDULED = [
 /** Primeira entrada agendada em vigor, ou null. Não altera o estado. */
 export const dueScheduled = state => SCHEDULED.find(e => e.when(state)) ?? null;
 
+/** O texto de cada carta está nos catálogos (map.deck.<id>): a interface traduz pelo id. */
 export const DECK = [
   { id: 'enviado', kind: 'verosimil', apply(s) {
     s.men += 3;
-    return 'Um mensageiro das aldeias traz três voluntários para o teu bando.';
   } },
   { id: 'seca', kind: 'verosimil', apply(s) {
     s.food -= Math.min(s.food, 12);
-    return 'A seca e os ratos estragam parte das provisões.';
   } },
   { id: 'traidor', kind: 'verosimil', apply(s) {
     s.arms -= Math.min(s.arms, 4);
     if (s.men > 1) loseMen(s, 1);   // o traidor é de uma aldeia: sai da conta dela
-    return 'Um traidor foge de noite e leva armas consigo.';
   } },
   { id: 'pastores', kind: 'verosimil', apply(s) {
     s.food += 10;
-    return 'Pastores da serra oferecem queijo e carne seca.';
   } },
 ];
 
@@ -40,9 +37,9 @@ export function rollEvent(state, rng) {
   if (state.over || !rng.chance(EVENT_CHANCE)) return null;
   const pool = DECK.filter(e => e.id !== state.lastEvent);
   const e = rng.pick(pool.length ? pool : DECK);
-  const text = e.apply(state);
+  e.apply(state);
   state.lastEvent = e.id;
   state.seen = state.seen || [];   // para a Crónica; criado só quando preciso
   if (!state.seen.includes(e.id)) state.seen.push(e.id);
-  return { id: e.id, text };
+  return { id: e.id };
 }

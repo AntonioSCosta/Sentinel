@@ -1,4 +1,8 @@
 export default {
+  "deck.enviado": "Um mensageiro das aldeias traz três voluntários para o teu bando.",
+  "deck.seca": "A seca e os ratos estragam parte das provisões.",
+  "deck.traidor": "Um traidor foge de noite e leva armas consigo.",
+  "deck.pastores": "Pastores da serra oferecem queijo e carne seca.",
   "tactical.kicker": "Batalha",
   "tactical.title": "Emboscar uma patrulha romana",
   "tactical.fight": "Lutar",
