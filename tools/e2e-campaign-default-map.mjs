@@ -44,6 +44,9 @@ try {
     await page.waitForFunction(() => window.__game.campaign.active && window.__game.campaign.flow.phase === 'mapa');
     assert.deepEqual(await renderer(page), { canvas: true, stage3d: null }, 'mapa ilustrado visível, 3D nunca montado');
     await page.waitForTimeout(500);
+    // HUD limpo: sem «Ir», sem seletor de idioma no cabeçalho; a marcha é o clique simples no mapa.
+    assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('#mbot button')].map(b => b.id)), ['m-ambush', 'm-hide', 'm-recon', 'm-diary']);
+    assert.equal(await page.locator('#m-go, #map-language, #mtop select').count(), 0);
     await shot(page, '01-mapa-inicial');
 
     const box = await page.locator('#mapcv').boundingBox();
@@ -74,6 +77,30 @@ try {
     await page.waitForTimeout(300);
     await shot(page, '03-mapa-rota');
 
+    // Sem o «Ir»: clicar no bando cancela a marcha; depois de Emboscar ou Reconhecer, voltar a marchar é intuitivo.
+    await page.evaluate(() => window.__game.campaign.pause());
+    const dest = () => page.evaluate(() => window.__game.campaign.dest);
+    const band = await page.evaluate(() => {
+      const c = window.__game.campaign, { party } = c.flow.state, v = c.view(), r = document.getElementById('mapcv').getBoundingClientRect();
+      return { x: r.left + v.ox + party.x * v.scale, y: r.top + v.oy + party.y * v.scale };
+    });
+    await page.mouse.click(band.x, band.y);
+    assert.equal(await dest(), null, 'clicar no bando cancela a marcha');
+    await page.locator('#m-ambush').click();
+    assert.equal(await page.evaluate(() => window.__game.campaign.stance), 'esperar');
+    assert.match(await page.locator('#m-status').textContent(), /clica no mapa para (voltar a )?marchar/);
+    await page.mouse.click(target.x, target.y);
+    assert.notEqual(await dest(), null, 'depois de Emboscar, um clique no mapa volta a marchar');
+    assert.equal(await page.evaluate(() => window.__game.campaign.stance), null);
+    await page.evaluate(() => window.__game.campaign.pause());
+    await page.locator('#m-recon').click();
+    assert.equal(await page.locator('#m-recon').getAttribute('aria-pressed'), 'true');
+    assert.match(await page.locator('#m-status').textContent(), /ESC/);
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#m-recon').getAttribute('aria-pressed'), 'false', 'Esc desiste do reconhecimento');
+    assert.equal(await page.locator('#mapcv').isVisible(), true, 'e fica no mapa');
+    assert.notEqual(await dest(), null, 'a marcha continua ordenada');
+
     const day0 = await page.evaluate(() => window.__game.campaign.flow.state.day);
     await page.evaluate(() => window.__game.campaign.play(4));
     await page.waitForFunction(d => window.__game.campaign.flow.state.day > d, day0, { timeout: 90000 });
@@ -91,6 +118,24 @@ try {
     const after = await page.evaluate(() => { const s = window.__game.campaign.flow.state; return { day: s.day, party: { ...s.party } }; });
     assert.deepEqual(after, { day: before.day, party: before.party }, 'continuar retoma o mesmo dia e a mesma posição');
     assert.deepEqual(await renderer(page), { canvas: true, stage3d: null });
+    await page.close();
+  }
+
+  // E. O idioma escolhe-se no menu principal, fica guardado e o mapa fala essa língua (já não há seletor no HUD).
+  {
+    const page = await open();
+    await page.locator('#tab-language').click();
+    await page.locator('#menu-language [data-menu-language="en"]').click();
+    assert.equal(await page.locator('html').getAttribute('lang'), 'en');
+    assert.equal(await page.evaluate(() => localStorage.getItem('viriato.language')), 'en');
+    await page.reload();
+    await page.waitForFunction(() => window.__game?.campaign);
+    assert.equal(await page.locator('html').getAttribute('lang'), 'en', 'a preferência sobrevive ao recarregar');
+    await openMap(page);
+    await page.locator('#mapcv').waitFor({ timeout: 60000 });
+    assert.equal(await page.locator('#m-date').textContent(), '1 March 147 BC');
+    assert.equal(await page.locator('#m-ambush').textContent(), 'Ambush');
+    assert.equal(await page.locator('#map-language').count(), 0);
     await page.close();
   }
 
@@ -132,7 +177,7 @@ try {
   }
 
   assert.deepEqual(errors, []);
-  console.log('OK — percurso real (menu → prólogo → mapa ilustrado → ordem → avançar → guardar → recarregar → continuar), fallback 3D, ?map=3d e ?map=illustrated');
+  console.log('OK — percurso real (menu → prólogo → mapa ilustrado → ordem → avançar → guardar → recarregar → continuar), HUD sem «Ir» nem idioma (cancelar marcha, regressar após Emboscar/Reconhecer, idioma pelo menu), fallback 3D, ?map=3d e ?map=illustrated');
 } finally {
   await close();
 }

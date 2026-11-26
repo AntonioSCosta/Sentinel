@@ -29,7 +29,8 @@ async function open(legacy = false, init) {
 async function checkReconClicks(page) {
   // Clear the replay's standing march before testing a new mouse order.
   await page.evaluate(() => {
-    if (window.__game.campaign.dest) document.getElementById('m-go').click();
+    const { campaign } = window.__game;
+    if (campaign.dest) { document.getElementById('m-ambush').click(); document.getElementById('m-ambush').click(); campaign.pause(); }   // outra ordem cancela-a; o segundo clique desarma a emboscada e o tempo volta a parar
   });
   await page.locator('#m-recon').click();
   let spot;
@@ -96,8 +97,7 @@ async function replay(legacy) {
       }
       clickPlace();
       const selected = document.getElementById('mctx').textContent.includes('Aldeia da Ribeira');
-      document.getElementById('m-go').click();
-      clickPlace();
+      document.querySelector('#mctx [data-act="ir"]').click();
       const destination = campaign.dest;
       document.getElementById('m-pause').click();
       campaign.step();
@@ -197,7 +197,7 @@ try {
     await page.locator('#campaign-map-3d .map-error').waitFor();
     assert.match(await page.locator('#campaign-map-3d .map-error').textContent(), /WebGL/);
     assert.equal(await page.locator('#mapcv').isVisible(), false);
-    assert.equal(await page.locator('#m-go').isDisabled(), true);
+    assert.equal(await page.locator('#m-ambush').isDisabled(), true);
     check('Falha de WebGL apresenta mensagem e mantém o 2D oculto', true);
   } finally {
     await page.close();

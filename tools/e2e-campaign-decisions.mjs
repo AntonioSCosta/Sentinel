@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadFlow, STORAGE_KEY } from '../src/campaign/flow.js';
-import { startBrowser } from './e2e-lib.mjs';
+import { startBrowser, setLanguage } from './e2e-lib.mjs';
 
 const out = process.argv[2];
 const baseline = process.env.SENTINEL_DECISIONS_BASELINE;
@@ -21,7 +21,7 @@ const startMap = async (page, locale) => {
     game.campaignStorage.clear();
     game.startCampaign(1234);
     game.showCampaignMap();
-    const language = document.getElementById('map-language');
+    const language = document.getElementById('pause-language');
     language.value = locale;
     language.dispatchEvent(new Event('change', { bubbles: true }));
   }, locale);
@@ -68,7 +68,7 @@ async function decisions(page) {
   await page.keyboard.press('ArrowRight');
   await page.mouse.click(16, compact.height - 16);
   assert.equal(await page.evaluate(() => window.__game.campaign.dest), null);
-  assert.equal(await page.locator('#m-go').getAttribute('aria-pressed'), 'false');
+  assert.equal(await page.locator('#m-ambush').getAttribute('aria-pressed'), 'false');   // o toque no canto não atravessa o painel
   assert.equal(await save(page), pending);
   await shot(page, '02-after-tribute-compact');
 
@@ -146,7 +146,7 @@ async function interruption(page) {
   await page.locator('#m-side-toggle').click();
   assert.equal(await page.locator('#mside').isVisible(), false);
   assert.equal(await strip.isVisible(), true);
-  await page.locator('#map-language').selectOption('pt-PT');
+  await setLanguage(page, 'pt-PT');
   assert.match(await strip.textContent(), /A colheita de primavera acrescentou/);
   await shot(page, '06-after-interruption-closed');
   assert.equal(await page.locator('#m-int-go').evaluate(el => {

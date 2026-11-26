@@ -157,26 +157,106 @@ function paintLandscape(seed, world, brushes) {
     else if (rng.chance(.20)) add(5,x,y,rng.range(5,11));
   }
   stamps.sort((a,b)=>a.y-b.y);
-  const cell=brushes.width/3;
-  for (const {kind,x,y,size,flip} of stamps) {
-    if (kind < 3) {
-      ctx.fillStyle = 'rgba(51,54,33,.19)'; ctx.beginPath();
-      ctx.ellipse(x+size*.16,y+size*.035,size*.31,size*.085,.26,0,Math.PI*2); ctx.fill();
-    }
-    ctx.save(); ctx.translate(x,y); ctx.scale(flip?-1:1,1);
-    ctx.drawImage(brushes,(kind%3)*cell,Math.floor(kind/3)*cell,cell,cell,-size/2,-size*.89,size,size);
-    ctx.restore();
-  }
-  return canvas;
+  return { terrain: canvas, stamps, levels: atlas(brushes) };
 }
 
-export function landscape(seed, world, brushes) {
+// A 256 px cell squeezed straight to ~25 px keeps about one texel in ten. Halved copies of the sheet, each with a
+// mirrored twin (so a flip needs no transform), keep every shrink under 2x.
+const atlases = new WeakMap();
+function copy(source, w, h, mirror) {
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  if (mirror) { ctx.translate(w, 0); ctx.scale(-1, 1); }
+  ctx.drawImage(source, 0, 0, w, h);
+  return canvas;
+}
+function atlas(sheet) {
+  let levels = atlases.get(sheet);
+  if (!levels) {
+    levels = [];
+    for (let i = 0, plain = sheet; i < 5; i++) {   // 256, 128, 64, 32 and 16 px cells
+      const w = sheet.width >> i, h = sheet.height >> i;
+      if (i) plain = copy(plain, w, h, false);
+      levels.push({ cell: w / 3, plain, mirror: copy(plain, w, h, true) });
+    }
+    atlases.set(sheet, levels);
+  }
+  return levels;
+}
+
+/** One stamp (shadow, then sprite) at x,y,size in the units of `ctx`; `device` is its size in device pixels. */
+function stamp(ctx, levels, { kind, flip }, x, y, size, device) {
+  if (kind < 3) {
+    ctx.fillStyle = 'rgba(51,54,33,.19)'; ctx.beginPath();
+    ctx.ellipse(x+size*.16,y+size*.035,size*.31,size*.085,.26,0,Math.PI*2); ctx.fill();
+  }
+  let level = levels[0];   // smallest cell that still has at least `device` pixels
+  for (let i = levels.length - 1; i >= 0; i--) if (levels[i].cell >= device) { level = levels[i]; break; }
+  const col = flip ? 2 - kind % 3 : kind % 3, cell = level.cell;
+  ctx.drawImage(flip ? level.mirror : level.plain, col * cell, Math.floor(kind / 3) * cell, cell, cell,
+    x - size / 2, y - size * .89, size, size);
+}
+
+function layer(seed, world, brushes) {
   let item = cache.get(world);
   if (!item || item.seed !== seed) {
-    item = { seed, canvas: paintLandscape(seed, world, brushes) };
+    item = { seed, ...paintLandscape(seed, world, brushes) };
+    item.layer = { image: item.terrain, border: BORDER, draw: (ctx, view) => drawLandscape(ctx, view, item) };
     cache.set(world, item);
   }
-  return item.canvas;
+  return item;
+}
+
+/** The terrain alone, without the stamps. */
+export function landscape(seed, world, brushes) { return layer(seed, world, brushes).terrain; }
+
+/** What the map paints as its background: `{ image, border, draw(ctx, view) }`. */
+export function landscapeLayer(seed, world, brushes) { return layer(seed, world, brushes).layer; }
+
+const MARGIN = .2;    // detail kept beyond each edge of the view, as a fraction of the view
+const STRETCH = 200;  // ms a tile may be stretched while the zoom is still moving, before it is repainted
+
+/**
+ * Paints the landscape: the terrain with every stamp drawn at the resolution of the screen. That is thousands of
+ * draws, so it goes into a cached tile (the view plus a margin) and panning only moves the tile. While the zoom is
+ * moving the tile is stretched for a moment and `layer.stale` is set, so the caller repaints once it settles.
+ */
+function drawLandscape(ctx, view, item) {
+  const { ox, oy, scale, width, height } = view, dpr = ctx.getTransform().a, s = scale * dpr, now = performance.now();
+  const left = -ox / scale, top = -oy / scale, right = (width - ox) / scale, bottom = (height - oy) / scale;
+  const w = Math.ceil(width * dpr * (1 + 2 * MARGIN)), h = Math.ceil(height * dpr * (1 + 2 * MARGIN));
+  let tile = item.tile;
+  const usable = tile && tile.canvas.width === w && tile.canvas.height === h
+    && left >= tile.x && top >= tile.y && right <= tile.x + w / tile.s && bottom <= tile.y + h / tile.s;
+  item.layer.stale = false;
+  if (usable && tile.s === s) {   // whole device pixels, or the already sharp tile would be resampled and soften
+    ctx.drawImage(tile.canvas, Math.round((ox + tile.x * scale) * dpr) / dpr, Math.round((oy + tile.y * scale) * dpr) / dpr, w / dpr, h / dpr);
+  } else if (usable && now - tile.at < STRETCH && s / tile.s > .5 && s / tile.s < 2) {
+    item.layer.stale = true;
+    ctx.drawImage(tile.canvas, ox + tile.x * scale, oy + tile.y * scale, w / tile.s * scale, h / tile.s * scale);
+  } else {
+    tile = item.tile = paintTile(item, view.world, tile?.canvas, left, top, right - left, bottom - top, s, w, h);
+    tile.at = now;
+    ctx.drawImage(tile.canvas, Math.round((ox + tile.x * scale) * dpr) / dpr, Math.round((oy + tile.y * scale) * dpr) / dpr, w / dpr, h / dpr);
+  }
+}
+
+function paintTile({ terrain, stamps, levels }, world, canvas = document.createElement('canvas'), left, top, viewW, viewH, s, w, h) {
+  if (canvas.width !== w) canvas.width = w;
+  if (canvas.height !== h) canvas.height = h;
+  const x = Math.floor((left - viewW * MARGIN) * s) / s, y = Math.floor((top - viewH * MARGIN) * s) / s;   // on the pixel grid
+  const x1 = x + w / s, y1 = y + h / s, ctx = canvas.getContext('2d', { alpha: false });
+  ctx.setTransform(s, 0, 0, s, -x * s, -y * s);
+  ctx.drawImage(terrain, -BORDER, -BORDER, world.w + 2 * BORDER, world.h + 2 * BORDER);
+  let lo = 0, hi = stamps.length;   // stamps are sorted by y; a sprite reaches up to .89 of its size above it and .11 below
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (stamps[mid].y < y - 4) lo = mid + 1; else hi = mid; }
+  for (let i = lo; i < stamps.length && stamps[i].y <= y1 + 30; i++) {
+    const t = stamps[i];
+    if (t.x + t.size / 2 >= x && t.x - t.size / 2 <= x1) stamp(ctx, levels, t, t.x, t.y, t.size, t.size * s);
+  }
+  return { canvas, s, x, y };
 }
 
 // At any zoom the tactical symbols occupy the same number of CSS pixels.

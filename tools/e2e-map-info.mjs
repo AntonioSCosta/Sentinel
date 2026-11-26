@@ -1,4 +1,4 @@
-// E2E (Chrome real): no mapa da campanha, a barra de cima (data, tempo, bando) e a barra de baixo (Ir, Emboscar,
+// E2E (Chrome real): no mapa da campanha, a barra de cima (data, tempo, bando) e a barra de baixo (Emboscar,
 // Esconder, Reconhecer, Diário) estão inteiras à vista; o Diário abre no separador «Campanha» com o objetivo, cabe no
 // ecrã, e nenhum «ENTER para saltar» nem véu do prólogo fica por cima do mapa.
 //   node tools/e2e-map-info.mjs [pasta-de-capturas]
@@ -22,8 +22,8 @@ for (const vp of [{ width: 1366, height: 768 }, { width: 1280, height: 800 }, { 
   for (const id of ['m-date', 'm-pause', 'm-men', 'm-food', 'm-arms']) { const b = await box('#' + id); check(`${tag}: «${id}» à vista na barra de cima`, inside(b, vp), fmt(b)); }
   for (const s of [1, 2, 4]) { const b = await box(`[data-speed="${s}"]`); check(`${tag}: ${s}× à vista`, inside(b, vp), fmt(b)); }
   const bot = await page.evaluate(() => [...document.querySelectorAll('#mbot button')].map(b => b.textContent.trim()));
-  check(`${tag}: a barra de baixo tem só Ir, Emboscar, Esconder, Reconhecer e Diário`, bot.join('|') === 'Ir|Emboscar|Esconder|Reconhecer|Diário', bot.join('|'));
-  for (const id of ['m-go', 'm-ambush', 'm-hide', 'm-recon', 'm-diary']) { const b = await box('#' + id); check(`${tag}: «${id}» à vista`, inside(b, vp), fmt(b)); }
+  check(`${tag}: a barra de baixo tem só Emboscar, Esconder, Reconhecer e Diário (o «Ir» saiu: marchar é o clique no mapa)`, bot.join('|') === 'Emboscar|Esconder|Reconhecer|Diário', bot.join('|'));
+  for (const id of ['m-ambush', 'm-hide', 'm-recon', 'm-diary']) { const b = await box('#' + id); check(`${tag}: «${id}» à vista`, inside(b, vp), fmt(b)); }
   const hint = await page.evaluate(() => [...document.querySelectorAll('div')].some(d => /ENTER para saltar/.test(d.textContent) && d.children.length === 0 && getComputedStyle(d).display !== 'none' && d.getBoundingClientRect().width > 0));
   check(`${tag}: «ENTER para saltar» não aparece no mapa`, !hint);
   const veil = await page.evaluate(() => [...document.body.children].filter(e => !e.closest('#map') && getComputedStyle(e).position === 'fixed' && getComputedStyle(e).display !== 'none' && +getComputedStyle(e).opacity > 0 && e.id !== 'gl' && e.getBoundingClientRect().width > innerWidth * 0.9 && (parseInt(getComputedStyle(e).zIndex) || 0) > 0).map(e => e.id || e.className || e.tagName));

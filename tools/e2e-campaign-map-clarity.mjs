@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { newCampaign } from '../src/campaign/state.js';
-import { startBrowser } from './e2e-lib.mjs';
+import { startBrowser, setLanguage } from './e2e-lib.mjs';
 
 const out = process.argv[2];
 const baseline = process.env.SENTINEL_MAP_BASELINE;
@@ -47,7 +47,7 @@ function measure(page) {
     const dockBox = box(dock);
     const actions = [q('#m-community'), q('#m-map-details')].filter(visible);
     const hud = q('#mtop'), resources = q('#mtop .res');
-    const hudItems = [q('#mtop .when'), q('#m-time'), resources, q('#m-side-toggle'), q('#mtop .map-language')].filter(visible).map(box);
+    const hudItems = [q('#mtop .when'), q('#m-time'), resources, q('#m-side-toggle')].filter(visible).map(box);
     return {
       labels: labels.length,
       communities: labels.filter(el => el.classList.contains('community')).length,
@@ -126,7 +126,7 @@ try {
 
   if (baseline && process.env.SENTINEL_MAP_BLOCKER) {
     await campaign.setViewportSize({ width: 844, height: 390 });
-    await campaign.locator('#map-language').selectOption('en');
+    await setLanguage(campaign, 'en');
     await campaign.evaluate(id => {
       const c = window.__game.campaign;
       Object.assign(c.flow.state.communities.fonte, { situation: 'abandonada', families: 0 });
@@ -200,7 +200,7 @@ try {
     assert.equal(await abandoned.evaluate(el => getComputedStyle(el).borderStyle), 'dashed');
 
     await campaign.setViewportSize({ width: 844, height: 390 });
-    await campaign.locator('#map-language').selectOption('en');
+    await setLanguage(campaign, 'en');
     await settle(campaign);
     assert.match(await campaign.locator('#m-fame-box').textContent(), /Fame\s*20 \/ 30/);
     assert.match(await abandoned.getAttribute('aria-label'), /abandoned/);

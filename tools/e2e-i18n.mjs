@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { newCampaign } from '../src/campaign/state.js';
-import { startE2E } from './e2e-lib.mjs';
+import { startE2E, setLanguage } from './e2e-lib.mjs';
 
 const { url, browser, check, finish } = await startE2E({ entry: 'index.html?manual=1&map=3d' });
 const captures = process.argv[2];
@@ -71,8 +71,7 @@ async function scenario(browserLocale, initial, next) {
       const { campaign: c } = window.__game;
       const place = c.flow.state.world.settlements.find(s => s.id === c.flow.state.communities.ribeira.settlement);
       c.select(place.id);
-      document.getElementById('m-go').click();
-      document.querySelector(`#campaign-map-3d [data-kind=settlement][data-id="${place.id}"]`).click();
+      document.querySelector('#mctx [data-act="ir"]').click();
       document.getElementById('m-pause').click();
       window.flowBeforeLocale = c.flow;
       return place;
@@ -89,7 +88,7 @@ async function scenario(browserLocale, initial, next) {
     const before = await snapshot();
     const mapPixels = () => page.locator('#m-scene').evaluate(canvas => canvas.toDataURL());
     const beforePixels = await mapPixels();
-    await page.locator('#map-language').selectOption(next);
+    await setLanguage(page, next);
     await page.locator(`html[lang="${next}"]`).waitFor();
     const title = next === 'en' ? 'Ribeira Village' : 'Aldeia da Ribeira';
     assert.equal(await page.locator('#mctx h3').textContent(), title);
@@ -104,13 +103,12 @@ async function scenario(browserLocale, initial, next) {
     await page.locator('#mdiary-close').click();
     if (captures) {
       await page.screenshot({ path: join(captures, `map-${next}.png`) });
-      const layout = [['#mbot', '#mbot button'], ['#mtop', '#mtop button, #m-date, #mtop .res, #mtop .map-language'], ['#campaign-map-3d', '[data-camera]']];
+      const layout = [['#mbot', '#mbot button'], ['#mtop', '#mtop button, #m-date, #mtop .res'], ['#campaign-map-3d', '[data-camera]']];
       await page.setViewportSize({ width: 844, height: 390 });
       await assertControls(page, layout);
       await page.screenshot({ path: join(captures, `map-small-${next}.png`) });
       await page.setViewportSize({ width: 390, height: 730 });
       await assertControls(page, layout);
-      await page.locator('#map-language').click({ trial: true });
       await page.screenshot({ path: join(captures, `map-phone-${next}.png`) });
     }
 

@@ -2,7 +2,7 @@
 // Módulo puro: sem DOM nem Three.js; o desenho só usa a API mínima de um contexto Canvas 2D.
 import { intelView } from './intel.js';   // as forças romanas vêm sempre daqui (o que o jogador sabe), nunca do estado real
 import { COMMUNITY_IDS } from './communities.js';
-import { placeName, MAP_TITLE, MAP_SUBTITLE } from './strings.js';
+import { placeName } from './strings.js';
 import { SECTORS } from './doctrine.js';
 
 const MARGIN = 12;
@@ -784,8 +784,9 @@ export function drawMap(ctx, view, state, fx = {}) {
   const trail = fx.trail || [];
 
   if (fx.landscape) {
-    const { image, border } = fx.landscape;
-    ctx.drawImage(image, view.ox-border*view.scale, view.oy-border*view.scale,
+    const { image, border, draw } = fx.landscape;
+    if (draw) draw(ctx, view);
+    else ctx.drawImage(image, view.ox-border*view.scale, view.oy-border*view.scale,
       (world.w+2*border)*view.scale, (world.h+2*border)*view.scale);
   } else {
     // fundo de pergaminho
@@ -1038,20 +1039,6 @@ export function drawMap(ctx, view, state, fx = {}) {
   }
 
   if (view.width > 260 && view.height > 200) drawCompass(ctx, view.width - 30, view.height - 34);
-
-  // cartela: o nome da terra e o ano (a data do dia está na barra de cima)
-  ctx.save();
-  ctx.fillStyle = INK;
-  ctx.font = 'italic 13px serif';
-  ctx.textAlign = 'left';
-  if (fx.landscape) {
-    ctx.fillStyle = '#f1e7cfe8'; ctx.fillRect(6,4,150,34); ctx.fillStyle=INK;
-  }
-  ctx.fillText(MAP_TITLE, 12, 20);
-  ctx.font = '11px serif';
-  ctx.fillStyle = '#6e5f48';
-  ctx.fillText(MAP_SUBTITLE, 12, 34);
-  ctx.restore();
 
   ctx.setLineDash([]);   // invariante: o último dash é sempre vazio
 }
