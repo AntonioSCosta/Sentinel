@@ -147,6 +147,7 @@ export default {
   "a11y.speed2": "Velocidade 2×",
   "a11y.speed4": "Velocidade 4×",
   "a11y.band": "O bando",
+  "a11y.illustratedCanvas": "Arrasta para deslocar o mapa, usa a roda para ampliar e prime Home para centrar o vale. Seleciona uma povoação para a inspecionar.",
   "a11y.canvas": "Mapa do vale em 3D. Seleciona uma povoação ou clica no terreno para marchar. O Diário lista os lugares.",
   "a11y.labels": "Locais e forças conhecidas",
   "a11y.camera": "Câmara do mapa",

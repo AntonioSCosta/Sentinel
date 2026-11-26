@@ -147,6 +147,7 @@ export default {
   "a11y.speed2": "Speed 2×",
   "a11y.speed4": "Speed 4×",
   "a11y.band": "The warband",
+  "a11y.illustratedCanvas": "Drag to pan, scroll to zoom, and press Home to centre the valley. Select a settlement to inspect it.",
   "a11y.canvas": "3D valley map. Select a settlement or click the terrain to march. The Journal lists locations.",
   "a11y.labels": "Locations and known forces",
   "a11y.camera": "Map camera",

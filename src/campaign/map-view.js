@@ -577,13 +577,17 @@ const overlaps = (a, b, gap = LABEL_GAP) =>
   a.x < b.x + b.w + gap && a.x + a.w + gap > b.x && a.y < b.y + b.h + gap && a.y + a.h + gap > b.y;
 
 /** Candidatos de posição: abaixo e acima do ícone, depois anéis de 24 a 130 px em volta. */
+const candidateCache = new Map();
 function labelCandidates(w) {
+  if (candidateCache.has(w)) return candidateCache.get(w);
   const out = [[0, 24], [0, -14], [0, 36], [0, -26]];
   for (const r of [24, 34, 46, 60, 76, 92, 110, 130])
     for (let k = 0; k < 16; k++) {
       const a = k / 16 * TAU;
       out.push([Math.sin(a) * (r + w / 2), -Math.cos(a) * r]);
     }
+  if (candidateCache.size >= 256) candidateCache.clear();
+  candidateCache.set(w, out);
   return out;
 }
 
@@ -594,13 +598,17 @@ const plateWidth = text => Math.max(42, text.length * 5.9 + 10);
 const praetorPlate = f => (f.status === 'confirmada' ? f.name || 'Pretor' : `${f.name || 'Pretor'} · ${agoLabel(f.age)}`);
 
 /** Círculo tracejado a tinta romana: a zona onde uma força pode estar. */
-function dashedZone(ctx, x, y, r, fill = false, weak = false) {
+function dashedZone(ctx, x, y, r, fill = false, weak = false, illustrated = false) {
   ctx.save();
   ctx.strokeStyle = weak ? 'rgba(160,33,26,.45)' : 'rgba(160,33,26,.6)';
   ctx.lineWidth = 1.2;
   ctx.setLineDash(weak ? [2, 7] : [5, 4]);   // pouco fiável (rumor): pontilhado largo
   ctx.beginPath(); ctx.arc(x, y, Math.max(8, r), 0, TAU);
   if (fill) { ctx.fillStyle = 'rgba(160,33,26,.07)'; ctx.fill(); }
+  if (illustrated) {
+    ctx.strokeStyle = '#f2e6c9'; ctx.lineWidth = 3.4; ctx.stroke();
+    ctx.strokeStyle = weak ? '#8c5440' : '#883e32'; ctx.lineWidth = 1.6;
+  }
   ctx.stroke();
   ctx.setLineDash([]);
   ctx.restore();
@@ -610,7 +618,7 @@ function dashedZone(ctx, x, y, r, fill = false, weak = false) {
  * Notas das zonas e das figuras sem se encavalitarem: cada nota tenta o sítio pedido e, se já houver outra
  * lá, desce uma linha (até duas vezes); se não couber, fica por escrever (o texto completo está na lista).
  */
-function noteLayer() {
+function noteLayer(illustrated = false) {
   const boxes = [];
   const box = (text, x, y) => ({ x: x - text.length * 2.5, y: y - 10, w: text.length * 5, h: 12 });
   const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
@@ -618,19 +626,23 @@ function noteLayer() {
     for (const dy of [0, 12, 24]) {
       const b = box(text, x, y + dy);
       if (boxes.some(o => hit(o, b))) continue;
-      boxes.push(b); note(ctx, text, x, y + dy); return true;
+      boxes.push(b); note(ctx, text, x, y + dy, illustrated); return true;
     }
     return false;
   };
 }
 
 /** Nota pequena a tinta, por baixo de uma figura ou de uma zona. */
-function note(ctx, text, x, y) {
+function note(ctx, text, x, y, illustrated) {
   ctx.save();
   ctx.fillStyle = ROMAN_DARK;
   ctx.font = 'italic 10px serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
+  if (illustrated) {
+    ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#f4ead4';
+    ctx.strokeText(text, x, y);
+  }
   ctx.fillText(text, x, y);
   ctx.restore();
 }
@@ -646,11 +658,15 @@ function labelObstacles(view, state) {
     if (valley.has(s.id)) obs.push({ x: q.x - 32, y: q.y - 38, w: 68, h: 60 });   // figura, ofício, bandeira, marca e «!» (à escala COMMUNITY_SCALE)
     else obs.push({ x: q.x - 14, y: q.y - 12, w: 28, h: 22 });
   }
-  const intel = intelView(state), place = noteLayer();
+  const intel = intelView(state);
   for (const z of intel.zones) { const q = toScreen(view, z); obs.push({ x: q.x - 46, y: q.y - (z.place ? 34 : 16), w: 92, h: z.place ? 52 : 34 }); }   // «?» e a nota do relato
   for (const f of intel.forces) {
     const q = toScreen(view, f);
-    if (f.kind !== 'pretor') { obs.push({ x: q.x - 11, y: q.y - 8, w: 22, h: 16 }); continue; }
+    if (f.kind !== 'pretor') {
+      obs.push({ x: q.x - 11, y: q.y - 8, w: 22, h: 16 });
+      if (view.illustrated && f.age) obs.push({ x: q.x - 27, y: q.y + 8, w: 54, h: 14 });
+      continue;
+    }
     const w = plateWidth(praetorPlate(f));
     obs.push({ x: q.x - 7, y: q.y - 19, w: 14, h: 28 });          // vexilo
     obs.push({ x: q.x - w / 2, y: q.y - 33, w, h: 14 });          // placa do nome
@@ -671,8 +687,13 @@ function labelObstacles(view, state) {
  */
 export function layoutMapLabels(view, state, measure = null) {
   const bounds = { w: view.width, h: view.height };
+  const gap = view.illustrated ? 7 : LABEL_GAP;
   const valley = valleyIds(state);
-  const items = view.world.settlements.map(s => {
+  const visiblePlaces = view.illustrated ? view.world.settlements.filter(s => {
+    const q = toScreen(view, s);
+    return q.x >= 0 && q.x <= view.width && q.y >= 0 && q.y <= view.height;
+  }) : view.world.settlements;
+  const items = visiblePlaces.map(s => {
     const q = toScreen(view, s), name = placeName(state, s.id) ?? s.name, inValley = valley.has(s.id);
     const measured = measure ? measure(name) : fallbackWidth(name);
     // as comunidades escrevem-se a negrito: reserva-se 10% a mais do que a medida do texto normal
@@ -688,7 +709,8 @@ export function layoutMapLabels(view, state, measure = null) {
     const edge = Math.min(it.ax, bounds.w - it.ax, it.ay, bounds.h - it.ay);
     return n * 10 + Math.max(0, 60 - edge);
   };
-  const order = [...items].sort((a, b) => score(b) - score(a) || String(a.id).localeCompare(String(b.id)));
+  const scores = new Map(items.map(item => [item, score(item)]));
+  const order = [...items].sort((a, b) => scores.get(b) - scores.get(a) || String(a.id).localeCompare(String(b.id)));
   const placed = [];
   for (const it of order) {
     const { w, h } = it;
@@ -697,7 +719,7 @@ export function layoutMapLabels(view, state, measure = null) {
       const x = it.ax + dx, baseline = it.ay + dy;
       const r = { x: x - w / 2, y: baseline - h, w, h };
       if (r.x < 2 || r.x + w > bounds.w - 2 || r.y < 2 || r.y + h > bounds.h - 2) continue;
-      if (rects.some(q => overlaps(r, q))) continue;
+      if (rects.some(q => overlaps(r, q, gap))) continue;
       const dist = Math.hypot(dx, dy);
       found = { ...it, x, baseline, dist, moved: dist > 24 };
       rects.push(r); break;
@@ -709,7 +731,7 @@ export function layoutMapLabels(view, state, measure = null) {
       for (let baseline = h + 2; baseline <= bounds.h - 2; baseline += LABEL_H + LABEL_GAP + 1)
         for (let x = 2 + w / 2; x <= bounds.w - 2 - w / 2; x += 20) {
           const r = { x: x - w / 2, y: baseline - h, w, h };
-          if (rects.some(q => overlaps(r, q))) continue;
+          if (rects.some(q => overlaps(r, q, gap))) continue;
           const dist = Math.hypot(x - it.ax, baseline - h / 2 - it.ay);
           if (!best || dist < best.dist) best = { x, baseline, dist };
         }
@@ -728,6 +750,28 @@ export function layoutMapLabels(view, state, measure = null) {
   return { items, placed };
 }
 
+function drawSettlement(ctx, s, c, burnt, issue, x, y) {
+  if (c && c.situation === 'ocupada') {   // a guarnição cerca a aldeia
+    ctx.save(); ctx.strokeStyle = 'rgba(160,33,26,.75)'; ctx.lineWidth = 2; ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.arc(x, y + 2, 30, 0, TAU); ctx.stroke(); ctx.setLineDash([]); ctx.restore();
+  }
+  ctx.save();
+  const faded = !c && (s.kind === 'aldeia' || s.kind === 'castro');
+  if (faded) ctx.globalAlpha = 0.5;   // fora do vale: existe, mas não compete com as cinco
+  const dead = !!c && (c.situation === 'queimada' || c.situation === 'abandonada');
+  if (s.kind === 'serra') drawHachures(ctx, x, y);
+  if (c) scaled(ctx, x, y, COMMUNITY_SCALE, (x, y) => { drawOffice(ctx, c.id, x, y, burnt || dead); icon(ctx, s.kind, x, y, burnt); });
+  else icon(ctx, s.kind, x, y, burnt);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+  if (!c) return;
+  scaled(ctx, x, y, COMMUNITY_SCALE, (x, y) => {
+    if (!dead) drawFlag(ctx, x, y, c.posture);
+    drawSituation(ctx, x, y, c.situation);
+    if (issue) drawIssueMark(ctx, x, y, issue);
+  });
+}
+
 /**
  * Desenha o mapa completo.
  * `fx` (opcional) anima o desenho sem mexer no estado: { party, facing, step, hover, trail, selected, reach, focus, recon,
@@ -739,31 +783,37 @@ export function drawMap(ctx, view, state, fx = {}) {
   const hover = fx.hover || null;
   const trail = fx.trail || [];
 
-  // fundo de pergaminho
-  ctx.save();
-  ctx.fillStyle = PAPER;
-  ctx.fillRect(0, 0, view.width, view.height);
-  ctx.restore();
-
-  drawValley(ctx, view, state);
-
-  // estrada romana: leito largo e eixo tracejado
-  if (world.road && world.road.length > 1) {
-    const road = world.road.map(p => toScreen(view, p));
+  if (fx.landscape) {
+    const { image, border } = fx.landscape;
+    ctx.drawImage(image, view.ox-border*view.scale, view.oy-border*view.scale,
+      (world.w+2*border)*view.scale, (world.h+2*border)*view.scale);
+  } else {
+    // fundo de pergaminho
     ctx.save();
-    ctx.strokeStyle = '#cdb887';
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    road.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
-    ctx.stroke();
-    ctx.strokeStyle = '#8b6b3e';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([8, 6]);
-    ctx.beginPath();
-    road.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
-    ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.fillStyle = PAPER;
+    ctx.fillRect(0, 0, view.width, view.height);
     ctx.restore();
+
+    drawValley(ctx, view, state);
+
+    // estrada romana: leito largo e eixo tracejado
+    if (world.road && world.road.length > 1) {
+      const road = world.road.map(p => toScreen(view, p));
+      ctx.save();
+      ctx.strokeStyle = '#cdb887';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      road.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+      ctx.stroke();
+      ctx.strokeStyle = '#8b6b3e';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 6]);
+      ctx.beginPath();
+      road.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
   }
   drawGarrison(ctx, view, state);
 
@@ -832,26 +882,15 @@ export function drawMap(ctx, view, state, fx = {}) {
       ctx.beginPath(); ctx.arc(q.x, q.y + 2, c ? 34 : 17, 0, TAU); ctx.stroke();
       ctx.restore();
     }
-    if (c && c.situation === 'ocupada') {   // a guarnição cerca a aldeia
-      ctx.save(); ctx.strokeStyle = 'rgba(160,33,26,.75)'; ctx.lineWidth = 2; ctx.setLineDash([3, 3]);
-      ctx.beginPath(); ctx.arc(q.x, q.y + 2, 30, 0, TAU); ctx.stroke(); ctx.setLineDash([]); ctx.restore();
-    }
-    ctx.save();
-    const faded = !c && (s.kind === 'aldeia' || s.kind === 'castro');
-    if (faded) ctx.globalAlpha = 0.5;   // fora do vale: existe, mas não compete com as cinco
-    const dead = !!c && (c.situation === 'queimada' || c.situation === 'abandonada');
-    if (s.kind === 'serra') drawHachures(ctx, q.x, q.y);
-    if (c) scaled(ctx, q.x, q.y, COMMUNITY_SCALE, (x, y) => { drawOffice(ctx, c.id, x, y, burnt || dead); icon(ctx, s.kind, x, y, burnt); });
-    else icon(ctx, s.kind, q.x, q.y, burnt);
-    ctx.globalAlpha = 1;
-    ctx.restore();
-    if (!c) continue;
     const issue = fx.issues?.[s.id];
-    scaled(ctx, q.x, q.y, COMMUNITY_SCALE, (x, y) => {
-      if (!dead) drawFlag(ctx, x, y, c.posture);
-      drawSituation(ctx, x, y, c.situation);
-      if (issue) drawIssueMark(ctx, x, y, issue);
-    });
+    if (fx.symbols) {
+      if (q.x < -52 || q.y < -52 || q.x > view.width + 52 || q.y > view.height + 52) continue;
+      const key = [s.kind, c?.id, burnt, c?.posture, c?.situation, issue].join('|');
+      fx.symbols(ctx, s, key, q, (brush, x, y) => drawSettlement(brush, s, c, burnt, issue, x, y));
+    } else {
+      drawSettlement(ctx, s, c, burnt, issue, q.x, q.y);
+    }
+    if (!c) continue;
     const fl = fx.flash?.[s.id];
     if (Number.isFinite(fl) && fl > 0) {   // destaque breve de uma mudança (postura, castigo)
       ctx.save(); ctx.strokeStyle = GOLD; ctx.globalAlpha = Math.min(1, fl); ctx.lineWidth = 3;
@@ -860,7 +899,7 @@ export function drawMap(ctx, view, state, fx = {}) {
   }
 
   // o que o jogador sabe dos romanos (intel.js): relatos como zonas, avistamentos como figuras
-  const intel = intelView(state), place = noteLayer();
+  const intel = intelView(state), place = noteLayer(!!fx.landscape);
   for (const z of intel.zones) {
     const q = toScreen(view, z);
     if (z.src === 'batedores') {   // zona reconhecida hoje
@@ -869,18 +908,22 @@ export function drawMap(ctx, view, state, fx = {}) {
       if (z.kind === 'livre') place(ctx, 'zona livre', q.x, q.y + 4);
       continue;
     }
-    dashedZone(ctx, q.x, q.y, z.r * view.scale, true, z.rel === 'fraca');
+    dashedZone(ctx, q.x, q.y, z.r * view.scale, true, z.rel === 'fraca', !!fx.landscape);
     ctx.save();
     ctx.fillStyle = 'rgba(160,33,26,.8)';
     ctx.font = `bold ${z.rel === 'fraca' ? 20 : 15}px serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    if (fx.landscape) {
+      ctx.strokeStyle = '#f2e6c9'; ctx.lineWidth = 3;
+      ctx.strokeText('?', q.x, q.y - (z.place ? 24 : 4));
+    }
     ctx.fillText('?', q.x, q.y - (z.place ? 24 : 4));   // por cima do ícone, quando a zona é uma povoação
     ctx.restore();
     place(ctx, `${ZONE_NAMES[z.kind] || 'romanos'} · ${z.age ? agoLabel(z.age) : 'hoje'}`, q.x, q.y + 14);
   }
   for (const f of intel.forces) {
     const q = toScreen(view, f), old = f.status !== 'confirmada';
-    if (old) dashedZone(ctx, q.x, q.y, f.r * view.scale);
+    if (old) dashedZone(ctx, q.x, q.y, f.r * view.scale, false, false, !!fx.landscape);
     ctx.save();
     if (old) ctx.globalAlpha = 0.4;   // última posição conhecida: figura esbatida
     if (f.kind === 'pretor') drawPraetor(ctx, q.x, q.y); else drawPatrol(ctx, f, q);
@@ -923,6 +966,12 @@ export function drawMap(ctx, view, state, fx = {}) {
     ctx.font = l.valley ? `bold ${LABEL_FONT}` : `italic ${LABEL_FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
+    if (fx.landscape) {
+      const ink = ctx.fillStyle;
+      ctx.fillStyle = l.valley ? '#f0e6cdeF' : '#ede3cbdc';
+      ctx.beginPath(); ctx.roundRect(l.x-l.w/2-3,l.baseline-l.h-1,l.w+6,l.h+4,3); ctx.fill();
+      ctx.fillStyle = l.valley ? ink : '#413e30';
+    }
     ctx.fillText(l.name, l.x, l.baseline);
   }
   ctx.restore();
@@ -995,6 +1044,9 @@ export function drawMap(ctx, view, state, fx = {}) {
   ctx.fillStyle = INK;
   ctx.font = 'italic 13px serif';
   ctx.textAlign = 'left';
+  if (fx.landscape) {
+    ctx.fillStyle = '#f1e7cfe8'; ctx.fillRect(6,4,150,34); ctx.fillStyle=INK;
+  }
   ctx.fillText(MAP_TITLE, 12, 20);
   ctx.font = '11px serif';
   ctx.fillStyle = '#6e5f48';

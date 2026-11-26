@@ -32,7 +32,7 @@ import { campStart, campGarrison, campPhase, CAMP_MISSIONS, TENTS_TO_BURN, RELIE
  * Builds the whole game. Rendering, DOM and window are injected so the game can run headless in tests.
  * @returns game API used by boot() and by tools/smoke.mjs
  */
-export async function createGame({ THREE, renderer, canvas, document, window, rapier = null, loader = null, quality = 'medium', chars = null, i18n = createI18n(), legacyCampaignMapForTests = false, storage = (() => { try { return window.localStorage; } catch (_) { return null; } })() }) {
+export async function createGame({ THREE, renderer, canvas, document, window, rapier = null, loader = null, quality = 'medium', chars = null, i18n = createI18n(), legacyCampaignMapForTests = false, illustrated = null, storage = (() => { try { return window.localStorage; } catch (_) { return null; } })() }) {
 clearColliders();
 const $ = id => document.getElementById(id);
 
@@ -3196,7 +3196,7 @@ $('sens2').addEventListener('input', e => { setSens(+e.target.value); $('sens').
    Main loop
    ========================================================= */
 /* Campanha: ecrã do mapa (src/campaign/ui.js). Estado 'map': a arena não corre nem pede o rato. */
-const campUI = createCampaignUI({ document, window, storage, legacyMapForTests: legacyCampaignMapForTests, i18n, startBattle: spec => startCampaignBattle(spec), onClose: () => { campIntro = false; state = 'menu'; $('menu').classList.remove('hidden'); refreshCampMenu(); } });
+const campUI = createCampaignUI({ document, window, storage, legacyMapForTests: legacyCampaignMapForTests, illustrated, i18n, startBattle: spec => startCampaignBattle(spec), onClose: () => { campIntro = false; state = 'menu'; $('menu').classList.remove('hidden'); refreshCampMenu(); } });
 const menu = createMenu({ document, i18n });
 let continueMessage = 'interface.continueCampaign';
 function refreshCampMenu() {
@@ -3324,7 +3324,9 @@ export async function boot(i18n = bindDocumentLanguage(window)) {
   const chars = await loadChars(THREE).catch(err => { console.warn('Animated characters unavailable, using simple models', err); return null; });
   const testQuery = new URLSearchParams(window.location.search);
   const legacyCampaignMapForTests = testQuery.get('manual') === '1' && testQuery.get('legacy-map-test') === '1';
-  const game = await createGame({ legacyCampaignMapForTests, i18n, chars, THREE, renderer, canvas, document, window, rapier, loader: new THREE.TextureLoader(), quality: (() => { try { return window.localStorage.getItem('viriato.quality') || 'medium'; } catch (_) { return 'medium'; } })() });
+  const preview = testQuery.get('map') === 'illustrated'
+    ? await (await import('./campaign/illustrated/preview.js')).createIllustratedPreview(testQuery) : null;
+  const game = await createGame({ illustrated: preview?.illustrated, storage: preview?.storage, legacyCampaignMapForTests, i18n, chars, THREE, renderer, canvas, document, window, rapier, loader: new THREE.TextureLoader(), quality: (() => { try { return window.localStorage.getItem('viriato.quality') || 'medium'; } catch (_) { return 'medium'; } })() });
   if (!game.physicsOk) document.getElementById('physnote').classList.remove('hidden');
   let last = null, frameId = null;
   // tuning aids: F8 = slow motion (1×, ½×, ¼×); window.__moves / window.__combat = poses and timings, editable live in the console
@@ -3334,7 +3336,10 @@ export async function boot(i18n = bindDocumentLanguage(window)) {
   // window.game: the hook the studio framework's checks drive the game through (src/hook.js).
   // ?manual=1 holds the loop so only step() moves the game; ?scene=<chapter> starts in that chapter.
   const { manual, scene } = installHook(game, window);
-  if (scene) game.start(null, scene);
+  if (preview) {
+    preview.open(game.campaign);
+    game.showCampaignMap();
+  } else if (scene) game.start(null, scene);
   const fps = newFps(), fpsEl = document.getElementById('fps');
   let lastFps;
   const renderFps = () => {

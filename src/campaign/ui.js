@@ -225,7 +225,7 @@ export function battleBrief(b, state, i18n = portuguese) {
  * dias inteiros da simulação (flow.order); a interface só escolhe quando dar o passo seguinte. Nada aqui decide regras:
  * o que uma ação daria vem de flow.preview / flow.previewTribute, os assuntos de issues.js.
  */
-export function createCampaignUI({ document: doc, window: win, storage, onClose = () => {}, startBattle = () => false, legacyMapForTests = false, i18n = createI18n() }) {
+export function createCampaignUI({ document: doc, window: win, storage, onClose = () => {}, startBattle = () => false, legacyMapForTests = false, illustrated = null, i18n = createI18n() }) {
   const $ = id => doc.getElementById(id);
   const el = (tag, cls, text) => { const e = doc.createElement(tag); if (cls) e.className = cls; if (text !== undefined && text !== null) e.textContent = text; return e; };
   let flow = null, view = null, active = false, selected = null, logDirty = true;
@@ -243,9 +243,18 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   const ctx2d = () => $('mapcv').getContext('2d');
   const stage = $('campaign-map-3d');
   let showMapDetails = false, communitiesKey = '';
-  stage.classList.toggle('hidden', legacyMapForTests);
-  $('mapcv').classList.toggle('hidden', !legacyMapForTests);
-  const map3d = legacyMapForTests ? null : createCampaignMapView(stage, {
+  const canvasMode = legacyMapForTests || !!illustrated;
+  const navigation = illustrated?.navigation($('mapcv'), {
+    reducedMotion: reduceMotion, onPick: mapClick,
+    onChange(next) { view = next; schedulePaint(); },
+    onHover(p) {
+      if (!p || !view) { updateHover(null,null); return; }
+      canvasHover(p.x,p.y);
+    },
+  });
+  stage.classList.toggle('hidden', canvasMode);
+  $('mapcv').classList.toggle('hidden', !canvasMode);
+  const map3d = canvasMode ? null : createCampaignMapView(stage, {
     window: win, i18n,
     onPick: (hit, event) => mapAction(hit, pointAt(hit), event),
     onHover: hit => updateHover(hit, pointAt(hit)),
@@ -273,8 +282,10 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const cv = $('mapcv'), dpr = win.devicePixelRatio || 1;
     const r = cv.getBoundingClientRect();
     const w = Math.round(r.width || win.innerWidth || 800), h = Math.round(r.height || (win.innerHeight || 600) - 104);
-    cv.width = Math.max(1, Math.round(w * dpr)); cv.height = Math.max(1, Math.round(h * dpr));
-    view = makeView(flow.state.world, w, h);
+    const width = Math.max(1, Math.round(w*dpr)), height = Math.max(1, Math.round(h*dpr));
+    if (cv.width !== width) cv.width = width;
+    if (cv.height !== height) cv.height = height;
+    view = navigation ? navigation.resize(flow.state.world,w,h) : makeView(flow.state.world, w, h);
     return dpr;
   }
 
@@ -305,6 +316,10 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (!ctx) return;
     const dpr = win.devicePixelRatio || 1;
     ctx.setTransform?.(dpr, 0, 0, dpr, 0, 0);
+    if (illustrated) {
+      fx.landscape = illustrated.background(flow.state.seed, flow.state.world);
+      fx.symbols = illustrated.symbols;
+    }
     drawMap(ctx, view, flow.state, fx);
     if (Object.keys(fl).length && !flashT && typeof win.requestAnimationFrame === 'function' && !reduceMotion()) flashT = win.requestAnimationFrame(() => { flashT = 0; paint(); });
   }
@@ -379,6 +394,11 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const key = JSON.stringify([placeholder, names]);
     if (key === communitiesKey) return;
     communitiesKey = key;
+    if (illustrated) {
+      const hint = tMap('a11y.illustratedCanvas');
+      $('mapcv').setAttribute('aria-label', hint);
+      $('mapcv').title = hint;
+    }
     const options = [['', placeholder], ...names].map(([value, title]) => {
       const option = el('option', null, title);
       option.value = value;
@@ -971,9 +991,11 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (!active || flow.phase !== 'mapa') return;
     const { sx, sy } = mapPoint(e);
     const hit = hitTest(view, flow.state, sx, sy);
-    mapAction(hit, toWorld(view, { x: sx, y: sy }), e);
+    const p = toWorld(view, { x: sx, y: sy });
+    if (illustrated && !hit && outsideWorld(p)) return;
+    mapAction(hit, illustrated && hit ? pointAt(hit) : p, e);
   }
-  if (legacyMapForTests) $('mapcv').addEventListener('click', mapClick);
+  if (legacyMapForTests && !navigation) $('mapcv').addEventListener('click', mapClick);
   function hoverLabel(hit, at) {
     const s = flow.state;
     const days = inReach(s.party, at) ? 0 : marchDaysTo(s.world, s.party, at);
@@ -1005,12 +1027,24 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   }
   function pointerMove(e) {
     if (!active || !flow || flow.phase !== 'mapa' || !view) return;
-    const { sx, sy } = mapPoint(e), hit = hitTest(view, flow.state, sx, sy);
-    const at = hit?.type === 'settlement' ? settlement(hit.id) : toWorld(view, { x: sx, y: sy });
+    const { sx, sy } = mapPoint(e);
+    canvasHover(sx,sy);
+  }
+  function outsideWorld(p) {
+    return p.x < 0 || p.y < 0 || p.x > view.world.w || p.y > view.world.h;
+  }
+  function canvasHover(sx,sy) {
+    if (!active || !flow || flow.phase !== 'mapa' || !view) return;
+    const hit = hitTest(view, flow.state, sx, sy);
+    const ground = toWorld(view, { x: sx, y: sy });
+    if (illustrated && !hit && outsideWorld(ground)) {
+      $('mapcv').style.cursor = 'grab'; updateHover(null, null); return;
+    }
+    const at = illustrated && hit ? pointAt(hit) : hit?.type === 'settlement' ? settlement(hit.id) : ground;
     $('mapcv').style.cursor = hit ? 'pointer' : 'crosshair';
     updateHover(hit, at);
   }
-  if (legacyMapForTests) {
+  if (legacyMapForTests && !navigation) {
     $('mapcv').addEventListener('mousemove', pointerMove);
     $('mapcv').addEventListener('mouseleave', () => {
       $('mapcv').style.cursor = 'crosshair';
@@ -1150,7 +1184,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (r.refused) return;
     say(r.events); render();
   });
-  function suspend() { pause(); map3d?.suspend(); stopMarch(); hover = null; active = false; $('map').classList.add('hidden'); }
+  function suspend() { navigation?.stop(); pause(); map3d?.suspend(); stopMarch(); hover = null; active = false; $('map').classList.add('hidden'); }
   function battleDone(result, line) {
     let r = { events: [] };
     if (flow && flow.phase === 'batalha') r = flow.finishBattle(result);
@@ -1285,6 +1319,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     render();
   }
   function close() {
+    navigation?.stop();
     if (!active) return;
     tacticalArena?.dispose(); tacticalArena = null; tacticalNotice = null;
     pause(); map3d?.suspend(); stopMarch(); hover = null;
