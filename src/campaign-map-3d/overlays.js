@@ -132,23 +132,38 @@ export function makePlanning(fx, terrain, projection) {
 }
 
 /** Keep the selection ring and the new four-figure warband alive for the loaded world. */
+const RING_MAX_SCALE = 2;   // the ring's vertex buffer is sized for this much screen-scale growth
+
 export function makeParty(terrain, projection, position) {
   const group = new THREE.Group();
   const ring = mutableStroke(terrain, projection, { color: '#ffea9b', width: 2.4 },
-    18 * (ringPoints({ x: 0, y: 0, r: 11 }).length - 1));
+    18 * (ringPoints({ x: 0, y: 0, r: 11 * RING_MAX_SCALE }).length - 1));
   group.add(ring.mesh);
   const warband = makeWarband();
   group.add(warband);
-  let previous, heading = 0;
+  let previous, lastStep = 0, heading = 0, facing = 0, scale = 1;
   group.userData.updateParty = (party, step = 0) => {
     const dx = party.x - (previous?.x ?? party.x), dy = party.y - (previous?.y ?? party.y);
-    if (Math.hypot(dx, dy) > 0.01) heading = Math.atan2(dx, dy);
+    const travelled = Math.hypot(dx, dy);
+    if (travelled > 0.01) heading = Math.atan2(dx, dy);
     previous = { x: party.x, y: party.y };
-    group.userData.heading = heading;
+    lastStep = step;
+    // Turn towards the displayed direction over a few frames (shortest way round); settle when the march ends.
+    const turn = Math.atan2(Math.sin(heading - facing), Math.cos(heading - facing));
+    facing = step ? facing + turn * 0.22 : heading;
+    group.userData.heading = facing;
     const p = projection.toScene(party, terrain.heightAt(party.x, party.y));
     warband.position.set(p.x, p.y, p.z);
-    warband.userData.update(party, heading, step, terrain);
-    ring.update(ringPoints({ ...party, r: 11 }));
+    warband.userData.update(party, facing, travelled, !!step, terrain);
+    ring.update(ringPoints({ ...party, r: 11 * scale }));
+  };
+  /** Distance compensation: the band and its ring grow together as the camera pulls back (1 = map scale). */
+  group.userData.setScreenScale = next => {
+    next = Math.min(next, RING_MAX_SCALE);
+    if (Math.abs(next - scale) < 0.005) return;
+    scale = next;
+    warband.scale.setScalar(scale);
+    if (previous) group.userData.updateParty(previous, lastStep);
   };
   group.userData.updateParty(position);
   group.userData.stats = { ...warband.userData.stats, meshes: warband.userData.stats.meshes + 1,

@@ -1,0 +1,289 @@
+{
+ "environment": "Chromium headless, SwiftShader (software GPU); seed 1234; same v1 save in the three checkouts",
+ "checkouts": {
+  "m0": "156f2d0",
+  "m1_original": "a81c80d",
+  "m1_1": "working tree of this commit"
+ },
+ "band_screen_size_px_without_ring_or_label": {
+  "note": "bounding box of the band (M0: the token) projected on screen; zoom 0.8 = farthest, 1 = normal, 2.2 and 4 = closer",
+  "m0": {
+   "1440x900-z0.8": [
+    7,
+    10
+   ],
+   "1440x900-z1": [
+    9,
+    13
+   ],
+   "1440x900-z2.2": [
+    20,
+    28
+   ],
+   "1440x900-z4": [
+    36,
+    50
+   ],
+   "1280x800-z0.8": [
+    6,
+    9
+   ],
+   "1280x800-z1": [
+    8,
+    11
+   ],
+   "1280x800-z2.2": [
+    17,
+    24
+   ],
+   "1280x800-z4": [
+    31,
+    43
+   ],
+   "1024x600-z0.8": [
+    5,
+    7
+   ],
+   "1024x600-z1": [
+    6,
+    8
+   ],
+   "1024x600-z2.2": [
+    13,
+    18
+   ],
+   "1024x600-z4": [
+    23,
+    33
+   ],
+   "844x390-z0.8": [
+    3,
+    4
+   ],
+   "844x390-z1": [
+    3,
+    5
+   ],
+   "844x390-z2.2": [
+    7,
+    10
+   ],
+   "844x390-z4": [
+    13,
+    19
+   ]
+  },
+  "m1_original": {
+   "1440x900-z0.8": [
+    15,
+    16
+   ],
+   "1440x900-z1": [
+    18,
+    20
+   ],
+   "1440x900-z2.2": [
+    41,
+    45
+   ],
+   "1440x900-z4": [
+    74,
+    82
+   ],
+   "1280x800-z0.8": [
+    13,
+    14
+   ],
+   "1280x800-z1": [
+    16,
+    17
+   ],
+   "1280x800-z2.2": [
+    35,
+    38
+   ],
+   "1280x800-z4": [
+    63,
+    70
+   ],
+   "1024x600-z0.8": [
+    10,
+    11
+   ],
+   "1024x600-z1": [
+    12,
+    13
+   ],
+   "1024x600-z2.2": [
+    27,
+    29
+   ],
+   "1024x600-z4": [
+    48,
+    53
+   ],
+   "844x390-z0.8": [
+    6,
+    6
+   ],
+   "844x390-z1": [
+    7,
+    8
+   ],
+   "844x390-z2.2": [
+    15,
+    17
+   ],
+   "844x390-z4": [
+    28,
+    31
+   ]
+  },
+  "m1_1": {
+   "1440x900-z0.8": [
+    25,
+    27
+   ],
+   "1440x900-z1": [
+    25,
+    27
+   ],
+   "1440x900-z2.2": [
+    43,
+    47
+   ],
+   "1440x900-z4": [
+    79,
+    85
+   ],
+   "1280x800-z0.8": [
+    24,
+    26
+   ],
+   "1280x800-z1": [
+    25,
+    27
+   ],
+   "1280x800-z2.2": [
+    37,
+    40
+   ],
+   "1280x800-z4": [
+    67,
+    73
+   ],
+   "1024x600-z0.8": [
+    19,
+    20
+   ],
+   "1024x600-z1": [
+    23,
+    25
+   ],
+   "1024x600-z2.2": [
+    28,
+    31
+   ],
+   "1024x600-z4": [
+    52,
+    56
+   ],
+   "844x390-z0.8": [
+    11,
+    12
+   ],
+   "844x390-z1": [
+    13,
+    14
+   ],
+   "844x390-z2.2": [
+    25,
+    27
+   ],
+   "844x390-z4": [
+    30,
+    32
+   ]
+  }
+ },
+ "band_budget_including_ring": {
+  "m1_original": {
+   "figures": 4,
+   "meshes": 13,
+   "triangles": 1061,
+   "materials": 2,
+   "geometries": 6,
+   "heading": 0
+  },
+  "m1_1": {
+   "figures": 4,
+   "meshes": 7,
+   "triangles": 1188,
+   "materials": 2,
+   "geometries": 7,
+   "heading": 0
+  }
+ },
+ "scene_initial_view": {
+  "1440x900": {
+   "draw_calls": {
+    "m0": 51,
+    "m1_original": 62,
+    "m1_1": 56
+   },
+   "live_geometries": {
+    "m0": 16,
+    "m1_original": 20,
+    "m1_1": 21
+   },
+   "state_and_save_equal_to_m0_after_four_marches": true,
+   "party_builds_after_four_marches": 1,
+   "final_heading": 0
+  },
+  "1280x800": {
+   "draw_calls": {
+    "m0": 51,
+    "m1_original": 62,
+    "m1_1": 56
+   },
+   "live_geometries": {
+    "m0": 16,
+    "m1_original": 20,
+    "m1_1": 21
+   },
+   "state_and_save_equal_to_m0_after_four_marches": true,
+   "party_builds_after_four_marches": 1,
+   "final_heading": 0
+  },
+  "1024x600": {
+   "draw_calls": {
+    "m0": 51,
+    "m1_original": 62,
+    "m1_1": 56
+   },
+   "live_geometries": {
+    "m0": 16,
+    "m1_original": 20,
+    "m1_1": 21
+   },
+   "state_and_save_equal_to_m0_after_four_marches": true,
+   "party_builds_after_four_marches": 1,
+   "final_heading": 0
+  },
+  "844x390": {
+   "draw_calls": {
+    "m0": 51,
+    "m1_original": 62,
+    "m1_1": 56
+   },
+   "live_geometries": {
+    "m0": 16,
+    "m1_original": 20,
+    "m1_1": 21
+   },
+   "state_and_save_equal_to_m0_after_four_marches": true,
+   "party_builds_after_four_marches": 1,
+   "final_heading": 0
+  }
+ }
+}

@@ -38,7 +38,7 @@ try {
       await shot('normal');
       const first = await page.evaluate(() => window.__game.campaign.mapMetrics());
       if (!baseline) {
-        assert.deepEqual([first.party.figures, first.party.meshes, first.party.materials], [4, 13, 2]);
+        assert.deepEqual([first.party.figures, first.party.meshes, first.party.materials], [4, 7, 2]);
         assert.ok(first.party.triangles <= 3000);
         const beforeSelect = await page.evaluate(() => ({ day: window.__game.campaign.flow.state.day,
           dest: window.__game.campaign.dest }));
@@ -47,7 +47,15 @@ try {
         assert.deepEqual(await page.evaluate(() => ({ day: window.__game.campaign.flow.state.day,
           dest: window.__game.campaign.dest })), beforeSelect, 'selecting the band must not give an order');
         await shot('selected');
+        await page.locator('.party-label').click();
       }
+      // Diagnostic only: the band without its label, then the farthest zoom.
+      await page.addStyleTag({ content: '.party-label{visibility:hidden!important}' });
+      await shot('normal-nolabel');
+      await page.evaluate(() => document.querySelectorAll('style').forEach(s => { if (s.textContent.includes('.party-label{visibility')) s.remove(); }));
+      await page.locator('#campaign-map-3d [data-camera=out]').click();
+      await shot('far');
+      await page.locator('#campaign-map-3d [data-camera=reset]').click();
       const canvas = page.locator('#m-scene');
       for (let zoom = 0; zoom < 4; zoom++) {
         await page.locator('#campaign-map-3d [data-camera=in]').click();
@@ -64,34 +72,40 @@ try {
       }
       await shot('zoom');
 
-      await page.evaluate(() => {
-        const campaign = window.__game.campaign, p = campaign.flow.state.party;
-        campaign.order({ kind: 'marchar', to: { x: p.x + 45, y: p.y } });
-      });
-      await page.waitForTimeout(180);
-      await shot('march-east');
-      await page.waitForTimeout(900);
-      const east = await page.evaluate(() => ({ metrics: window.__game.campaign.mapMetrics(),
-        state: window.__game.campaign.flow.state, save: localStorage.getItem('viriato.campaign') }));
-      if (!baseline) assert.ok(Math.abs(east.metrics.party.heading - Math.PI / 2) < 0.1,
-        'the group faces east after the first real march');
-      await page.evaluate(() => {
-        const campaign = window.__game.campaign, p = campaign.flow.state.party;
-        campaign.order({ kind: 'marchar', to: { x: p.x - 45, y: p.y } });
-      });
-      await page.waitForTimeout(1000);
-      await shot('west');
-      const west = await page.evaluate(() => ({ metrics: window.__game.campaign.mapMetrics(),
+      // Four real marches. Heading is the displayed direction: east +π/2, north π, west -π/2, south 0.
+      const before = await page.evaluate(() => window.__game.campaign.mapMetrics());
+      let east, west;
+      for (const [name, dx, dy, heading] of [['east', 45, 0, Math.PI / 2], ['north', 0, -45, Math.PI], ['west', -45, 0, -Math.PI / 2], ['south', 0, 45, 0]]) {
+        await page.evaluate(([dx, dy]) => {
+          const campaign = window.__game.campaign, p = campaign.flow.state.party;
+          campaign.order({ kind: 'marchar', to: { x: p.x + dx, y: p.y + dy } });
+        }, [dx, dy]);
+        await page.waitForTimeout(180);
+        await shot(`march-${name}`);
+        await page.waitForTimeout(900);
+        const after = await page.evaluate(() => ({ metrics: window.__game.campaign.mapMetrics(),
+          state: window.__game.campaign.flow.state, save: localStorage.getItem('viriato.campaign') }));
+        await shot(name);
+        if (!baseline) {
+          const turn = Math.atan2(Math.sin(after.metrics.party.heading - heading), Math.cos(after.metrics.party.heading - heading));
+          assert.ok(Math.abs(turn) < 0.1, `the group faces ${name} after a real march (${after.metrics.party.heading})`);
+          // Route strokes may be rebuilt per order; the band never is (pose-only frames: e2e-campaign-party-render).
+          assert.equal(after.metrics.partyBuilds, before.partyBuilds, `marching ${name} does not rebuild the band`);
+          assert.deepEqual(after.metrics.party.geometries, before.party.geometries);
+        }
+        Object.assign(before, after.metrics);
+        if (name === 'east') east = after;
+        if (name === 'west') west = after;
+      }
+      const last = await page.evaluate(() => ({ metrics: window.__game.campaign.mapMetrics(),
         state: window.__game.campaign.flow.state, save: localStorage.getItem('viriato.campaign') }));
       if (!baseline) {
-        assert.ok(Math.abs(west.metrics.party.heading + Math.PI / 2) < 0.1,
-          'the group faces west after reversing direction');
-        assert.equal(west.metrics.partyBuilds, 1);
-        assert.equal(west.metrics.party.meshes, first.party.meshes);
+        assert.equal(last.metrics.partyBuilds, 1);
+        assert.equal(last.metrics.party.meshes, first.party.meshes);
       }
       assert.deepEqual(errors, []);
       results.push({ resolution: `${width}x${height}`, start: first, east: east.metrics, west: west.metrics,
-        state: west.state, save: west.save, errors });
+        end: last.metrics, state: last.state, save: last.save, errors });
     } finally {
       await page.close();
     }
@@ -113,8 +127,8 @@ try {
     }
   }
   if (output) await writeFile(join(output, 'results.json'), JSON.stringify(results, null, 2) + '\n');
-  console.log(JSON.stringify(results.map(({ resolution, start, west, errors }) =>
-    ({ resolution, start: start.party, end: west.party, errors }))));
+  console.log(JSON.stringify(results.map(({ resolution, start, end, errors }) =>
+    ({ resolution, start: start.party, end: end.party, errors }))));
 } finally {
   await close();
 }

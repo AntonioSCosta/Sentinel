@@ -1,28 +1,31 @@
 import * as THREE from 'three';
 
-// Small map silhouettes, built once per loaded world. The companions share one material
-// and the same low-poly parts, but differ in colour, equipment and stance.
+// Small map silhouettes, built once per loaded world. The camera looks down steeply, so the band is read
+// mostly from above: dark wool cloaks with terrain showing between them, and Viriato's light mantle at the
+// front. Bodies are one baked mesh per figure; the eight legs and eight arms are two instanced meshes whose
+// matrices change in place, so a pose never creates geometry.
 const material = () => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true,
   side: THREE.DoubleSide });
 
 function parts() {
   return {
-    tunic: new THREE.CylinderGeometry(2.3, 3.1, 6.5, 6),
-    mantle: new THREE.CylinderGeometry(2.7, 3.9, 8, 7, 1, true, Math.PI / 3, Math.PI * 1.4),
-    head: new THREE.IcosahedronGeometry(1.8, 0),
-    hair: new THREE.ConeGeometry(2.0, 1.5, 6),
-    arm: new THREE.CylinderGeometry(0.8, 0.9, 4.3, 5),
-    belt: new THREE.CylinderGeometry(2.9, 2.9, 0.65, 6),
-    shield: new THREE.CylinderGeometry(2.6, 2.6, 0.55, 7),
-    boss: new THREE.CylinderGeometry(0.85, 0.85, 0.7, 6),
-    spear: new THREE.CylinderGeometry(0.28, 0.34, 12, 5),
-    spearhead: new THREE.ConeGeometry(0.75, 2.0, 5),
-    leg: new THREE.CylinderGeometry(0.85, 0.95, 4.4, 5),
-    shoe: new THREE.BoxGeometry(1.8, 0.85, 2.8),
+    tunic: new THREE.CylinderGeometry(1.9, 2.6, 6.2, 6),
+    cloak: new THREE.CylinderGeometry(2.5, 3.5, 7.2, 7, 1, true, Math.PI * 0.55, Math.PI * 1.25),
+    shoulders: new THREE.CylinderGeometry(1.3, 2.75, 1.7, 7),
+    head: new THREE.IcosahedronGeometry(1.6, 0),
+    hair: new THREE.ConeGeometry(1.75, 1.3, 6),
+    belt: new THREE.CylinderGeometry(2.25, 2.25, 0.6, 6),
+    shield: new THREE.CylinderGeometry(2.5, 2.5, 0.5, 8),
+    boss: new THREE.CylinderGeometry(0.8, 0.8, 0.8, 6),
+    spear: new THREE.CylinderGeometry(0.5, 0.5, 15, 4),
+    spearhead: new THREE.ConeGeometry(0.85, 2.4, 4),
+    leg: new THREE.CylinderGeometry(0.85, 0.75, 4.6, 5),
+    shoe: new THREE.BoxGeometry(1.7, 0.8, 2.6),
+    arm: new THREE.CylinderGeometry(0.75, 0.65, 4.4, 5),
   };
 }
 
-/** Bake several coloured primitives into one mesh; only the legs need separate transforms. */
+/** Bake several coloured primitives into one geometry. */
 function sculpt(build) {
   const positions = [], colors = [];
   const point = new THREE.Vector3();
@@ -48,79 +51,113 @@ function sculpt(build) {
   return geometry;
 }
 
+// Offsets in map units (x right, z forward). An uneven wedge: Viriato leads slightly off-centre and the
+// rear man trails, so the terrain shows between all four. Gait values give each man his own rhythm.
 const outfits = [
-  { name: 'viriato', x: 0, z: 5.2, tunic: '#574b3c', mantle: '#cbbda5', hair: '#38342e',
-    leather: '#4a3b2e', shield: false, spear: true, lean: 0 },
-  { name: 'companion-a', x: -5.2, z: -1.6, tunic: '#70634c', mantle: null, hair: '#43382d',
-    leather: '#52412e', shield: true, spear: true, lean: -0.08 },
-  { name: 'companion-b', x: 5.0, z: -2.4, tunic: '#675640', mantle: '#796f57', hair: '#332e29',
-    leather: '#4b3d30', shield: true, spear: false, lean: 0.07 },
-  { name: 'companion-c', x: -0.4, z: -6.2, tunic: '#777057', mantle: null, hair: '#524133',
-    leather: '#52442e', shield: false, spear: true, lean: -0.04 },
+  { name: 'viriato', x: 1.0, z: 7.2, tunic: '#5a4a38', cloak: '#ddd2bb', sleeve: '#cfc3aa', hair: '#2f2a25',
+    shield: false, spear: true, spearLean: 0.32, lean: 0, phase: 0, stride: 1, swing: 0.7 },
+  { name: 'companion-a', x: -6.6, z: 0.8, tunic: '#5b4632', cloak: '#2e2722', sleeve: '#5b4632', hair: '#3e3328',
+    shield: true, spear: true, spearLean: 0.4, lean: -0.06, phase: 2.2, stride: 0.94, swing: 0.62 },
+  { name: 'companion-b', x: 6.1, z: -1.4, tunic: '#4f3f2e', cloak: '#3a2d24', sleeve: '#4f3f2e', hair: '#2a2622',
+    shield: true, spear: false, spearLean: 0, lean: 0.05, phase: 4.1, stride: 1.05, swing: 0.66 },
+  { name: 'companion-c', x: -1.8, z: -7.6, tunic: '#625039', cloak: '#2b2420', sleeve: '#625039', hair: '#4a3b2d',
+    shield: false, spear: true, spearLean: -0.36, lean: -0.03, phase: 1.1, stride: 0.98, swing: 0.58 },
 ];
+// CYCLE: map units per full stride. A day's march shows 45 units in 300 ms; a stride matched to the legs (~8 units)
+// would flicker at ~17 Hz, so the stride is stretched to ~1.25 cycles per day (about 4 Hz): readable steps, some slip.
+const HIP = 4.6, SHOULDER = 10.2, CYCLE = 36;
 
 /** A visual-only warband. x/z are offsets in map units and y follows the local terrain. */
 export function makeWarband() {
   const root = new THREE.Group();
   const template = parts(), sharedMaterial = material(), figures = [];
   const legGeometry = sculpt(add => {
-    add(template.leg, '#71624a', { y: -2.25 });
-    add(template.shoe, '#4d3e30', { y: -4.25, z: 0.45 });
+    add(template.leg, '#5e4f3c', { y: -2.3 });
+    add(template.shoe, '#2f261e', { y: -4.4, z: 0.4 });
   });
+  // White sleeves take each man's colour from the instance.
+  const armGeometry = sculpt(add => add(template.arm, '#ffffff', { y: -2.1 }));
+  const legs = new THREE.InstancedMesh(legGeometry, sharedMaterial, outfits.length * 2);
+  const arms = new THREE.InstancedMesh(armGeometry, sharedMaterial, outfits.length * 2);
+  for (const limbs of [legs, arms]) {
+    limbs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    limbs.frustumCulled = false;   // the instances move every pose; the default sphere would go stale
+  }
+  const tint = new THREE.Color();
   for (const [index, outfit] of outfits.entries()) {
     const person = new THREE.Group();
     person.name = outfit.name;
     person.position.set(outfit.x, 0, outfit.z);
     person.rotation.z = outfit.lean;
     const bodyGeometry = sculpt(add => {
-      add(template.tunic, outfit.tunic, { y: 8.2 });
-      if (outfit.mantle) add(template.mantle, outfit.mantle, { y: 8.5 });
-      add(template.belt, outfit.leather, { y: 5.7 });
-      add(template.head, '#ab8566', { y: 13.6 });
-      add(template.hair, outfit.hair, { y: 15.1, sy: index === 2 ? 0.65 : 0.9 });
-      add(template.arm, outfit.tunic, { x: -3.0, y: 9.0, rz: -0.25 });
-      add(template.arm, outfit.tunic, { x: 3.0, y: 9.0, rz: 0.25 });
+      add(template.tunic, outfit.tunic, { y: 7.6 });
+      add(template.cloak, outfit.cloak, { y: 8.1 });
+      add(template.shoulders, outfit.cloak, { y: 10.9 });
+      add(template.belt, '#2c241c', { y: 5.5 });
+      add(template.head, '#a98466', { y: 13.0 });
+      add(template.hair, outfit.hair, { y: 14.35, sy: index === 2 ? 0.7 : 1 });
       if (outfit.shield) {
-        add(template.shield, outfit.leather, { x: -4.1, y: 7.8, z: 1.6, rx: Math.PI / 2 });
-        add(template.boss, '#a49370', { x: -4.1, y: 7.8, z: 2.0, rx: Math.PI / 2 });
+        // The small round caetra on the left forearm, tilted back so its face shows from the map camera.
+        add(template.shield, '#b08a58', { x: -3.0, y: 7.8, z: 2.2, rx: Math.PI / 2 - 0.55, rz: 0.35 });
+        add(template.boss, '#e0d3b0', { x: -3.15, y: 8.05, z: 2.55, rx: Math.PI / 2 - 0.55, rz: 0.35 });
       }
       if (outfit.spear) {
-        add(template.spear, '#755f41', { x: 4.15, y: 9.5, z: 1.0, rz: index === 3 ? -0.13 : 0.08 });
-        add(template.spearhead, '#948c78', { x: 4.15, y: 16.3, z: 1.0 });
+        add(template.spear, '#5e4630', { x: 3.4, y: 9.8, z: 0.8, rz: -outfit.spearLean, rx: 0.12 });
+        add(template.spearhead, '#d9d3c0', { x: 3.4 + Math.sin(outfit.spearLean) * 8.4, y: 9.8 + Math.cos(outfit.spearLean) * 8.4,
+          z: 0.8 + Math.sin(0.12) * 8.4, rz: -outfit.spearLean, rx: 0.12 });
       }
     });
     const body = new THREE.Mesh(bodyGeometry, sharedMaterial);
     person.add(body);
-    const legs = [-1, 1].map(side => {
-      const leg = new THREE.Mesh(legGeometry, sharedMaterial);
-      leg.position.set(side * 1.5, 5.0, 0);
-      person.add(leg);
-      return leg;
-    });
     root.add(person);
-    figures.push({ person, body, legs, outfit, phase: index * 0.8 });
+    arms.setColorAt(index * 2, tint.set(outfit.sleeve));
+    arms.setColorAt(index * 2 + 1, tint);
+    figures.push({ person, outfit, index });
   }
+  root.add(legs, arms);
   for (const geometry of Object.values(template)) geometry.dispose();
 
-  function update(position, heading, step, terrain) {
+  const limb = new THREE.Matrix4(), turn = new THREE.Matrix4(), pivot = new THREE.Vector3();
+  let distance = 0, amplitude = 0;
+  function place(mesh, slot, person, x, y, angle) {
+    limb.makeTranslation(pivot.set(x, y, 0));
+    mesh.setMatrixAt(slot, limb.premultiply(person.matrix).multiply(turn.makeRotationX(angle)));
+  }
+
+  /**
+   * Pose the band. `travelled` is the displayed distance moved since the last pose (map units) and drives the
+   * stride, so feet keep pace with the ground; `walking` is false once the march tween has ended.
+   */
+  function update(position, heading, travelled, walking, terrain) {
     root.rotation.y = heading;
-    const center = terrain.heightAt(position.x, position.y);
-    const sin = Math.sin(heading), cos = Math.cos(heading);
-    for (const { person, body, legs, outfit, phase } of figures) {
+    distance += travelled;
+    // Stride height follows the displayed speed: the eased tween slows to a stop, so the legs settle with it.
+    const target = walking ? Math.min(1, travelled / 0.35) : 0;
+    amplitude = walking ? amplitude + (target - amplitude) * 0.35 : 0;
+    const center = terrain.heightAt(position.x, position.y), size = root.scale.x;
+    const sin = Math.sin(heading) * size, cos = Math.cos(heading) * size;
+    for (const { person, outfit, index } of figures) {
       const x = position.x + outfit.x * cos + outfit.z * sin;
       const y = position.y - outfit.x * sin + outfit.z * cos;
-      person.position.y = terrain.heightAt(x, y) - center;
-      const stride = step ? Math.sin(step + phase) : 0;
-      legs[0].rotation.x = stride * 0.24;
-      legs[1].rotation.x = -stride * 0.24;
-      body.position.y = step ? Math.abs(stride) * 0.18 : 0;
+      const phase = distance / (CYCLE * outfit.stride * size) * Math.PI * 2 + outfit.phase;
+      const swing = Math.sin(phase) * outfit.swing * amplitude;
+      const bob = Math.abs(Math.cos(phase)) * 0.45 * amplitude;
+      person.position.y = (terrain.heightAt(x, y) - center) / size + bob;
+      person.rotation.x = 0.07 * amplitude;   // lean into the march
+      person.updateMatrix();
+      place(legs, index * 2, person, -1.1, HIP, swing);
+      place(legs, index * 2 + 1, person, 1.1, HIP, -swing);
+      place(arms, index * 2, person, -2.6, SHOULDER, -swing * 0.85);
+      place(arms, index * 2 + 1, person, 2.6, SHOULDER, outfit.spear ? swing * 0.3 : swing * 0.85);
     }
+    legs.instanceMatrix.needsUpdate = true;
+    arms.instanceMatrix.needsUpdate = true;
   }
 
   const meshes = [];
   root.traverse(object => { if (object.isMesh) meshes.push(object); });
   root.userData.stats = { figures: figures.length, meshes: meshes.length,
-    triangles: meshes.reduce((sum, mesh) => sum + mesh.geometry.getAttribute('position').count / 3, 0),
+    triangles: meshes.reduce((sum, mesh) => sum + mesh.geometry.getAttribute('position').count / 3 * (mesh.count ?? 1), 0),
     materials: new Set(meshes.map(mesh => mesh.material)).size,
     geometries: new Set(meshes.map(mesh => mesh.geometry)).size };
   root.userData.update = update;

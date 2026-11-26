@@ -55,3 +55,136 @@ Para repetir o comparativo, defina `SENTINEL_M1_BASELINE` com o caminho de um ch
 ## Validação visual independente pendente
 
 Peço ao FreeBuff que avalie sobretudo a distinção do manto de Viriato na vista normal, o peso visual do anel/etiqueta em 844×390, a formação sobre encostas e a leitura dos escudos e lanças no zoom. A escala normal estreita permite identificar o **bando**, mas não os quatro indivíduos separadamente. Os testes de desempenho correram apenas em GPU por software; falta confirmação visual e de fluidez num PC com GPU real. Não foi feito vídeo nesta entrega.
+
+---
+
+# M1.1 — Correção da legibilidade do bando
+
+A autoavaliação visual do M1 deu NO-GO: na vista normal, as quatro figuras fundiam-se numa mancha escura, Viriato não se distinguia, o grupo dependia do anel e da etiqueta, as pernas quase não se viam e a rotação mudava num quadro. Esta revisão corrige o mesmo PR. A simulação, a duração da marcha, a cadência dos dias, as interrupções e as gravações não mudam.
+
+## Diagnóstico medido
+
+A câmara do mapa é ortográfica e olha de cima, quase a pique. O bando lê-se sobretudo **de cima**: ombros, cabeças, mantos, escudos. Antes de mexer no modelo, medi a caixa do bando no ecrã, sem anel nem etiqueta ([métricas](../../production/qa/evidence/m1-warband/m1.1/metrics.json)):
+
+| Zoom | 1440×900 | 1280×800 | 1024×600 | 844×390 |
+| --- | ---: | ---: | ---: | ---: |
+| M0, peão | 9×13 px | 8×11 px | 6×8 px | 3×5 px |
+| M1 original | 18×20 px | 16×17 px | 12×13 px | **7×8 px** |
+| M1.1, normal | 25×27 px | 25×27 px | 23×25 px | 13×14 px |
+| M1.1, afastado (0,8) | 25×27 px | 24×26 px | 19×20 px | 11×12 px |
+| M1.1, aproximado (4) | 79×85 px | 67×73 px | 52×56 px | 30×32 px |
+
+O peão do M0 era **mais pequeno** que o bando. Lia-se a 4/5 porque era um losango amarelo-claro, sem sombreamento, sobre um terreno caqui médio (luminância ≈ 0,53): era um farol, não uma silhueta. A 844×390, o bando original cabia em 7×8 px, ou seja, menos de 2×4 px por homem. A essa escala, nenhuma combinação de cor, formação ou detalhe produz quatro silhuetas humanas.
+
+## Correções
+
+**Silhueta e contraste** (`party.js`):
+- **Formação:** cunha assimétrica e mais aberta. Viriato vai à frente, ligeiramente descentrado, e o último homem fica para trás. O terreno aparece entre os quatro. O raio da formação continua dentro do anel.
+- **Corpos:** mais esguios.
+- **Cores dos companheiros:** mantos de lã escura (#2b2420 a #3a2d24). Contrastam com o terreno sem brilho.
+- **Viriato:** manto claro de lã crua (#ddd2bb), com ombros e mangas da mesma cor. Distingue-se pela posição e pelo manto.
+- **Escudos:** caetras ocre com umbo claro, inclinadas para a câmara. No original ficavam de perfil.
+- **Lanças:** haste escura mais grossa, com inclinação diferente em cada homem. A lança sai da silhueta do corpo.
+- **Proibições respeitadas:** sem brilho, sem etiquetas novas, sem ornamentos, sem sombras e sem texturas. A paleta é a terrosa existente.
+
+**LOD como compensação contínua de distância** (`scene.js`, `overlays.js`):
+- Quando o mapa fica pequeno no ecrã, o bando e o anel crescem juntos. A regra é `escala = clamp(1,15 / píxeis por unidade, 1, 1,8)`.
+- Fatores por vista: ×1,25 a 1440×900 normal, ×1,46 a 1280×800 e ×1,8 a 1024×600 e 844×390. Com zoom ≥ 2, a escala é a do mapa.
+- **Porque não troquei de modelo:** é o mesmo modelo, com uma escala que varia continuamente com o zoom. Não há troca de modelo nem salto visual.
+- **Um modelo simplificado não ajudava:** a 13 px não há detalhe para retirar. O que faltava era tamanho e separação.
+- O anel tem orçamento de vértices para ×2. `setScreenScale` limita a escala a esse valor, para uma afinação futura não rebentar o buffer.
+- A etiqueta sobe com a escala.
+
+**Animação** (`party.js`, `overlays.js`):
+- **Pernas e braços:** dois `InstancedMesh` (8 pernas e 8 braços) cujas matrizes se reescrevem no mesmo buffer.
+- **Passada:** braço oposto à perna. O braço da lança balança menos. Há balanço vertical e inclinação para a frente.
+- **Fase por distância:** a fase segue a distância apresentada, não o tempo. A amplitude segue a velocidade da interpolação, por isso as pernas assentam com a desaceleração final.
+- **Diferenças entre homens:** fase, comprimento de passada e amplitude próprios.
+- **Rotação progressiva:** 22 % do ângulo em falta por quadro, pelo caminho mais curto. No fim da marcha assenta na direção apresentada.
+
+## Compromisso da marcha
+
+Um dia de marcha desloca 45 unidades em **300 ms** (`MARCH_SPEED` 45 em `src/campaign/simulation.js`). A pausa entre dias é de cerca de 1,1 s a 1×. Uma passada ajustada ao comprimento das pernas (≈ 8 unidades) daria ≈ 17 Hz: cintilação, não passos. O M1 original fixava 2,5 ciclos por troço, ≈ 8 Hz, o que também é impercetível. O M1.1 estica a passada para cerca de 1,25 ciclos por dia, ≈ 4 Hz: os passos leem-se, mas os pés escorregam cerca de 4×.
+
+Sem mudar a duração da marcha, não é possível ter passos visíveis e pés presos ao chão ao mesmo tempo. A solução real é a marcha contínua do M2/B3, que não implementei.
+
+## Custos
+
+| Métrica, incluindo o anel | M0 | M1 original | M1.1 |
+| --- | ---: | ---: | ---: |
+| Meshes do bando | 2 | 13 | **7** (4 corpos, 2 instanciados, anel) |
+| Triângulos do bando | — | 1061 | 1188 |
+| Geometrias do bando | 2 | 6 | 7 |
+| Materiais do bando | 2 | 2 | 2 |
+| Draw calls na vista inicial | 51 | 62 | **56** |
+| Geometrias vivas na vista inicial | 16 | 20 | 21 |
+
+**Sem geometria nova por quadro de pose:**
+- `partyBuilds` fica em 1 depois de quatro marchas reais.
+- Os conjuntos de geometrias e materiais e os buffers das instâncias são os mesmos antes e depois de 13 poses (teste unitário).
+- O E2E do M0 (`e2e-campaign-party-render`) volta a medir zero buffers criados ou libertados nos quadros só de pose.
+- Ao fim de quatro marchas, o estado e o save são idênticos aos do M0 em todas as resoluções.
+
+## Legibilidade
+
+**Escala:** 5 = pequeno bando de homens com chefe, lido de relance; 4 = grupo de figuras claramente identificável com um olhar curto; 3 = aglomerado de figuras, com esforço; 2 = mancha que depende do anel e da etiqueta; 1 = não se encontra.
+
+Avaliação feita por mim, sem anel nem etiqueta, à escala 1:1. Não é um playtest.
+
+| Vista normal | M0, peão | M1 original | M1.1 |
+| --- | :---: | :---: | :---: |
+| 1440×900 | 4 (marcador, não bando) | 2 | **4** |
+| 1280×800 | 4 | 2 | **4** |
+| 1024×600 | 3 | 2 | **4** |
+| 844×390 | 2 | 1–2 | **2–3** |
+
+Há duas leituras diferentes:
+- **O que é:** desde 1024×600, o M1.1 lê-se como quatro homens separados, com o de manto claro à frente e escudos e lanças à vista.
+- **Onde está:** sem anel, o bando continua menos fácil de **encontrar** de relance do que o losango amarelo do M0. É mais escuro e não brilha. Com o anel, encontra-se tão depressa como o peão.
+
+**Capturas:**
+- [1:1 a 1440×900](../../production/qa/evidence/m1-warband/m1.1/legibilidade-1440-1para1.jpg).
+- Recortes sem anel nem etiqueta: [normal](../../production/qa/evidence/m1-warband/m1.1/legibilidade-bare-z1.png), [afastado](../../production/qa/evidence/m1-warband/m1.1/legibilidade-bare-z0.8.png), [aproximado](../../production/qa/evidence/m1-warband/m1.1/legibilidade-bare-z4.png).
+- [Recortes com anel e etiqueta](../../production/qa/evidence/m1-warband/m1.1/legibilidade-crop-z1.png).
+- Lado a lado M0 | M1 | M1.1 por resolução: `compare-<resolução>-{normal,normal-nolabel,far,zoom}.jpg` em `production/qa/evidence/m1-warband/m1.1/`.
+- Capturas do M1.1 por resolução: normal, sem etiqueta, selecionado, afastado, aproximado, quatro marchas a meio e no fim, e PT-PT. Estão em `m1.1/after/`.
+
+## Marcha
+
+- [Vídeo: quatro direções, M1 original | M1.1, tempo real e câmara lenta ×4](../../production/qa/evidence/m1-warband/m1.1/marcha-4-direcoes.mp4).
+- Tiras de quadros: [M1 original](../../production/qa/evidence/m1-warband/m1.1/marcha-quadros-m1-original.png) · [M1.1](../../production/qa/evidence/m1-warband/m1.1/marcha-quadros-m1.1.png).
+
+**Como foram gerados:**
+- O vídeo e as tiras repõem um dia de marcha (45 unidades, 300 ms, *ease in-out*) a 60 quadros por segundo, pelo caminho real de pose. A câmara fica em zoom 4, centrada no bando.
+- São determinísticos porque, em SwiftShader, o browser só desenha 3 a 6 quadros por troço de 300 ms.
+- O script que os gera é descartável e não foi incluído.
+- **As subidas e descidas são reais:** nas encostas viradas para a câmara, o anel parece uma elipse e a formação estica, porque seguem o terreno.
+
+## Compromisso e alternativa
+
+A 844×390, a nota 4/5 **não é atingível com quatro modelos** sem os aumentar desproporcionadamente. Com escala ×2 e piso 1,6 testados, o bando chega a 15×16 px e continua 2–3/5. A 1440×900, a mesma afinação dá 34×37 px, maior do que uma aldeia.
+
+| Opção | Efeito | Recomendação |
+| --- | --- | --- |
+| **A. Aceitar** que a 844×390 o bando se encontra pelo anel e pela etiqueta, como as aldeias. As figuras leem-se a partir do zoom 2,2 (25×27 px). | Nenhum custo novo. | **Recomendada.** |
+| B. Compensação mais forte (piso 1,6, máximo 2) | 844×390 sobe só para 15×16 px; a 1440 o bando fica maior que as aldeias | Não recomendada |
+| C. Disco de chão claro sob o bando | Recupera a capacidade de se encontrar de relance, como o peão | Proibido nesta tarefa (efeito luminoso) |
+
+## Testes
+
+- `npm test`: 742/742. O teste do grupo cobre instâncias, buffers reutilizados, oposição das pernas e dos braços, rotação progressiva, assentamento no fim da marcha, escala com o anel e o limite ×2.
+- `npm run smoke`: 359 verificações sem erros.
+- `node tools/check-map-assets.mjs`: OK.
+- `tools/e2e-campaign-warband.mjs`, em quatro resoluções:
+  - orçamento de 4 figuras, 7 meshes e 2 materiais;
+  - seleção sem ordem;
+  - quatro marchas reais com direção verificada (±0,1 rad);
+  - `partyBuilds` em 1 e geometrias do bando constantes;
+  - capturas sem etiqueta, afastada e aproximada;
+  - PT-PT.
+- Repetido com `SENTINEL_M1_BASELINE` para M0 e para o M1 original: estado e save iguais.
+- Restantes E2E: ver o PR.
+
+**Pendente:**
+- Validação de fluidez numa GPU real.
+- Um playtest de legibilidade com pessoas, porque as notas acima são minhas.

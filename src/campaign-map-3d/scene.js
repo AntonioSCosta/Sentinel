@@ -6,6 +6,8 @@ import { generateVegetation } from './strategic.js';
 import { disposeGroup, makeForest, makeIntelligence, makeParty, makePlanning } from './overlays.js';
 import { leaderPath, pickStrategicPoint, positionLabels } from './interaction.js';
 
+const PARTY_PIXELS = 1.15, PARTY_MAX_SCALE = 1.8;   // band size floor (screen px per map unit) and its growth cap
+
 function indexedGeometry(positions, indices) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -302,6 +304,16 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
     houseLods[1].visible = !houseLods[0].visible;
   }
 
+  // The band keeps a readable size when the map is small on screen: below PARTY_PIXELS screen pixels per map
+  // unit it grows continuously (no model swap), up to PARTY_MAX_SCALE; closer in it is drawn at map scale.
+  function updatePartyScale() {
+    if (!partyVisual) return;
+    const pixels = screenHeight / (camera.top - camera.bottom);
+    const scale = THREE.MathUtils.clamp(PARTY_PIXELS / pixels, 1, PARTY_MAX_SCALE);
+    partyVisual.userData.setScreenScale(scale);
+    partyMarker.userData.lift = 19 * scale;
+  }
+
   function draw() {
     if (!terrain) return;
     camera.position.copy(target).addScaledVector(offset, Math.max(terrain.w, terrain.h) + 400);
@@ -312,6 +324,7 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
     camera.top = halfHeight; camera.bottom = -halfHeight;
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();
+    updatePartyScale();
     updateRoundhouse();
     renderer.render(scene, camera);
     layoutLabels();
