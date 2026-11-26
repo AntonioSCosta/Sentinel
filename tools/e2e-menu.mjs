@@ -1,151 +1,180 @@
-// E2E (Chrome real): o menu inicial é uma lista vertical e cada entrada abre a sua janela.
-// Em todas as resoluções comuns: a lista e a ação principal de cada janela estão à vista sem rolar, as janelas abrem e fecham com
-// rato e teclado, as opções alcançam-se a rolar e a confirmação de «Começar de novo» não sobrevive ao fecho da janela.
-//   node tools/e2e-menu.mjs [pasta-de-capturas]
+// Browser regression checks for the persistent menu, Game/Steam Deck viewports and idle rendering.
 import fs from 'node:fs';
 import path from 'node:path';
 import { startE2E } from './e2e-lib.mjs';
 
-const OUT = process.argv[2] || '';
-const { url, browser, check, fmt, finish } = await startE2E();
-const inside = (b, vp) => !!b && b.x >= 0 && b.y >= 0 && b.x + b.width <= vp.width + 0.5 && b.y + b.height <= vp.height + 0.5;
-const SECTIONS = ['campaign', 'missions', 'controls', 'chronicle', 'language'];
-const shown = page => page.evaluate(() => [...document.querySelectorAll('#menu .menu-win')].filter(w => !w.hidden && w.getClientRects().length).map(w => w.id));
+const OUT = process.argv[2];
+const { url, browser, check, finish } = await startE2E();
+const sections = ['campaign', 'missions', 'controls', 'chronicle', 'language'];
+const viewports = [[1920, 1080], [1280, 800], [1366, 768], [1024, 600], [844, 390], [432, 390]];
+const inside = (box, vp) => !!box && box.x >= 0 && box.y >= 0 && box.x + box.width <= vp.width + 1 && box.y + box.height <= vp.height + 1;
 
-const viewports = [[1920, 1080], [1366, 768], [1280, 800], [1024, 600], [844, 390], [432, 390]];
-for (const [vp, locale] of viewports.flatMap(([width, height]) => ['pt-PT', 'en'].map(locale => [{ width, height }, locale]))) {
-  const tag = `${vp.width}x${vp.height}-${locale}`;
+for (const [width, height] of viewports) for (const locale of ['pt-PT', 'en']) {
+  const viewport = { width, height };
+  const tag = `${width}x${height}-${locale}`;
   const english = locale === 'en';
-  const compact = vp.width <= 860 || vp.height <= 560;
-  const page = await browser.newPage({ viewport: vp, locale });
-  const close = sec => page.click(compact ? `#sec-${sec} [data-close]` : `#tab-${sec}`);
-  const errors = []; page.on('pageerror', e => errors.push(String(e)));
-  await page.goto(url); await page.waitForFunction(() => window.game && !document.getElementById('start').disabled, null, { timeout: 60000 });
-  const box = sel => page.locator(sel).boundingBox();
+  const page = await browser.newPage({ viewport, locale, reducedMotion: 'reduce' });
+  const errors = [];
+  page.on('pageerror', error => errors.push(String(error)));
+  await page.goto(url);
+  await page.waitForFunction(() => window.__game, null, { timeout: 60000 });
+  await page.evaluate(() => document.fonts.ready);
   const shot = async name => {
     if (!OUT) return;
     fs.mkdirSync(OUT, { recursive: true });
-    await page.evaluate(async () => { await document.fonts.ready; window.game.step(); });
-    await page.screenshot({ path: path.join(OUT, `menu-${name}-${tag}.png`) });
+    await page.screenshot({ path: path.join(OUT, `${tag}-${name}.png`) });
   };
+  const tab = section => page.locator(`#tab-${section}`);
+  const panel = section => page.locator(`#sec-${section}`);
+  const visible = () => page.locator('#menu [role="tabpanel"]:visible').evaluateAll(panels => panels.map(p => p.id));
+  const active = () => page.locator('#menu [aria-selected="true"]').getAttribute('id');
+  const select = section => tab(section).click();
 
-  // sem campanha gravada: só o título, a lista e o ano; nenhuma janela aberta
-  check(`${tag}: abre sem janelas, com as entradas fechadas`, (await shown(page)).length === 0
-    && await page.evaluate(() => [...document.querySelectorAll('.menu-nav [data-sec]')].every(b => b.getAttribute('aria-expanded') === 'false')));
-  check(`${tag}: título «Sentinel» com a cor da paleta`, await page.locator('.menu-head h1').evaluate(h => h.textContent === 'Sentinel'
-    && getComputedStyle(h).color === getComputedStyle(document.body).color));
-  check(`${tag}: data sob o título`, (await page.locator('.menu-head .menu-year').innerText()).trim() === (english ? '147 BC' : '147 A.C.')
-    && inside(await box('#menu .menu-year'), vp));
-  for (const sec of SECTIONS) check(`${tag}: entrada ${sec} à vista`, inside(await box(`#tab-${sec}`), vp));
-  await shot('inicio');
+  check(`${tag}: Campanha abre como secção inicial`, (await visible()).join() === 'sec-campaign'
+    && await active() === 'tab-campaign' && await page.locator('#camp-cont').isHidden()
+    && inside(await page.locator('#camp-new').boundingBox(), viewport));
+  check(`${tag}: título, data e paleta`, await page.locator('.menu-head h1').evaluate(h => h.textContent === 'Sentinel'
+    && getComputedStyle(h).color === getComputedStyle(document.body).color)
+    && await page.locator('.menu-year').innerText() === (english ? '147 BC' : '147 A.C.'));
+  check(`${tag}: todas as secções estão visíveis na navegação`, (await Promise.all(sections.map(async section =>
+    inside(await tab(section).boundingBox(), viewport)))).every(Boolean));
+  await shot('campanha');
 
-  // A entrada ativa fecha a sua janela em desktop. Na versão compacta, há um botão de fecho acessível.
-  for (const sec of SECTIONS) {
-    await page.click(`#tab-${sec}`);
-    const open = await shown(page);
-    check(`${tag}: ${sec} abre só a sua janela`, open.length === 1 && open[0] === `sec-${sec}`
-      && await page.getAttribute(`#tab-${sec}`, 'aria-expanded') === 'true', open.join(','));
-    const w = await box(`#sec-${sec}`);
-    check(`${tag}: a janela ${sec} cabe no ecrã`, inside(w, vp), fmt(w));
-    const closeButton = page.locator(`#sec-${sec} [data-close]`);
-    check(`${tag}: fecho ${sec} disponível conforme o formato`, await closeButton.isVisible() === compact
-      && await closeButton.getAttribute('aria-label') === (english ? 'Close' : 'Fechar')
-      && await page.locator(`#sec-${sec}`).getAttribute('role') === (compact ? 'dialog' : 'region'));
-    if (sec === 'campaign') { check(`${tag}: «Nova campanha» à vista`, inside(await box('#camp-new'), vp)); await shot('campanha'); }
-    if (sec === 'missions') { const st = await box('#start'); check(`${tag}: «Começar» da missão à vista, sem rolar`, inside(st, vp), fmt(st)); await shot('missoes'); }
-    if (sec === 'language') {
-      check(`${tag}: seletor à vista numa janela compacta`, inside(await box('#menu-language'), vp) && w.height < vp.height / 2);
-      if (compact) {
-        await page.keyboard.press('Shift+Tab');
-        const last = await page.evaluate(() => document.activeElement.id);
-        await page.keyboard.press('Tab');
-        check(`${tag}: Tab fica dentro da janela opaca`, last === 'menu-language' && await closeButton.evaluate(b => b === document.activeElement));
-      }
-      await shot('idioma');
-    }
-    if (sec === 'controls') {
-      check(`${tag}: Opções localizadas`, await page.locator('#sec-controls-h').textContent() === (english ? 'Options' : 'Opções'));
-      const r = await page.evaluate(() => {
-        const body = document.querySelector('#sec-controls .win-body');
-        const last = [...body.querySelectorAll('.keys span, .keys b')].filter(e => e.textContent.trim()).pop();
-        body.scrollTop = body.scrollHeight; const l = last.getBoundingClientRect(), c = body.getBoundingClientRect();
-        return { top: l.top, bottom: l.bottom, boxTop: c.top, boxBottom: c.bottom, overflow: body.scrollWidth - body.clientWidth };
-      });
-      check(`${tag}: a última linha dos controlos alcança-se a rolar`, r.top >= r.boxTop - 1 && r.bottom <= r.boxBottom + 1, `última ${Math.round(r.top)}–${Math.round(r.bottom)}`);
-      check(`${tag}: Opções sem scroll horizontal`, r.overflow === 0);
-      await page.locator('#sec-controls .win-body').evaluate(body => { body.scrollTop = 0; });
-      await shot('controlos');
-    }
-    if (sec === 'chronicle') {
-      const list = page.locator('#menu-chron');
-      const locked = list.locator('.locked');
-      const galba = list.locator('[data-entry="galba"]');
-      check(`${tag}: a Crónica sem gravação oculta as invenções e os dados da entrada bloqueada`, await list.locator('li').count() === 4
-        && await list.locator('details').count() === 3 && await locked.count() === 1
-        && await locked.textContent() === (english ? 'Not yet lived' : 'Ainda não vivido') && await locked.getAttribute('data-entry') === null);
-      await galba.locator('summary').click();
-      check(`${tag}: a Crónica localiza o corpo e a citação`, (await galba.locator('p').first().textContent()).startsWith(english ? 'According to Appian' : 'Segundo Apiano')
-        && (await galba.locator('.cit').textContent()).startsWith(english ? 'Appian, Iberian Wars' : 'Apiano, Ibérica'));
-      await shot('cronica-bloqueada');
-    }
-    await close(sec);
-    check(`${tag}: fechar ${sec} devolve o foco à entrada`, (await shown(page)).length === 0
-      && await page.evaluate(sec => document.activeElement.id === `tab-${sec}`, sec));
+  const persistent = await page.locator('#menu-content').elementHandle();
+  const bounds = await persistent.boundingBox();
+  for (const section of sections) {
+    await select(section);
+    check(`${tag}: ${section} dentro do mesmo painel persistente`, (await visible()).join() === `sec-${section}`
+      && await active() === `tab-${section}` && await tab(section).getAttribute('tabindex') === '0'
+      && await panel(section).evaluate((element, content) => element.parentElement === content
+        && getComputedStyle(element).backgroundColor === 'rgba(0, 0, 0, 0)'
+        && getComputedStyle(element).position === 'static', persistent)
+      && JSON.stringify(await persistent.boundingBox()) === JSON.stringify(bounds)
+      && inside(await panel(section).boundingBox(), viewport)
+      && await page.locator('#menu [aria-modal="true"]:visible').count() === 0);
   }
 
-  // teclado: setas, Home e End percorrem a lista; Enter abre com o foco no título da janela; Escape fecha
-  await page.focus('#tab-campaign'); await page.keyboard.press('ArrowDown');
-  check(`${tag}: seta para baixo passa para Missões`, await page.evaluate(() => document.activeElement.id === 'tab-missions'));
+  await tab('language').focus();
+  const narrow = width <= 700;
+  await page.keyboard.press(narrow ? 'ArrowRight' : 'ArrowDown');
+  const wrap = await active();
   await page.keyboard.press('End');
-  check(`${tag}: End vai para Idioma`, await page.evaluate(() => document.activeElement.id === 'tab-language'));
-  await page.keyboard.press('ArrowDown');
-  check(`${tag}: a seta dá a volta à lista`, await page.evaluate(() => document.activeElement.id === 'tab-campaign'));
-  await page.keyboard.press('End'); await page.keyboard.press('Home'); await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
-  check(`${tag}: Enter abre Missões com o foco no título`, (await shown(page)).join() === 'sec-missions'
-    && await page.evaluate(() => document.activeElement.id === 'sec-missions-h'));
-  await page.keyboard.press('Escape');
-  check(`${tag}: Escape fecha a janela e devolve o foco`, (await shown(page)).length === 0
-    && await page.evaluate(() => document.activeElement.id === 'tab-missions'));
+  const end = await active();
+  await page.keyboard.press('Home');
+  await page.keyboard.press(narrow ? 'ArrowRight' : 'ArrowDown');
+  const focused = await page.evaluate(() => document.activeElement.id);
+  await page.keyboard.press('Tab');
+  check(`${tag}: setas, Home, End e Tab navegam sem bloquear o foco`, wrap === 'tab-campaign' && end === 'tab-language'
+    && focused === 'tab-missions' && await panel('missions').evaluate(element => element.contains(document.activeElement))
+    && await page.getByRole('tablist').getAttribute('aria-orientation') === (narrow ? 'horizontal' : 'vertical'));
 
-  // com uma campanha a meio: a janela Campanha abre sozinha, continuar é a ação principal, a confirmação cabe no ecrã
+  check(`${tag}: quatro missões e ação visível, resumo recolhido`, await panel('missions').locator('[data-ch]').count() === 4
+    && inside(await page.locator('#start').boundingBox(), viewport) && await page.locator('#brief').isHidden());
+  await panel('missions').locator('[data-ch="emboscada"]').click();
+  await panel('missions').locator('summary').click();
+  check(`${tag}: a missão selecionada atualiza o resumo e conserva a ação`, await page.evaluate(() => window.__game.chapter) === 'emboscada'
+    && await page.locator('#brief').isVisible() && inside(await page.locator('#start').boundingBox(), viewport));
+  await panel('missions').locator('summary').click();
+  await shot('missoes');
+
+  await select('controls');
+  await panel('controls').locator('[data-diff="2"]').click();
+  await panel('controls').locator('[data-q="low"]').click();
+  await page.locator('#sens').focus();
+  await page.keyboard.press('End');
+  check(`${tag}: dificuldade, gráficos e sensibilidade funcionam`, await panel('controls').locator('[data-diff="2"]').getAttribute('aria-pressed') === 'true'
+    && await page.evaluate(() => window.__game.quality === 'low') && await page.locator('#sens').inputValue() === '10');
+  await shot('opcoes');
+  await panel('controls').locator('summary').click();
+  const optionsFit = await panel('controls').locator('.menu-section-body').evaluate(body => {
+    body.scrollTop = body.scrollHeight;
+    const last = [...body.querySelectorAll('.keys span')].filter(node => node.textContent.trim()).at(-1).getBoundingClientRect();
+    const box = body.getBoundingClientRect();
+    return body.scrollWidth === body.clientWidth && last.top >= box.top - 1 && last.bottom <= box.bottom + 1;
+  });
+  check(`${tag}: controlos alcançáveis sem scroll horizontal`, optionsFit);
+
+  await select('chronicle');
+  const chronicle = page.locator('#menu-chron');
+  check(`${tag}: a Crónica lista apenas entradas desbloqueadas`, (await chronicle.locator('li').evaluateAll(rows =>
+    rows.map(row => row.dataset.entry))).join() === 'galba,vetilio,traicao');
+  await chronicle.locator('[data-entry="galba"] summary').click();
+  const galba = await chronicle.locator('[data-entry="galba"] p').first().textContent();
+  check(`${tag}: a Crónica apresenta conteúdo localizado`, galba.startsWith(english ? 'According to Appian' : 'Segundo Apiano'));
+  await chronicle.locator('[data-entry="galba"] summary').click();
+  await shot('cronicas');
+
+  await select('language');
+  const next = english ? 'pt-PT' : 'en';
+  const language = value => page.locator(`[data-menu-language="${value}"]`);
+  await language(next).click();
+  check(`${tag}: Language atualiza seleção, navegação e idioma do documento`, await page.locator('html').getAttribute('lang') === next
+    && await language(next).getAttribute('aria-pressed') === 'true' && await tab('controls').textContent() === (english ? 'Opções' : 'Options')
+    && await tab('language').textContent() === 'Language');
+  await language(locale).click();
+  await shot('language');
+
   await page.evaluate(() => {
     const G = window.__game;
-    G.campaignStorage.clear(); G.startCampaign(1); G.showCampaignMap();
+    G.startCampaign(1); G.showCampaignMap();
     const flow = G.campaign.flow;
     flow.state.done.push('cativos'); flow.state.seen = ['seca']; flow.save();
   });
-  await page.keyboard.press('Escape'); await page.waitForSelector('#menu:not(.hidden)');
-  check(`${tag}: com campanha gravada, a janela Campanha abre sozinha`, (await shown(page)).join() === 'sec-campaign');
-  check(`${tag}: com campanha gravada, «Continuar» é a ação principal`, await page.evaluate(() => !document.getElementById('camp-cont').classList.contains('hidden')
-    && document.getElementById('camp-cont').classList.contains('go') && !document.getElementById('camp-new').classList.contains('go')));
-  await page.click('#camp-new'); await page.waitForSelector('#camp-confirm:not(.hidden)');
-  const yes = await box('#camp-confirm-yes'), no = await box('#camp-confirm-no');
-  check(`${tag}: a confirmação cabe no ecrã e os dois botões estão à vista`, inside(yes, vp) && inside(no, vp), `sim ${fmt(yes)} | voltar ${fmt(no)}`);
-  await shot('confirmacao');
+  await page.keyboard.press('Escape');
+  await page.locator('#menu:visible').waitFor();
   const save = () => page.evaluate(() => localStorage.getItem('viriato.campaign'));
   const originalSave = await save();
+  check(`${tag}: a gravação volta à Campanha, com Continuar como ação principal`, await active() === 'tab-campaign'
+    && await page.locator('#camp-cont.go').isVisible());
+  await page.locator('#camp-new').click();
+  check(`${tag}: a confirmação é apresentada na própria secção`, await panel('campaign').locator('#camp-confirm[role="group"]').isVisible()
+    && inside(await page.locator('#camp-confirm-yes').boundingBox(), viewport) && inside(await page.locator('#camp-confirm-no').boundingBox(), viewport));
+  await shot('confirmacao');
   await page.keyboard.press('Escape');
-  check(`${tag}: Escape cancela só a confirmação`, await page.locator('#camp-confirm').isHidden() && (await shown(page)).join() === 'sec-campaign'
-    && await page.locator('#camp-new').evaluate(button => document.activeElement === button));
-  await page.click('#camp-new');
-  await close('campaign');
-  await page.click('#tab-campaign');
-  check(`${tag}: reabrir Campanha limpa a confirmação e preserva a gravação`, await page.locator('#camp-confirm').isHidden() && await save() === originalSave);
-  await page.click('#camp-new');
-  await page.click('#camp-confirm-no');
-  check(`${tag}: Cancelar fecha a confirmação e preserva a gravação`, await page.locator('#camp-confirm').isHidden() && await save() === originalSave);
-  await close('campaign');
-  await page.click('#tab-chronicle');
-  check(`${tag}: Os Cativos desbloqueia e a seca registada fica fora da Crónica`, await page.locator('#menu-chron [data-entry="cativos"] details').count() === 1
-    && await page.locator('#menu-chron li.locked, #menu-chron [data-entry="seca"]').count() === 0
-    && await page.locator('#menu-chron li').count() === 4);
-  await shot('cronica');
-  await close('chronicle');
-  await page.click('#tab-campaign');
-  await page.click('#camp-new');
-  await page.click('#camp-confirm-yes');
-  check(`${tag}: confirmar substitui a gravação de teste e abre o prólogo`, await save() !== originalSave && await page.evaluate(() => window.__game.campIntro));
+  check(`${tag}: Escape cancela sem alterar a gravação`, await page.locator('#camp-confirm').isHidden() && await save() === originalSave);
+  await page.locator('#camp-new').click();
+  await select('chronicle');
+  check(`${tag}: Os Cativos desbloqueia, a seca fica fora da vista`, await chronicle.locator('[data-entry="cativos"]').count() === 1
+    && await chronicle.locator('[data-entry="seca"]').count() === 0);
+  await select('campaign');
+  check(`${tag}: trocar de secção limpa a confirmação`, await page.locator('#camp-confirm').isHidden() && await save() === originalSave);
+  await page.locator('#camp-cont').click();
+  await page.waitForFunction(() => window.__game.state === 'map');
+  check(`${tag}: Continuar carrega e preserva a gravação`, await save() === originalSave);
   check(`${tag}: sem erros de página`, errors.length === 0, errors.join(' | '));
   await page.close();
 }
+
+// Use the normal animation loop here, independently of the manual browser test mode.
+const live = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+await live.addInitScript(() => {
+  const request = window.requestAnimationFrame.bind(window);
+  window.__frameRequests = 0;
+  window.requestAnimationFrame = callback => { window.__frameRequests++; return request(callback); };
+});
+await live.goto(url.split('?')[0]);
+await live.waitForFunction(() => window.__game, null, { timeout: 60000 });
+const still = await live.evaluate(async () => {
+  const asset = new Image();
+  asset.src = './assets/menu/forest.webp';
+  await asset.decode();
+  return { count: window.__frameRequests, source: getComputedStyle(document.getElementById('menu')).backgroundImage,
+    width: asset.naturalWidth };
+});
+await live.locator('#tab-controls').click();
+await live.locator('#tab-campaign').click();
+await live.waitForTimeout(200);
+check('menu real: a floresta estática carrega e trocar de secção não agenda frames', still.width === 1920 && still.source.includes('forest.webp')
+  && await live.evaluate(() => window.__frameRequests) === still.count);
+await live.locator('#camp-new').click();
+await live.waitForFunction(() => window.__game.introT > 0);
+check('menu real: iniciar campanha retoma a animação', await live.evaluate(() => window.__frameRequests) > still.count);
+await live.evaluate(() => window.__game.showCampaignMap());
+await live.keyboard.press('Escape');
+await live.locator('#menu:visible').waitFor();
+await live.waitForTimeout(100);
+const afterReturn = await live.evaluate(() => window.__frameRequests);
+await live.waitForTimeout(200);
+check('menu real: voltar ao menu suspende os frames novamente', await live.evaluate(() => window.__frameRequests) === afterReturn);
+await live.close();
 await finish();

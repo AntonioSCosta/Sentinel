@@ -141,7 +141,7 @@ async function scenario(browserLocale, initial, next) {
     await page.reload();
     await page.waitForFunction(() => window.__game, null, { timeout: 60000 });
     assert.equal(await page.locator('html').getAttribute('lang'), next);
-    assert.equal(await page.locator('#menu-language').inputValue(), next);
+    assert.equal(await page.locator('#menu-language [aria-pressed="true"]').getAttribute('data-menu-language'), next);
     assert.equal(await page.evaluate(() => localStorage.getItem('viriato.campaign')), result);
     assert.deepEqual(errors, []);
     return result;

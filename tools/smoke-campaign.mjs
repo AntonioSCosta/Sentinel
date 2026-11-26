@@ -11,7 +11,7 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   const ctx = new Proxy({}, { get: (t, k) => (k in t ? t[k] : (...a) => { if (k === 'fillRect' || k === 'fillText') fills++; }), set: (t, k, v) => { t[k] = v; return true; } });
   win.HTMLCanvasElement.prototype.getContext = function (kind) { return kind === '2d' ? ctx : null; };
 
-  check('menu has the campaign entry', !!$('camp-new') && $('camp-new').textContent.includes('CAMPANHA'));
+  check('menu has the campaign entry selected', $('tab-campaign')?.getAttribute('aria-selected') === 'true' && !$('sec-campaign').hidden && shown('camp-new'));
   check('no «continuar» without a save', !shown('camp-cont'));
   G.campaignStorage.clear();
   // Uma campanha nova abre com o prólogo (o massacre de Galba, 150 a.C.), não directamente no mapa.
@@ -36,7 +36,7 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   check('the «ENTER para saltar» hint is hidden once the map shows', G.state === 'map' && skipHint().every(e => e.style.display === 'none'));
   check('no end screen or next-chapter after the campaign prologue', G.nextChapter === null && !shown('end'));
   const f = G.campaign.flow, s = f.state;
-  // 3D is not drawn under the map, and is drawn again after leaving
+  // The map and the static menu do not need arena rendering.
   { const rd = renderer, c0 = rd.calls || 0; G.step(1 / 60); G.render(); G.render();
     check('no 3D render while on the map', (rd.calls || 0) === c0); }
   // the status log is not rebuilt by resizes or clicks without news
@@ -155,7 +155,7 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   check('«Continuar» goes straight to the map, no prologue replay', G.state === 'map' && G.campIntro === false && G.state !== 'intro' && G.state !== 'play');
   win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'Escape' }));
   check('ESC on the map returns to the menu', G.state === 'menu' && !shown('map'));
-  { const rd = renderer, c0 = rd.calls || 0; G.render(); check('3D renders again after leaving the map', (rd.calls || 0) > c0); }
+  { const rd = renderer, c0 = rd.calls || 0; G.step(1 / 60); G.render(); check('the static menu does not draw 3D after leaving the map', (rd.calls || 0) === c0); }
   // the save vanishes behind the menu: «Continuar» must not strand the player
   G.campaignStorage.clear(); $('camp-cont').classList.remove('hidden'); $('camp-cont').click();
   check('failed continue stays on the menu', G.state === 'menu' && shown('menu') && !shown('map') && !shown('camp-cont'));
@@ -772,10 +772,10 @@ function fixWave({ G, doc, win, check, st, setGod, $, shown }) {
   check('menu: a campaign in progress is offered as «Continuar campanha»', shown('camp-cont') && $('camp-cont').textContent === 'Continuar campanha');
   const day0 = JSON.parse(G.campaignStorage.getItem('viriato.campaign')).state.seed;
   $('camp-new').click();
-  check('«CAMPANHA» with a save asks first, focus on «Voltar»', G.state === 'menu' && shown('camp-confirm') && $('camp-confirm').getAttribute('role') === 'alertdialog'
+  check('«CAMPANHA» with a save asks inline, focus on «Cancelar»', G.state === 'menu' && shown('camp-confirm') && $('camp-confirm').getAttribute('role') === 'group'
     && /Há uma campanha a meio\. Começar de novo apaga-a\./.test($('camp-confirm').textContent) && doc.activeElement === $('camp-confirm-no') && $('camp-confirm-yes').textContent === 'Começar de novo' && $('camp-confirm-no').textContent === 'Cancelar');
   $('camp-confirm-no').click();
-  check('«Voltar» keeps the save and goes back to the menu', !shown('camp-confirm') && G.state === 'menu' && JSON.parse(G.campaignStorage.getItem('viriato.campaign')).state.seed === day0 && doc.activeElement === $('camp-new'));
+  check('«Cancelar» keeps the save and returns focus to «Nova campanha»', !shown('camp-confirm') && G.state === 'menu' && JSON.parse(G.campaignStorage.getItem('viriato.campaign')).state.seed === day0 && doc.activeElement === $('camp-new'));
   $('camp-new').click(); $('camp-confirm-yes').click();
   check('«Começar de novo» starts a new campaign', !shown('camp-confirm') && G.chapter === 'prologo' && G.campIntro === true && G.campaign.flow.state.day === 0);
   G.showCampaignMap(); G.campaign.close();
