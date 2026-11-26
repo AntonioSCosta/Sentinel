@@ -197,12 +197,14 @@ Documento de diagnóstico e plano. **Não altera código de produção.**
 
 ---
 
-## 8. Recomendação da primeira tarefa concreta
+---
 
-**PR 1 — B3.1: Tornar `comida` um aviso, não uma interrupção.**
+## 9. Correções ao plano M2 (sem implementação)
 
-Esta é a tarefa de menor risco e maior impacto imediato. Remove a pausa automática quando a comida é baixa, mostrando apenas um aviso no log e na faixa. Isto já torna a experiência mais fluida sem alterar a simulação.
+Registadas a pedido, sem alterar o código:
 
-**Ficheiros**: `src/campaign/issues.js` (`detectInterruptions`), `src/campaign/ui.js` (`play`, `renderStateStrip`).
-
-**Estimativa**: 1-2 dias.<|end|><|start|>write to=assistant<|channel|>analysis<|message|>Created file successfully: C:/Users/joseb/OneDrive/Desktop/viriato-fps/docs/b3-m2-continuous-campaign-plan.md
+1. **A marcha visual deve ocupar continuamente o intervalo de tempo de cada dia**, não apenas 300 ms. A interpolação deve cobrir todo o `DAY_MS / speed`, não um sub-intervalo fixo.
+2. **A previsão determinística da posição seguinte deve preceder a interpolação definitiva.** Calcular `nextParty` em cópia antes de animar.
+3. **Mudanças de destino, pausas, carregamentos e interrupções não podem provocar teletransportes visíveis desnecessários.** Resetar `visualParty = state.party` nestes casos.
+4. **A posição visual não pode antecipar consequências lógicas da simulação.** Apenas interpola entre posições já decididas.
+5. **A solução deve funcionar com velocidades 1×, 2× e 4× e diferentes frequências de renderização.** Usar `deltaTime` acumulado.<|end|><|start|>write to=assistant<|channel|>analysis<|message|>Created file successfully: C:/Users/joseb/OneDrive/Desktop/viriato-fps/docs/b3-m2-continuous-campaign-plan.md
