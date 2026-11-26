@@ -25,7 +25,7 @@ const startMap = async (page, locale) => {
     language.value = locale;
     language.dispatchEvent(new Event('change', { bubbles: true }));
   }, locale);
-  await page.locator('#campaign-map-3d[data-status=ready]').waitFor({ timeout: 60000 });
+  await page.locator('#mapcv').waitFor({ timeout: 60000 });
 };
 const reload = async page => {
   await page.reload();

@@ -47,9 +47,9 @@ export async function startBrowser({ root = ROOT, entry = 'index.html?manual=1',
 }
 
 /** Arranca o servidor estático, o Chrome e devolve { url, browser, check, hit, fmt, finish }. */
-export async function startE2E() {
+export async function startE2E(options) {
   let harness;
-  try { harness = await startBrowser(); }
+  try { harness = await startBrowser(options); }
   catch (error) { console.error(`Teste NÃO executado. ${error.message}`); process.exit(2); }
   const failures = [];
   const check = (name, ok, extra = '') => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${extra ? ' — ' + extra : ''}`); if (!ok) failures.push(name); };

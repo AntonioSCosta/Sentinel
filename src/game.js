@@ -3324,9 +3324,13 @@ export async function boot(i18n = bindDocumentLanguage(window)) {
   const chars = await loadChars(THREE).catch(err => { console.warn('Animated characters unavailable, using simple models', err); return null; });
   const testQuery = new URLSearchParams(window.location.search);
   const legacyCampaignMapForTests = testQuery.get('manual') === '1' && testQuery.get('legacy-map-test') === '1';
-  const preview = testQuery.get('map') === 'illustrated'
+  // Mapa ilustrado por defeito; ?map=3d mantém o mapa 3D legado (opt-in). ?map=illustrated = preview com storage em memória.
+  const mapParam = testQuery.get('map');
+  const preview = mapParam === 'illustrated'
     ? await (await import('./campaign/illustrated/preview.js')).createIllustratedPreview(testQuery) : null;
-  const game = await createGame({ illustrated: preview?.illustrated, storage: preview?.storage, legacyCampaignMapForTests, i18n, chars, THREE, renderer, canvas, document, window, rapier, loader: new THREE.TextureLoader(), quality: (() => { try { return window.localStorage.getItem('viriato.quality') || 'medium'; } catch (_) { return 'medium'; } })() });
+  const illustrated = preview?.illustrated ?? (mapParam === '3d' ? null : await (await import('./campaign/illustrated/index.js')).loadIllustrated()
+    .catch(err => { console.warn('Illustrated map unavailable, using the 3D map', err); return null; }));
+  const game = await createGame({ illustrated, storage: preview?.storage, legacyCampaignMapForTests, i18n, chars, THREE, renderer, canvas, document, window, rapier, loader: new THREE.TextureLoader(), quality: (() => { try { return window.localStorage.getItem('viriato.quality') || 'medium'; } catch (_) { return 'medium'; } })() });
   if (!game.physicsOk) document.getElementById('physnote').classList.remove('hidden');
   let last = null, frameId = null;
   // tuning aids: F8 = slow motion (1×, ½×, ¼×); window.__moves / window.__combat = poses and timings, editable live in the console

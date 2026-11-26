@@ -7,7 +7,7 @@ import { startBrowser } from './e2e-lib.mjs';
 const output = process.argv[2];
 const baseline = process.env.SENTINEL_M1_BASELINE;
 if (output) await mkdir(output, { recursive: true });
-const { url, browser, close } = await startBrowser({ root: baseline });
+const { url, browser, close } = await startBrowser({ root: baseline, entry: 'index.html?manual=1&map=3d' });
 const state = newCampaign(1234);
 state.food = 200;
 state.done.push('cativos');

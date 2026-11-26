@@ -7,7 +7,7 @@ import { startBrowser } from './e2e-lib.mjs';
 const output = process.argv[2];
 const baseline = process.env.SENTINEL_M0_BASELINE;
 if (output) await mkdir(output, { recursive: true });
-const { url, browser, close } = await startBrowser({ root: baseline });
+const { url, browser, close } = await startBrowser({ root: baseline, entry: 'index.html?manual=1&map=3d' });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, locale: 'en' });
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));

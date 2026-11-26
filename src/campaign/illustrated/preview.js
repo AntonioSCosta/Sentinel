@@ -1,14 +1,8 @@
 import { STORAGE_KEY } from '../flow.js';
-import { BORDER, createSymbolCache, landscape, loadBrushes } from './landscape.js';
-import { illustratedNavigation } from './navigation.js';
+import { loadIllustrated } from './index.js';
 
 export async function createIllustratedPreview(params) {
-  const brushes = await loadBrushes();
-  const illustrated = {
-    navigation: illustratedNavigation,
-    symbols: createSymbolCache(),
-    background: (seed, world) => ({ image: landscape(seed, world, brushes), border: BORDER }),
-  };
+  const illustrated = await loadIllustrated();
 
   // Keep orders and battle saves in this tab while reviewing the new map.
   const data = new Map();
