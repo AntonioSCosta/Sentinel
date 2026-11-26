@@ -1,4 +1,7 @@
 export default {
+  "campaign.subtitle": "Campaign battle",
+  "campaign.back": "Back to campaign",
+  "campaign.saveFailed": "The campaign could not be saved. Try again or reload if the campaign is open in another tab.",
   "title": "The Ambush",
   "subtitle": "Prototype · placeholder art",
   "phase.prep": "Preparation",

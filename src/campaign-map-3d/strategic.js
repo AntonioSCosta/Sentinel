@@ -9,16 +9,20 @@ export const TREE_CLEARANCE = Object.freeze({ road: 11, river: 15, place: 20 });
 export function strategicView({ world, day, intel, communities, villages, posts }) {
   const names = { world, communities };
   const knowledge = Number.isFinite(day) && validIntel(intel) ? intelView({ day, intel }) : intelView({});
+  const communityPostures = {};
   return {
     places: world.settlements.map(place => {
       const community = communityOf(names, place.id);
+      const { posture, situation } = communities?.[community] ?? {};
+      const burnt = !!(villages?.[place.id]?.burnt || posts?.[place.id]?.taken ||
+        ['queimada', 'abandonada'].includes(situation));
+      if (community) communityPostures[place.id] = situation === 'abandonada' ? situation : burnt ? 'queimada' : posture;
       return {
         ...place, name: placeName(names, place.id), community: !!community,
-        roundhouse: community === 'ribeira',
-        burnt: !!(villages?.[place.id]?.burnt || posts?.[place.id]?.taken ||
-          ['queimada', 'abandonada'].includes(communities?.[community]?.situation)),
+        roundhouse: community === 'ribeira', burnt,
       };
     }),
+    communityPostures,
     forces: knowledge.forces,
     zones: knowledge.zones,
   };

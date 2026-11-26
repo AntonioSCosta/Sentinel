@@ -38,7 +38,7 @@ const ev = id => DECK.find(e => e.id === id);
 
 test('enviado dá homens; pastores dá comida', () => {
   const s = newCampaign(1); const m = s.men, f = s.food;
-  assert.equal(typeof ev('enviado').apply(s), 'string');
+  ev('enviado').apply(s);
   assert.equal(s.men, m + 3);
   ev('pastores').apply(s);
   assert.equal(s.food, f + 10);
@@ -60,7 +60,7 @@ test('rollEvent nunca repete o id seguido e recursos nunca ficam negativos', () 
   const s = newCampaign(3); const rng = alwaysFire(); let last = null;
   for (let i = 0; i < 50; i++) {
     const r = rollEvent(s, rng);
-    assert.ok(r && typeof r.text === 'string');
+    assert.ok(r && DECK.some(e => e.id === r.id));
     assert.notEqual(r.id, last); last = r.id;
     for (const k of ['men', 'food', 'arms']) assert.ok(s[k] >= 0);
   }

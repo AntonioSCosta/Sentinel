@@ -13,7 +13,8 @@ import { punish, burn, ensureRome, TRIBUTE } from '../src/campaign/rome.js';
 import { MARCH_SPEED } from '../src/campaign/simulation.js';
 import { placeName, POSTURE_LABEL, SITUATION_LABEL } from '../src/campaign/strings.js';
 import { postureSnapshot, postureChanges, record, validJournal, JOURNAL_MAX, categoryOf } from '../src/campaign/journal.js';
-import { buildIssues, detectInterruptions, foodDays, LOW_FOOD_DAYS, RECENT_DAYS } from '../src/campaign/issues.js';
+import { buildIssues, detectInterruptions, foodDays, interruptionText, LOW_FOOD_DAYS, RECENT_DAYS } from '../src/campaign/issues.js';
+import { createI18n } from '../src/i18n/index.js';
 import { SPEEDS, DAY_MS, SPEED_KEY, loadSpeed, saveSpeed, standingOrder } from '../src/campaign/pace.js';
 import { eventText } from '../src/campaign/ui.js';
 
@@ -207,35 +208,47 @@ test('assuntos: uma força romana só aparece se o jogador a conhece', () => {
   assert.ok(t); assert.equal(t.community, 'souto');
 });
 
+test('o idioma muda os textos da decisão e da mesma interrupção sem mudar o estado ou as opções', () => {
+  const { state, journal } = quietFlow();
+  const { vau } = state.communities;
+  Object.assign(vau, { situation: 'tributada', due: { day: 4, food: 6 } });
+  const before = JSON.stringify({ state, journal });
+  const locale = createI18n({ languages: ['en'] });
+  const events = [{ type: 'tributo-exigido', id: vau.settlement, food: 6, day: 4 }, { type: 'colheita', season: 'outono', total: 9 }];
+  const reasons = detectInterruptions({ state, events });
+  const [en] = buildIssues(state, journal, { i18n: locale });
+  assert.match(en.title, /Rome demands tribute from Vau Village/);
+  assert.match(interruptionText(reasons[1], state, locale), /autumn harvest added 9 food/);
+  locale.setLocale('pt-PT');
+  const [pt] = buildIssues(state, journal, { i18n: locale });
+  assert.match(pt.title, /Roma exige tributo a Aldeia do Vau/);
+  assert.match(interruptionText(reasons[1], state, locale), /colheita de outono acrescentou 9/);
+  assert.deepEqual([en.key, en.deadline, en.actions.map(a => a.id)], [pt.key, pt.deadline, pt.actions.map(a => a.id)]);
+  assert.equal(JSON.stringify({ state, journal }), before);
+});
+
 // ——— interrupções ———
 
-test('interrupções: tributo exigido, postura, colheita agrupados numa só (comida baixa deixa de interromper)', () => {
+test('interrupções: tributo exigido, postura e colheita agrupados; comida não interrompe', () => {
   const f = quietFlow(), s = f.state, id = s.communities.vau.settlement;
   const mem = {};
   const r = detectInterruptions({ state: s, events: [{ type: 'tributo-exigido', id, food: 5, day: 10 }, { type: 'postura', id, community: 'vau', from: 'amiga', to: 'neutra' }, { type: 'colheita', season: 'primavera', total: 9, villages: [] }, { type: 'espera' }], memory: mem });
   assert.deepEqual(r.map(x => x.type), ['pedido', 'postura', 'colheita']);
   s.food = 1;
-  assert.deepEqual(detectInterruptions({ state: s, events: [], memory: mem }).map(x => x.type), [], 'comida baixa já não interrompe');
-});
-test('interrupcoes: comida baixa nao interrompe, mas e rastreada em memoria', () => {
-  const f = quietFlow(), s = f.state, mem = {};
-  s.food = 100;
-  detectInterruptions({ state: s, events: [], memory: mem });
-  assert.equal(mem.lowFood, false);
-  assert.equal(mem.emptyFood, false);
-  s.food = 5;
-  const r = detectInterruptions({ state: s, events: [], memory: mem });
-  assert.deepEqual(r.map(x => x.type), [], 'nao interrompe');
+  assert.deepEqual(detectInterruptions({ state: s, events: [], memory: mem }).map(x => x.type), [], 'comida baixa nunca interrompe');
   assert.equal(mem.lowFood, true);
   assert.equal(mem.emptyFood, false);
   s.food = 0;
-  detectInterruptions({ state: s, events: [], memory: mem });
+  assert.deepEqual(detectInterruptions({ state: s, events: [], memory: mem }), [], 'comida esgotada também não interrompe');
   assert.equal(mem.emptyFood, true);
-  // recuperacao
-  s.food = 100; detectInterruptions({ state: s, events: [], memory: mem });
-  s.food = 5; const r2 = detectInterruptions({ state: s, events: [], memory: mem });
-  assert.deepEqual(r2.map(x => x.type), [], 'nao interrompe apos recuperacao');
+  s.food = 1e4;
+  detectInterruptions({ state: s, events: [], memory: mem });
+  assert.equal(mem.lowFood, false);
+  assert.equal(mem.emptyFood, false);
+  s.food = 1;
+  assert.deepEqual(detectInterruptions({ state: s, events: [], memory: mem }), [], 'nova quebra não interrompe');
 });
+
 test('interrupções: força conhecida a menos de um dia do bando ou de uma aldeia amiga, uma vez por aproximação', () => {
   const f = quietFlow(), s = f.state, mem = {};
   s.intel.known = { p1: { kind: 'patrulha', x: s.party.x + MARCH_SPEED - 1, y: s.party.y, day: s.day, men: 6 } };

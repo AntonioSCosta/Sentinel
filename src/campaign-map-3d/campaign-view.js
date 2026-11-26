@@ -96,14 +96,26 @@ export function createCampaignMapView(stage, { window, i18n, onPick, onHover, on
         return;
       }
     }
-    frame = { state, fx };
+    frame = { state, fx, full: true };
+    schedule();
+  }
+
+  /** Animation frames only move existing scene objects. Strategic changes use paint(). */
+  function pose(fx) {
+    if (!live || !scene || stage.dataset.status === 'error') return;
+    frame = frame?.full ? { ...frame, fx: { ...frame.fx, ...fx } } : { fx, full: false };
+    schedule();
+  }
+
+  function schedule() {
     if (pendingFrame) return;
     pendingFrame = window.requestAnimationFrame(() => {
       pendingFrame = 0;
       if (!live) return;
-      const { state, fx } = frame;
+      const { state, fx, full } = frame;
       frame = null;
       try {
+        if (!full) { scene.setPartyPose(fx); return; }
         const view = strategicView(state);
         scene.resize();
         if (world !== state.world || seed !== state.seed) {
@@ -112,7 +124,7 @@ export function createCampaignMapView(stage, { window, i18n, onPick, onHover, on
           seed = state.seed;
         }
         preview.textContent = fx.route?.label ?? fx.hover?.label ?? '';
-        scene.present(view, fx);
+        scene.present(view, { ...fx, campaignLabels: true });
         stage.dataset.status = 'ready';
       } catch (cause) {
         window.console.error('Erro ao desenhar o mapa da campanha', cause);
@@ -125,5 +137,6 @@ export function createCampaignMapView(stage, { window, i18n, onPick, onHover, on
     if (errorKey) error.textContent = i18n.t(errorKey);
   }
 
-  return { paint, suspend, localize, get failed() { return stage.dataset.status === 'error'; } };
+  return { paint, pose, suspend, localize, metrics: () => scene?.metrics(),
+    get failed() { return stage.dataset.status === 'error'; } };
 }

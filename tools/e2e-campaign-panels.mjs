@@ -22,6 +22,8 @@ for (const vp of [{ width: 1366, height: 768 }, { width: 1280, height: 800 }, { 
     c.flow.journal.push({ day: s.day, type: 'castigo', id: s.communities.vau.settlement, why: 'apoio' }); c.render();
   });
   await page.waitForSelector('#campaign-map-3d');
+  await page.locator('#mtribute:not(.hidden)').waitFor();
+  await page.keyboard.press('Escape'); // postpone the decision while checking the sidebar itself
   const box = sel => page.locator(sel).boundingBox().catch(() => null);
   if (narrow) {
     check(`${tag}: ecrã pequeno: a coluna começa fechada e o mapa ocupa a largura`, !(await page.locator('#mside').isVisible()), fmt(await box('#campaign-map-3d')));
@@ -35,18 +37,21 @@ for (const vp of [{ width: 1366, height: 768 }, { width: 1280, height: 800 }, { 
   if (!narrow) check(`${tag}: o mapa e a coluna ficam lado a lado`, !hit(cv, side) && cv.width >= vp.width * 0.6, `mapa ${fmt(cv)} | coluna ${fmt(side)}`);
   const issues = await page.evaluate(() => document.querySelectorAll('#missues-list .issue').length);
   check(`${tag}: os assuntos aparecem (${issues})`, issues >= 2);
-  // B3.1: comida baixa/esgotada não deve abrir a faixa "O tempo parou".
-  const foodPanel = await page.evaluate(() => {
-    const c = window.__game.campaign;
-    const originalFood = c.flow.state.food;
-    c.flow.state.food = 0;
+  // B3.1: a comida a zero não abre a faixa de interrupções, mesmo se há tributos pendentes.
+  const foodCheck = await page.evaluate(() => {
+    const c = window.__game.campaign, s = c.flow.state, strip = document.getElementById('m-int');
+    const old = s.food, before = { hidden: strip.classList.contains('hidden'), text: strip.textContent };
+    s.food = 0;
     c.render();
-    const displayed = !document.getElementById('m-int').classList.contains('hidden');
-    c.flow.state.food = originalFood;
+    const after = { hidden: strip.classList.contains('hidden'), text: strip.textContent };
+    const foodIssue = !!document.querySelector('#missues-list [data-type="comida"]');
+    const hudLow = document.getElementById('m-food-box').classList.contains('low');
+    s.food = old;
     c.render();
-    return displayed;
+    return { unchanged: before.hidden === after.hidden && before.text === after.text, foodIssue, hudLow };
   });
-  check(`${tag}: sem faixa de interrupção quando acaba a comida`, !foodPanel);
+  check(`${tag}: comida zero não abre nem altera a faixa de interrupções`, foodCheck.unchanged);
+  check(`${tag}: comida zero permanece visível nos assuntos e HUD`, foodCheck.foodIssue && foodCheck.hudLow);
 
   const end = await page.evaluate(() => { const s = document.getElementById('mside'); s.scrollTop = s.scrollHeight; const l = s.querySelector('#missues-list').lastElementChild.getBoundingClientRect(), u = s.getBoundingClientRect(); return l.bottom <= u.bottom + 1; });
   check(`${tag}: o último assunto alcança-se a rolar`, end);

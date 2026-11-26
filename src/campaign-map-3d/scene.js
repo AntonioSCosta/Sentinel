@@ -3,8 +3,11 @@ import * as THREE from 'three';
 import { createMapProjection, createCampaignTerrain, subdivideLine } from './terrain.js';
 import { levelRoundhouseSite, loadRoundhouse, roundhousePlacement } from './roundhouse.js';
 import { generateVegetation } from './strategic.js';
-import { disposeGroup, makeForest, makeIntelligence, makePlanning } from './overlays.js';
-import { labelLeader, pickStrategicPoint, positionLabels } from './interaction.js';
+import { disposeGroup, makeForest, makeIntelligence, makeParty, makePlanning } from './overlays.js';
+import { loadWarbandModel } from './party.js';
+import { leaderPath, pickStrategicPoint, positionLabels } from './interaction.js';
+
+const PARTY_PIXELS = 1.15, PARTY_MAX_SCALE = 1.8;   // band size floor (screen px per map unit) and its growth cap
 
 function indexedGeometry(positions, indices) {
   const geometry = new THREE.BufferGeometry();
@@ -149,12 +152,21 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
   const leaders = document.createElementNS(svg, 'svg');
   leaders.setAttribute('class', 'map-leaders');
   leaders.setAttribute('aria-hidden', 'true');
+  const partySelection = { type: 'party' };
   const partyMarker = {
     position: new THREE.Vector3(),
-    userData: { key: 'party', labelKey: 'map.band', className: 'party-label', priority: 12, lift: 17 },
+    userData: { key: 'party', selection: partySelection, labelKey: 'map.band', className: 'party-label', priority: 12, lift: 19 },
   };
-  let model, terrain, relief, edge, projection, markers, intelligence, planning, targets, labels = [], selected;
+  let model, terrain, relief, edge, projection, markers, intelligence, planning, partyVisual, targets, labels = [], selected;
+  // The Blender figures load in the background as soon as the map exists; the band uses them as soon as they arrive.
+  let warbandModel = null;
+  loadWarbandModel().then(loaded => {
+    warbandModel = loaded;
+    if (partyVisual) { partyVisual.userData.useModel(loaded); draw(); }
+  }).catch(error => console.warn('Could not load the warband figures; keeping the simple ones.', error));
+  const counts = { planningBuilds: 0, partyBuilds: 0, poseUpdates: 0, releasedGroups: 0 };
   let placesKey, intelKey, planningKey, focusedPlace, issues, partyLabel, labelLocale;
+  let campaignLabels, showMapDetails, communityPostures;
   let surfaceWidth = 0, surfaceHeight = 0;
   let zoom = 1, angle = defaultAngle, treeCount = 0;
   let screenWidth = 1, screenHeight = 1, halfHeight = 1;
@@ -189,6 +201,7 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
   }
 
   function labelFor(selection) {
+    if (selection?.type === 'party') return i18n.t('map.band');
     const marker = targets?.find(({ userData }) =>
       userData.selection.type === selection?.type && userData.selection.id === selection?.id);
     return marker ? markerLabel(marker) : '';
@@ -197,13 +210,19 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
   function layoutLabels() {
     const area = canvas.getBoundingClientRect();
     const scope = canvas.closest('#map') || canvas.parentElement;
+    const indicator = campaignLabels && scope.querySelector('#m-community-count');
+    const total = labels.filter(({ marker }) => marker.userData.place?.community).length;
+    if (indicator && (!indicator.textContent || labelLocale !== i18n.locale))
+      indicator.textContent = i18n.t('map.communitiesVisible', { count: 0, total });
     const reserved = [...scope.querySelectorAll('[data-reserve-labels]:not(.faded)')].map(element => {
       const rect = element.getBoundingClientRect();
       return { x: rect.left - area.left, y: rect.top - area.top, w: rect.width, h: rect.height };
     }).filter(box => box.w && box.h && box.x < screenWidth && box.y < screenHeight &&
       box.x + box.w > 0 && box.y + box.h > 0);
     const visibleLabels = partyLabel ? [...labels, partyLabel] : labels;
-    if (labelLocale !== i18n.locale) {
+    const mainRumor = campaignLabels && labels.find(({ marker }) => marker.userData.className === 'rumor-zone');
+    const languageChanged = labelLocale !== i18n.locale;
+    if (languageChanged) {
       labelLocale = i18n.locale;
       for (const { marker, element } of visibleLabels) element.textContent = markerLabel(marker);
     }
@@ -212,29 +231,54 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
       element.classList.toggle('has-issue', selection?.type === 'settlement' && !!issues?.[selection.id]);
       element.classList.toggle('selected', !!selection &&
         (selection === selected || (selection.type === 'settlement' && selection.id === focusedPlace)));
+      if (campaignLabels && marker.userData.place?.community) {
+        const posture = communityPostures?.[selection.id];
+        if (posture && (element.dataset.posture !== posture || languageChanged)) {
+          element.dataset.posture = posture;
+          const description = ['queimada', 'abandonada'].includes(posture)
+            ? i18n.t(`map.inactive.${posture}`) : i18n.t(`map.issuesCopy.posture.${posture}`);
+          element.title = description;
+          element.setAttribute('aria-label', `${element.textContent} · ${description}`);
+        }
+      }
     }
-    const candidates = visibleLabels.map(({ marker, element, key }) => {
+    const candidates = visibleLabels.map(label => {
+      const { marker, element, key } = label;
+      const { place, force, priority, className, ring } = marker.userData;
+      const highlighted = element.classList.contains('selected');
+      const decision = issues?.[place?.id] === 'decisao';
+      const essential = place?.community || place?.kind === 'posto' || !!force || label === partyLabel || decision || highlighted;
+      if (ring) ring.visible = !campaignLabels || showMapDetails || label === mainRumor || className === 'scouted-zone';
+      if (campaignLabels && !showMapDetails && !essential && label !== mainRumor) return null;
       projected.copy(marker.position);
       projected.y += marker.userData.lift;
       projected.project(camera);
+      const rank = campaignLabels
+        ? Math.max(priority, place?.community ? 12 : 0, force ? 11 : 0, decision ? 13 : 0, highlighted ? 14 : 0)
+        : highlighted ? 10 : priority;
       return { id: key, x: (projected.x + 1) * screenWidth / 2, y: (1 - projected.y) * screenHeight / 2,
-        w: element.offsetWidth, h: element.offsetHeight,
-        priority: element.classList.contains('selected') ? 10 : marker.userData.priority };
+        w: element.offsetWidth, h: element.offsetHeight, priority: rank,
+        reposition: campaignLabels && (essential || label === mainRumor) };
     });
-    const boxes = positionLabels(candidates, screenWidth, screenHeight, reserved);
-    for (const [i, { element, key, line }] of visibleLabels.entries()) {
+    const boxes = positionLabels(candidates.filter(Boolean), screenWidth, screenHeight, reserved);
+    if (campaignLabels) {
+      const communities = visibleLabels.filter(({ marker }) => marker.userData.place?.community);
+      const count = communities.filter(({ key }) => boxes.has(key)).length;
+      if (indicator) indicator.textContent = i18n.t('map.communitiesVisible', { count, total: communities.length });
+    }
+    for (const [i, { element, key, line, origin }] of visibleLabels.entries()) {
       const box = boxes.get(key);
       element.style.visibility = box ? 'visible' : 'hidden';
       if (box) element.style.transform = `translate(${Math.round(box.x)}px, ${Math.round(box.y)}px)`;
       if (!line) continue;
       const anchor = candidates[i];
-      const end = box && labelLeader(anchor, box);
-      line.style.visibility = end ? 'visible' : 'hidden';
-      if (!end) continue;
-      line.setAttribute('x1', anchor.x);
-      line.setAttribute('y1', anchor.y);
-      line.setAttribute('x2', end.x);
-      line.setAttribute('y2', end.y);
+      const obstacles = [...reserved, ...[...boxes].filter(([id]) => id !== key).map(([, value]) => value)];
+      const path = box && anchor && leaderPath(anchor, box, obstacles);
+      line.style.visibility = origin.style.visibility = path ? 'visible' : 'hidden';
+      if (!path) continue;
+      line.setAttribute('d', path);
+      origin.setAttribute('cx', anchor.x);
+      origin.setAttribute('cy', anchor.y);
     }
   }
 
@@ -267,6 +311,16 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
     houseLods[1].visible = !houseLods[0].visible;
   }
 
+  // The band keeps a readable size when the map is small on screen: below PARTY_PIXELS screen pixels per map
+  // unit it grows continuously (no model swap), up to PARTY_MAX_SCALE; closer in it is drawn at map scale.
+  function updatePartyScale() {
+    if (!partyVisual) return;
+    const pixels = screenHeight / (camera.top - camera.bottom);
+    const scale = THREE.MathUtils.clamp(PARTY_PIXELS / pixels, 1, PARTY_MAX_SCALE);
+    partyVisual.userData.setScreenScale(scale);
+    partyMarker.userData.lift = 19 * scale;
+  }
+
   function draw() {
     if (!terrain) return;
     camera.position.copy(target).addScaledVector(offset, Math.max(terrain.w, terrain.h) + 400);
@@ -277,6 +331,7 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
     camera.top = halfHeight; camera.bottom = -halfHeight;
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();
+    updatePartyScale();
     updateRoundhouse();
     renderer.render(scene, camera);
     layoutLabels();
@@ -311,13 +366,15 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
       element.dataset.id = selection.id;
       element.addEventListener('click', event => select(selection, event.detail ? event : undefined));
     }
-    const line = connect ? document.createElementNS(svg, 'line') : null;
-    return { marker, element, line, key: selection ? `${selection.type}:${selection.id}` : key };
+    const line = connect ? document.createElementNS(svg, 'path') : null;
+    const origin = connect ? document.createElementNS(svg, 'circle') : null;
+    if (origin) origin.setAttribute('r', '2.5');
+    return { marker, element, line, origin, key: selection ? `${selection.type}:${selection.id}` : key };
   }
 
   function mountLabels() {
     const all = partyLabel ? [...labels, partyLabel] : labels;
-    leaders.replaceChildren(...all.map(label => label.line).filter(Boolean));
+    leaders.replaceChildren(...all.flatMap(label => [label.line, label.origin]).filter(Boolean));
     labelLayer.replaceChildren(leaders, ...all.map(label => label.element));
   }
 
@@ -339,8 +396,9 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
       intelKey = nextIntelKey;
     }
     selected = null;
-    targets = [...markers.children, ...intelligence.targets];
-    labels = [...targets.map(marker => makeLabel(marker, true)), ...intelligence.annotations.map(marker => makeLabel(marker))];
+    targets = [...markers.children, ...intelligence.targets, ...(partyVisual ? [partyVisual] : [])];
+    labels = [...targets.filter(marker => marker !== partyVisual).map(marker => makeLabel(marker, true)),
+      ...intelligence.annotations.map(marker => makeLabel(marker))];
     mountLabels();
   }
 
@@ -348,22 +406,42 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
     setView(view);
     focusedPlace = fx.selected;
     issues = fx.issues;
+    campaignLabels = fx.campaignLabels;
+    showMapDetails = fx.showMapDetails;
+    // Presentation metadata stays outside the geometry cache keyed by view.places.
+    communityPostures = view.communityPostures;
     if (!partyLabel) {
       partyLabel = makeLabel(partyMarker, true);
       mountLabels();
     }
-    const party = projection.toScene(fx.party, terrain.heightAt(fx.party.x, fx.party.y));
-    partyMarker.position.set(party.x, party.y, party.z);
-    const frame = { party: fx.party, route: fx.route && { to: fx.route.to }, trail: fx.trail, reach: fx.reach,
+    const frame = { logicalParty: fx.logicalParty ?? fx.party, route: fx.route && { to: fx.route.to }, trail: fx.trail, reach: fx.reach,
       focus: fx.focus, recon: fx.recon, hover: fx.recon && fx.hover && { x: fx.hover.x, y: fx.hover.y } };
     const nextPlanningKey = JSON.stringify(frame);
     if (nextPlanningKey !== planningKey) {
-      if (planning) { model.remove(planning); disposeGroup(planning); }
-      planning = makePlanning(frame, terrain, projection);
+      if (planning) { model.remove(planning); disposeGroup(planning); counts.releasedGroups++; }
+      planning = makePlanning({ ...frame, party: fx.party }, terrain, projection);
       model.add(planning);
       planningKey = nextPlanningKey;
+      counts.planningBuilds++;
     }
+    setPartyPose(fx, false);
     draw();
+  }
+
+  function setPartyPose(fx, redraw = true) {
+    if (!terrain) return;
+    if (!partyVisual) {
+      partyVisual = makeParty(terrain, projection, fx.party, warbandModel);
+      partyVisual.userData.selection = partySelection;
+      model.add(partyVisual);
+      targets?.push(partyVisual);
+      counts.partyBuilds++;
+    } else partyVisual.userData.updateParty(fx.party, fx.step);
+    planning?.userData.updateParty(fx.party);
+    const party = projection.toScene(fx.party, terrain.heightAt(fx.party.x, fx.party.y));
+    partyMarker.position.set(party.x, party.y, party.z);
+    counts.poseUpdates++;
+    if (redraw) draw();
   }
 
   function load(seed, world, view) {
@@ -392,11 +470,12 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
     if (model) {
       scene.remove(model);
       disposeGroup(model);
+      counts.releasedGroups++;
     }
     terrain = nextTerrain;
     model = group;
     scene.add(model);
-    markers = intelligence = planning = null;
+    markers = intelligence = planning = partyVisual = null;
     placesKey = intelKey = planningKey = undefined;
     focusedPlace = issues = partyLabel = undefined;
     setView(view);
@@ -434,9 +513,14 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
       draw();
       count++;
     } while (count < 60 && (count < 3 || performance.now() - start < 4000));
-    return { fps: count * 1000 / (performance.now() - start), frames: count, calls: renderer.info.render.calls,
+    return { fps: count * 1000 / (performance.now() - start), frames: count, ...metrics(),
       trees: treeCount, instances: treeCount * 2 };
   }
 
-  return { load, present, resize, reset, pan, zoomBy, rotate, pick, hit, measure, labelFor, redraw: draw };
+  function metrics() {
+    return { ...counts, geometries: renderer.info.memory.geometries, calls: renderer.info.render.calls,
+      party: partyVisual && { ...partyVisual.userData.stats, heading: partyVisual.userData.heading } };
+  }
+
+  return { load, present, setPartyPose, resize, reset, pan, zoomBy, rotate, pick, hit, measure, metrics, labelFor, redraw: draw };
 }

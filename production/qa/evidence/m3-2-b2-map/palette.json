@@ -1,0 +1,27 @@
+[
+  {
+    "posture": "colabora",
+    "color": "rgb(255, 255, 255)",
+    "contrast": 11.72634880768904
+  },
+  {
+    "posture": "comprometida",
+    "color": "rgb(255, 255, 255)",
+    "contrast": 10.963915702353438
+  },
+  {
+    "posture": "receosa",
+    "color": "rgb(255, 255, 255)",
+    "contrast": 7.0909860376520895
+  },
+  {
+    "posture": "neutra",
+    "color": "rgb(255, 255, 255)",
+    "contrast": 15.133529408889883
+  },
+  {
+    "posture": "amiga",
+    "color": "rgb(255, 255, 255)",
+    "contrast": 5.472110731902437
+  }
+]

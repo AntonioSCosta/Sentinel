@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sentinel campaign playtest</title>
+  <link rel="icon" href="data:,">
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #1a1710; color: #f0e7cf; font: 1rem/1.5 system-ui, sans-serif; }
+    main { width: min(38rem, calc(100% - 3rem)); padding: 1rem 0 2rem; }
+    h1 { font: 700 clamp(2rem, 6vw, 3rem)/1.1 Georgia, serif; color: #e2bc70; }
+    button { background: #413321; color: inherit; border: 1px solid #a9874e; border-radius: .4rem; padding: .6rem .9rem; font: inherit; cursor: pointer; margin: .25rem .3rem .25rem 0; }
+    button:focus-visible { outline: 2px solid #e2bc70; outline-offset: 3px; }
+    #status { color: #e2bc70; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Sentinel · Campaign playtest</h1>
+    <p>Start at Penedo Hillfort on day 4. After opening the game, choose <strong>Continue campaign</strong>.</p>
+    <p lang="pt-PT">Começa no Castro do Penedo no dia 4. Depois de abrir o jogo, escolhe <strong>Continuar campanha</strong>.</p>
+    <button type="button" data-locale="en">Open in English</button>
+    <button type="button" data-locale="pt-PT" lang="pt-PT">Abrir em português</button>
+    <p id="status" role="status"></p>
+  </main>
+  <script type="module" src="./launch.mjs"></script>
+</body>
+</html>

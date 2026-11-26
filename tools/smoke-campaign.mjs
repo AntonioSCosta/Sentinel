@@ -44,7 +44,7 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
     check('resize leaves the log DOM untouched', first && $('mlog').firstChild === first); }
   check('the map canvas has a size and was drawn', $('mapcv').width > 0 && $('mapcv').height > 0 && fills > 0);
   const num = id => +$(id).textContent.replace(/\D/g, '');
-  check('HUD shows men, food as days of autonomy, arms; fame left the bar (PR 5)', num('m-men') === s.men && /\d+ dias/.test($('m-food').textContent) && $('m-food-raw').textContent.includes(String(s.food)) && num('m-arms') === s.arms && !$('m-fame'));
+  check('HUD shows men, food autonomy, arms and fame toward the year-end goal', num('m-men') === s.men && /\d+ dias/.test($('m-food').textContent) && $('m-food-raw').textContent.includes(String(s.food)) && num('m-arms') === s.arms && $('m-fame').textContent === `${s.fame} / ${WIN_FAME}`);
   check('HUD shows date and season', $('m-date').textContent.length > 3 && $('m-season').textContent.length > 2);
   check('log is a live status region', $('mlog').getAttribute('role') === 'status');
   check('the bottom bar has only Ir, Emboscar, Esconder, Reconhecer and Diário (no Acampar)', ['m-go', 'm-ambush', 'm-hide', 'm-recon', 'm-diary'].every(id => $(id)?.tagName === 'BUTTON' && $(id).textContent.trim())
@@ -540,28 +540,28 @@ function chronicle({ G, doc, win, check, $, shown }) {
     && !!$(dlg.getAttribute('aria-labelledby')) && $(dlg.getAttribute('aria-labelledby')).textContent.trim() === 'Crónica');
   check('focus moves into the dialog', dlg.contains(doc.activeElement));
   const card = id => dlg.querySelector(`[data-entry="${id}"]`);
-  const ids = Object.keys(CHRONICLE);
-  check(`the dialog lists every entry (${dlg.querySelectorAll('[data-entry]').length}/${ids.length})`, ids.every(id => card(id)) && dlg.querySelectorAll('[data-entry]').length === ids.length);
-  const LABEL = { fontes: 'Fontes antigas', 'invenção': 'Invenção do jogo', inspirado: 'Cena inspirada' };
-  const unlockedNow = ['galba', 'vetilio', 'traicao', 'aldeia', 'castro', 'serra', 'posto'];
+  const rows = () => [...$('mcron-list').children];
+  const unlockedNow = ['galba', 'vetilio', 'traicao'];
+  const invented = Object.keys(CHRONICLE).filter(id => CHRONICLE[id].source === 'invenção');
+  check('only historical entries and one locked row are shown', rows().length === 4 && unlockedNow.every(id => card(id)) && invented.every(id => !card(id)));
   check('unlocked entries show title, label chip and text', unlockedNow.every(id => {
     const c = card(id), e = CHRONICLE[id];
-    return c.querySelector('h3')?.textContent === e.title && c.querySelector('.chip')?.textContent === LABEL[e.source] && c.querySelector('.txt')?.textContent === e.text;
+    return c.querySelector('h3')?.textContent === e.title && c.querySelector('.chip')?.textContent === 'Fontes antigas' && c.querySelector('.txt')?.textContent === e.text;
   }));
   check('«fontes» entries show their citation under the text', ['galba', 'vetilio', 'traicao'].every(id => {
     const c = card(id), cit = c.querySelector('.cit'), txt = c.querySelector('.txt');
     return cit?.textContent === CHRONICLE[id].citation && !!(txt.compareDocumentPosition(cit) & 4);
   }));
-  check('invented entries carry no citation', !card('castro').querySelector('.cit'));
   { const desc = c => (c.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
     check('unlocked entries are described by their chip, text and citation', unlockedNow.every(id => {
       const c = card(id), ids = desc(c), want = [...c.querySelectorAll('.chip, .txt, .cit')];
       return ids.length === want.length && ids.every(x => doc.getElementById(x) && c.contains(doc.getElementById(x))) && want.every(n => ids.includes(n.id));
-    }));
-    check('locked entries are described by «Ainda não vivido»', desc(card('seca')).length === 1 && /Ainda não vivido/.test(doc.getElementById(desc(card('seca'))[0])?.textContent || '')); }
-  const locked = id => /Ainda não vivido/.test(card(id).textContent) && card(id).querySelector('h3')?.textContent === CHRONICLE[id].title && !card(id).querySelector('.txt') && !card(id).querySelector('.chip');
-  check('the captives and the deck are locked at the start', ['cativos', 'seca', 'pastores', 'enviado', 'traidor'].every(locked));
-  check('entries are keyboard reachable', [...dlg.querySelectorAll('[data-entry]')].every(c => c.tabIndex === 0));
+    })); }
+  const locked = $('mcron-list').querySelector('.locked');
+  check('the locked row has a generic accessible name', $(locked?.getAttribute('aria-labelledby'))?.textContent === 'Ainda não vivido');
+  check('the locked row contains no identifier, title, source or text', !card('cativos') && locked?.textContent === 'Ainda não vivido'
+    && !locked.hasAttribute('data-entry') && !locked.querySelector('h3, .chip, .txt, .cit'));
+  check('entries are keyboard reachable', rows().every(c => c.tabIndex === 0));
   { const first = dlg.querySelector('[data-entry]'); first.focus();
     first.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
     check('ArrowDown moves to the next entry', doc.activeElement === first.nextElementSibling); }
@@ -570,14 +570,14 @@ function chronicle({ G, doc, win, check, $, shown }) {
   check('Escape closes the Crónica, stays on the map, focus back on the button', !shown('mcron') && G.state === 'map' && shown('map') && doc.activeElement === $('m-cronica'));
   win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'Escape', key: 'Escape' }));
   check('a second Escape closes the Diário', !shown('mdiary') && G.state === 'map');
-  // um acontecimento do baralho acontece: a entrada desbloqueia
+  // A seca continua a ocorrer e a ser gravada, mesmo fora da vista da Crónica.
   const ev = rollEvent(s, { chance: () => true, pick: a => a.find(e => e.id === 'seca') || a[0] });
   check('rollEvent produced the drought and recorded it', ev?.id === 'seca' && s.seen.includes('seca'));
   s.done.push('cativos');
   $('m-cronica').click();
-  check('the drought is now unlocked with its label', !locked('seca') && card('seca').querySelector('.chip').textContent === 'Invenção do jogo' && card('seca').querySelector('.txt').textContent === CHRONICLE.seca.text);
+  check('the recorded drought does not appear in the Chronicle', !card('seca') && !dlg.textContent.includes(CHRONICLE.seca.title));
   check('the captives entry unlocks once played, «Cena inspirada»', card('cativos').querySelector('.chip')?.textContent === 'Cena inspirada');
-  check('other deck entries stay locked', locked('traidor') && locked('pastores'));
+  check('no invented entries appear and all four rows are unlocked', invented.every(id => !card(id)) && rows().length === 4 && rows().every(c => !c.classList.contains('locked')));
   dlg.querySelector('#mcron-close').click();
   check('«Fechar» closes it and focus returns', !shown('mcron') && doc.activeElement === $('m-cronica'));
   G.campaign.close();
@@ -773,7 +773,7 @@ function fixWave({ G, doc, win, check, st, setGod, $, shown }) {
   const day0 = JSON.parse(G.campaignStorage.getItem('viriato.campaign')).state.seed;
   $('camp-new').click();
   check('«CAMPANHA» with a save asks first, focus on «Voltar»', G.state === 'menu' && shown('camp-confirm') && $('camp-confirm').getAttribute('role') === 'alertdialog'
-    && /Há uma campanha a meio\. Começar de novo apaga-a\./.test($('camp-confirm').textContent) && doc.activeElement === $('camp-confirm-no') && $('camp-confirm-yes').textContent === 'Começar de novo' && $('camp-confirm-no').textContent === 'Voltar');
+    && /Há uma campanha a meio\. Começar de novo apaga-a\./.test($('camp-confirm').textContent) && doc.activeElement === $('camp-confirm-no') && $('camp-confirm-yes').textContent === 'Começar de novo' && $('camp-confirm-no').textContent === 'Cancelar');
   $('camp-confirm-no').click();
   check('«Voltar» keeps the save and goes back to the menu', !shown('camp-confirm') && G.state === 'menu' && JSON.parse(G.campaignStorage.getItem('viriato.campaign')).state.seed === day0 && doc.activeElement === $('camp-new'));
   $('camp-new').click(); $('camp-confirm-yes').click();
