@@ -93,8 +93,9 @@ export function detectInterruptions({ state, events = [], memory = {}, battle = 
     else if (ev.type === 'colheita') out.push({ type: 'colheita', text: INTERRUPT.colheita(ev) });
   }
   const fd = foodDays(state), low = fd < LOW_FOOD_DAYS;
-  if (low && !memory.lowFood) out.push({ type: 'comida', text: INTERRUPT.comida(fd) });
   memory.lowFood = low;
+  memory.emptyFood = fd <= 0;
+  // A comida baixa é um aviso, não uma interrupção: não para o relógio (B3.1).
   const friends = state.communities ? COMMUNITY_IDS.map(id => state.communities[id]).filter(c => alive(c) && (c.posture === 'amiga' || c.posture === 'comprometida')) : [];
   const was = new Set(memory.near || []), near = [];
   for (const f of intelView(state).forces) {

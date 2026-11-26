@@ -209,16 +209,13 @@ test('assuntos: uma força romana só aparece se o jogador a conhece', () => {
 
 // ——— interrupções ———
 
-test('interrupções: tributo exigido, postura, colheita e comida baixa, agrupados numa só', () => {
+test('interrupções: tributo exigido, postura, colheita agrupados numa só (comida baixa deixa de interromper)', () => {
   const f = quietFlow(), s = f.state, id = s.communities.vau.settlement;
   const mem = {};
   const r = detectInterruptions({ state: s, events: [{ type: 'tributo-exigido', id, food: 5, day: 10 }, { type: 'postura', id, community: 'vau', from: 'amiga', to: 'neutra' }, { type: 'colheita', season: 'primavera', total: 9, villages: [] }, { type: 'espera' }], memory: mem });
   assert.deepEqual(r.map(x => x.type), ['pedido', 'postura', 'colheita']);
   s.food = 1;
-  assert.deepEqual(detectInterruptions({ state: s, events: [], memory: mem }).map(x => x.type), ['comida']);
-  assert.deepEqual(detectInterruptions({ state: s, events: [], memory: mem }), [], 'não repete enquanto a comida continuar baixa');
-  s.food = 1e4; detectInterruptions({ state: s, events: [], memory: mem }); s.food = 1;
-  assert.deepEqual(detectInterruptions({ state: s, events: [], memory: mem }).map(x => x.type), ['comida'], 'volta a avisar se recuperou e voltou a baixar');
+  assert.deepEqual(detectInterruptions({ state: s, events: [], memory: mem }).map(x => x.type), [], 'comida baixa já não interrompe');
 });
 
 test('interrupções: força conhecida a menos de um dia do bando ou de uma aldeia amiga, uma vez por aproximação', () => {

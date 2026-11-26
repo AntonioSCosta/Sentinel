@@ -422,6 +422,18 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (dest && !r.refused && Math.hypot(flow.state.party.x - dest.x, flow.state.party.y - dest.y) < ARRIVAL) { const arrived = dest; log.push(() => tMap('arrived', { name: destName(arrived) })); logDirty = true; dest = null; }
     if (r.refused && o.kind === 'marchar') dest = null;
     const reasons = r.refused ? [] : detectInterruptions({ state: flow.state, events: r.events, memory, battle: r.battle });
+    // B3.1: comida baixa/esgotada é aviso, não interrupção. Aviso discreto no log, vermelho se esgotada.
+    if (!r.refused) {
+      const fd = foodDays(flow.state), low = fd < LOW_FOOD_DAYS;
+      const wasLow = memory.lowFood ?? false, wasEmpty = memory.emptyFood ?? false, empty = fd <= 0;
+      if (low && (!wasLow || (empty && !wasEmpty))) {
+        const text = INTERRUPT.comida(fd);
+        log.push(empty ? { text, severe: true } : text);
+        logDirty = true;
+      }
+      memory.lowFood = low;
+      memory.emptyFood = empty;
+    }
     if (reasons.length || flow.phase !== 'mapa') { interrupt = reasons.filter(x => x.type !== 'batalha'); running = false; if (timer) win.clearTimeout?.(timer); timer = 0; }
     else if (running) schedule();   // uma ordem dada a meio de um dia reinicia o relógio: o dia seguinte vem um dia inteiro depois, não o que faltava
     render();
@@ -471,16 +483,22 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   function renderIssues() {
     const box = $('missues'), list = $('missues-list'), panel = !!(selected && flow.phase === 'mapa');
     box.classList.toggle('hidden', panel);
-    // a interrupção (um só cartão por dia, com todos os motivos)
+    // a interrupção (um só cartão por dia, com todos os motivos) + avisos (comida) sem parar o relógio
     const ib = $('m-int');
-    ib.classList.toggle('hidden', !interrupt.length);
-    if (interrupt.length) {
+    const lowFood = foodDays(flow.state) < LOW_FOOD_DAYS;
+    ib.classList.toggle('hidden', !interrupt.length && !lowFood);
+    if (interrupt.length || lowFood) {
       const ul = $('m-int-list'); ul.textContent = '';
       for (const x of interrupt) {
         const li = el('li');
         if (x.place) { const b = el('button', 'link', x.text); b.type = 'button'; b.addEventListener('click', () => pick(x.place)); li.append(b); }
         else if (x.at) { const b = el('button', 'link', x.text); b.type = 'button'; b.addEventListener('click', () => { focus = { x: x.at.x, y: x.at.y, r: 0 }; schedulePaint(); }); li.append(b); }
         else li.textContent = x.text;
+        ul.append(li);
+      }
+      if (lowFood) {
+        const fd = foodDays(flow.state);
+        const li = el('li', fd <= 0 ? 'warn' : null, INTERRUPT.comida(fd));
         ul.append(li);
       }
     }
@@ -684,7 +702,11 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
 
   function renderLog() {
     const ul = $('mlog');
-    ul.replaceChildren(...log.slice(-LOG_LINES).map(line => el('li', null, typeof line === 'function' ? line() : line)));
+    ul.replaceChildren(...log.slice(-LOG_LINES).map(line => {
+      const text = typeof line === 'function' ? line() : (typeof line === 'string' ? line : line.text);
+      const cls = (typeof line === 'object' && line && line.severe) ? 'warn' : null;
+      return el('li', cls, text);
+    }));
   }
 
   // --- render ---
