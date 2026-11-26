@@ -112,16 +112,19 @@ async function decisions(page) {
 
 async function interruption(page) {
   await startMap(page, 'en');
-  const state = await page.evaluate(() => {
+  const state = await page.evaluate(historicalBaseline => {
     const campaign = window.__game.campaign, flow = campaign.flow;
     flow.state.food = 2;
+    // B3.1 keeps food warnings in the HUD. The spring harvest still pauses a march.
+    if (!historicalBaseline) flow.state.day = 91;
     const place = flow.state.world.settlements.find(p => p.id === flow.state.communities.vau.settlement);
     campaign.select(place.id);
     document.querySelector('#mctx [data-act=ir]').click();
     campaign.step();
     return { reasons: campaign.interrupt.map(x => x.type), running: campaign.running, dest: campaign.dest };
-  });
-  assert.ok(state.reasons.includes('comida'));
+  }, !!baseline);
+  assert.ok(state.reasons.includes(baseline ? 'comida' : 'colheita'));
+  if (!baseline) assert.ok(!state.reasons.includes('comida'));
   assert.equal(state.running, false);
   assert.ok(state.dest);
   assert.equal(await page.locator('#mctx').isVisible(), true);
@@ -132,8 +135,8 @@ async function interruption(page) {
   }
   const strip = page.locator('#m-int');
   await strip.waitFor();
-  assert.match(await strip.textContent(), /The warband ran out of food/);
-  assert.equal(await page.locator('#missues-list .t-comida').count(), 0);
+  assert.match(await strip.textContent(), /The spring harvest added/);
+  assert.equal(await page.locator('#m-food-raw').textContent(), '(0)');
   await shot(page, '05-after-interruption-selected');
   for (const viewport of [desktop, { width: 1024, height: 600 }, compact]) {
     await page.setViewportSize(viewport);
@@ -144,7 +147,7 @@ async function interruption(page) {
   assert.equal(await page.locator('#mside').isVisible(), false);
   assert.equal(await strip.isVisible(), true);
   await page.locator('#map-language').selectOption('pt-PT');
-  assert.match(await strip.textContent(), /O bando ficou sem comida/);
+  assert.match(await strip.textContent(), /A colheita de primavera acrescentou/);
   await shot(page, '06-after-interruption-closed');
   assert.equal(await page.locator('#m-int-go').evaluate(el => {
     el.click(); return window.__game.campaign.running;
