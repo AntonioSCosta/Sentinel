@@ -40,6 +40,10 @@ try {
   await page.goto(url);
   await page.locator('#camp-cont:not(.hidden)').click({ timeout: 60000 });
   await page.locator('#campaign-map-3d[data-status=ready]').waitFor({ timeout: 60000 });
+  // The Blender figures load once per session and replace the simple ones in the same party group (one swap, not a
+  // pose): wait for them so the pose-frame measurements below only see poses.
+  await page.waitForFunction(() => window.__game.campaign.mapMetrics?.()?.party?.model === 'blender', null, { timeout: 60000 });
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const sample = () => page.evaluate(() => ({ ...window.__m0GL,
     day: window.__game.campaign.flow.state.day, map: window.__game.campaign.mapMetrics?.() }));
   const start = await sample();
@@ -118,6 +122,7 @@ try {
     await page.locator('#campaign-map-3d[data-status=ready]').waitFor();
     await page.waitForTimeout(100);
     const replaced = await sample();
+    assert.equal(replaced.map.party.model, 'blender', 'a new world builds the band straight from the loaded model');
     assert.equal(replaced.map.partyBuilds, 2, 'a new world makes one new party object');
     assert.ok(replaced.map.releasedGroups > end.map.releasedGroups, 'the old scene must be disposed');
     assert.ok(replaced.map.geometries <= end.map.geometries + 3, 'replacing a world must not leak geometries');

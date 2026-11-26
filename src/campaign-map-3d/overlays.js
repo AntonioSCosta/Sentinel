@@ -131,15 +131,16 @@ export function makePlanning(fx, terrain, projection) {
   return group;
 }
 
-/** Keep the selection ring and the new four-figure warband alive for the loaded world. */
+/** Keep the selection ring and the four-figure warband alive for the loaded world. */
 const RING_MAX_SCALE = 2;   // the ring's vertex buffer is sized for this much screen-scale growth
 
-export function makeParty(terrain, projection, position) {
+/** `model`: the Blender figures from loadWarbandModel(), or null for the procedural fallback until they load. */
+export function makeParty(terrain, projection, position, model = null) {
   const group = new THREE.Group();
   const ring = mutableStroke(terrain, projection, { color: '#ffea9b', width: 2.4 },
     18 * (ringPoints({ x: 0, y: 0, r: 11 * RING_MAX_SCALE }).length - 1));
   group.add(ring.mesh);
-  const warband = makeWarband();
+  let warband = makeWarband(model);
   group.add(warband);
   let previous, lastStep = 0, heading = 0, facing = 0, scale = 1;
   group.userData.updateParty = (party, step = 0) => {
@@ -165,10 +166,26 @@ export function makeParty(terrain, projection, position) {
     warband.scale.setScalar(scale);
     if (previous) group.userData.updateParty(previous, lastStep);
   };
+  const refreshStats = () => {
+    group.userData.stats = { ...warband.userData.stats, meshes: warband.userData.stats.meshes + 1,
+      triangles: warband.userData.stats.triangles + ring.mesh.geometry.drawRange.count / 3,
+      materials: warband.userData.stats.materials + 1, geometries: warband.userData.stats.geometries + 1 };
+  };
+  /** Swap in the Blender figures once they have loaded (once per world at most; the group and ring stay). */
+  group.userData.useModel = next => {
+    if (warband.userData.stats.model !== 'procedural') return;
+    const replaced = warband;
+    warband = makeWarband(next);
+    warband.scale.setScalar(scale);
+    group.remove(replaced);
+    replaced.userData.dispose();
+    disposeGroup(replaced);
+    group.add(warband);
+    refreshStats();
+    if (previous) group.userData.updateParty(previous, 0);
+  };
   group.userData.updateParty(position);
-  group.userData.stats = { ...warband.userData.stats, meshes: warband.userData.stats.meshes + 1,
-    triangles: warband.userData.stats.triangles + ring.mesh.geometry.drawRange.count / 3,
-    materials: warband.userData.stats.materials + 1, geometries: warband.userData.stats.geometries + 1 };
+  refreshStats();
   return group;
 }
 
@@ -195,6 +212,8 @@ export function disposeGroup(group) {
   group.traverse(child => {
     if (child.isMesh || child.isLine) { resources.add(child.geometry); resources.add(child.material); }
     if (child.isInstancedMesh) child.dispose();
+    if (child.isSkinnedMesh) child.skeleton.dispose();   // the bone texture belongs to this world's clone
   });
-  for (const resource of resources) resource.dispose();
+  // Resources marked shared (the warband model, loaded once per session) outlive any one world.
+  for (const resource of resources) if (!resource.userData?.shared) resource.dispose();
 }

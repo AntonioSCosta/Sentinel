@@ -35,11 +35,13 @@ try {
       await page.locator('#camp-cont:not(.hidden)').click({ timeout: 60000 });
       await page.locator('#campaign-map-3d[data-status=ready]').waitFor({ timeout: 60000 });
       if (width <= 844 && await page.locator('#mside').isVisible()) await page.locator('#m-side-toggle').click();
+      if (!baseline) await page.waitForFunction(() => window.__game.campaign.mapMetrics()?.party?.model === 'blender', null, { timeout: 60000 });
       await shot('normal');
       const first = await page.evaluate(() => window.__game.campaign.mapMetrics());
       if (!baseline) {
-        assert.deepEqual([first.party.figures, first.party.meshes, first.party.materials], [4, 9, 3]);
-        assert.ok(first.party.triangles <= 3000);
+        assert.deepEqual([first.party.model, first.party.figures, first.party.meshes, first.party.materials], ['blender', 4, 6, 3]);
+        assert.equal(first.partyBuilds, 1, 'the Blender figures replace the simple ones inside the same party object');
+        assert.ok(first.party.triangles <= 4 * 4500 + 300, 'figures within the characters budget (assets/map/budgets.json)');
         const beforeSelect = await page.evaluate(() => ({ day: window.__game.campaign.flow.state.day,
           dest: window.__game.campaign.dest }));
         await page.locator('.party-label').click();

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as THREE from 'three';
 import { makeParty, makePlanning, disposeGroup } from '../src/campaign-map-3d/overlays.js';
+import { loadWarbandModel } from '../src/campaign-map-3d/party.js';
 import { ringPoints, tacticalStroke } from '../src/campaign-map-3d/tactical-lines.js';
 import { subdivideLine } from '../src/campaign-map-3d/terrain.js';
 
@@ -98,6 +99,66 @@ test('four figures, selection ring and shared resources persist across pose upda
     resource.addEventListener('dispose', () => released.add(resource));
   disposeGroup(visual);
   assert.equal(released.size, oldResources.size);
+});
+
+test('the Blender warband: four skinned men on shared geometry, walking knees, held weapons and a world-safe dispose', async () => {
+  const model = await loadWarbandModel();
+  const visual = makeParty(terrain, projection, party, model);
+  const [ring, warband] = visual.children;
+  const men = [];
+  warband.traverse(child => { if (child.isSkinnedMesh) men.push(child); });
+  assert.deepEqual(men.map(man => man.name), ['mapa_guerreiro_viriato', 'mapa_guerreiro_a', 'mapa_guerreiro_b', 'mapa_guerreiro_c']);
+  assert.equal(visual.userData.stats.model, 'blender');
+  assert.deepEqual([visual.userData.stats.meshes, visual.userData.stats.materials], [6, 3], 'four men, contact shadows, ring');
+  assert.ok(men.every(man => man.geometry.userData.shared && man.material.userData.shared), 'the model is shared by every world');
+  assert.equal(new Set(men.map(man => man.skeleton)).size, 4, 'each man has his own skeleton');
+  const bones = man => Object.fromEntries(man.skeleton.bones.map(bone => [bone.name, bone]));
+  const viriato = bones(men[0]);
+  const rest = { calf: viriato.calf_l.quaternion.clone(), hand: viriato.hand_r.quaternion.clone(), arm: viriato.upperarm_l.quaternion.clone() };
+  const resources = new Set();
+  visual.traverse(child => { if (child.isMesh) resources.add(child.geometry).add(child.material); });
+
+  let bent = 0, swung = 0;
+  for (let i = 1; i <= 12; i++) {
+    visual.userData.updateParty({ x: party.x + i * 2, y: party.y + i * 0.5 }, 1);
+    bent = Math.max(bent, viriato.calf_l.quaternion.angleTo(rest.calf));
+    swung = Math.max(swung, viriato.upperarm_l.quaternion.angleTo(rest.arm));
+    assert.ok(viriato.hand_r.quaternion.angleTo(rest.hand) < 1e-6, 'the spear hand keeps its hold while walking');
+  }
+  assert.ok(bent > 0.2, `the knee bends while walking (${bent.toFixed(2)} rad)`);
+  assert.ok(swung > 0.05, `the free arm swings (${swung.toFixed(2)} rad)`);
+  const after = new Set();
+  visual.traverse(child => { if (child.isMesh) after.add(child.geometry).add(child.material); });
+  assert.deepEqual(after, resources, 'poses create no geometry or material');
+  visual.userData.updateParty({ x: party.x + 24, y: party.y + 6 }, 0);
+  assert.ok(viriato.calf_l.quaternion.angleTo(rest.calf) < 1e-6, 'the march end returns to the standing pose');
+
+  const released = new Set(), skeletons = new Set();
+  for (const resource of resources) resource.addEventListener('dispose', () => released.add(resource));
+  for (const man of men) { const dispose = man.skeleton.dispose.bind(man.skeleton); man.skeleton.dispose = () => { skeletons.add(man); dispose(); }; }
+  disposeGroup(visual);
+  assert.equal(skeletons.size, 4, 'each world frees its skeletons');
+  assert.ok(men.every(man => !released.has(man.geometry) && !released.has(man.material)), 'the shared model survives the world');
+  assert.ok(released.has(ring.geometry) && released.has(warband.getObjectByName('shadows').geometry));
+});
+
+test('the band starts with the simple figures and swaps in the Blender ones once, inside the same group', async () => {
+  const model = await loadWarbandModel();
+  const visual = makeParty(terrain, projection, party);
+  const [ring, simple] = visual.children;
+  const released = new Set();
+  simple.traverse(child => { if (child.isMesh) for (const r of [child.geometry, child.material]) r.addEventListener('dispose', () => released.add(r)); });
+  visual.userData.updateParty(other, 0);
+  visual.userData.useModel(model);
+  const [ringAfter, blender] = visual.children;
+  assert.equal(ringAfter, ring);
+  assert.notEqual(blender, simple);
+  assert.equal(visual.userData.stats.model, 'blender');
+  assert.ok(released.size > 0, 'the simple figures are released');
+  assert.deepEqual(blender.position, simple.position, 'the swap keeps the band where it was');
+  visual.userData.useModel(model);
+  assert.equal(visual.children[1], blender, 'a second load does not rebuild the band');
+  disposeGroup(visual);
 });
 
 test('moving planning strokes keep their geometries and match the previous terrain-following route', () => {

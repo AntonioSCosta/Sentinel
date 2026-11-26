@@ -24,6 +24,7 @@ Todas as texturas abaixo são do Poly Haven e estão sob licença **CC0** (domí
 ## Personagens e animações (CC0)
 - Corpo e cabelos: **Universal Base Characters** — Quaternius (CC0 1.0). Texturas do corpo repintadas como túnicas.
 - Animações: **Universal Animation Library 1 e 2** — Quaternius (CC0 1.0). https://quaternius.com
+- Os guerreiros do mapa estratégico (`assets/map/models/guerreiros.glb`) reutilizam o mesmo corpo, os mesmos cabelos e as animações Idle_Loop e Walk_Loop, vestidos e reduzidos no Blender (`art/blender/guerreiros.blend`; ver `art/LICENSES.md`).
 
 ## Cavalo
 

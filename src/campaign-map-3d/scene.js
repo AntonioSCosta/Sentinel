@@ -4,6 +4,7 @@ import { createMapProjection, createCampaignTerrain, subdivideLine } from './ter
 import { levelRoundhouseSite, loadRoundhouse, roundhousePlacement } from './roundhouse.js';
 import { generateVegetation } from './strategic.js';
 import { disposeGroup, makeForest, makeIntelligence, makeParty, makePlanning } from './overlays.js';
+import { loadWarbandModel } from './party.js';
 import { leaderPath, pickStrategicPoint, positionLabels } from './interaction.js';
 
 const PARTY_PIXELS = 1.15, PARTY_MAX_SCALE = 1.8;   // band size floor (screen px per map unit) and its growth cap
@@ -157,6 +158,12 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
     userData: { key: 'party', selection: partySelection, labelKey: 'map.band', className: 'party-label', priority: 12, lift: 19 },
   };
   let model, terrain, relief, edge, projection, markers, intelligence, planning, partyVisual, targets, labels = [], selected;
+  // The Blender figures load in the background as soon as the map exists; the band uses them as soon as they arrive.
+  let warbandModel = null;
+  loadWarbandModel().then(loaded => {
+    warbandModel = loaded;
+    if (partyVisual) { partyVisual.userData.useModel(loaded); draw(); }
+  }).catch(error => console.warn('Could not load the warband figures; keeping the simple ones.', error));
   const counts = { planningBuilds: 0, partyBuilds: 0, poseUpdates: 0, releasedGroups: 0 };
   let placesKey, intelKey, planningKey, focusedPlace, issues, partyLabel, labelLocale;
   let campaignLabels, showMapDetails, communityPostures;
@@ -424,7 +431,7 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
   function setPartyPose(fx, redraw = true) {
     if (!terrain) return;
     if (!partyVisual) {
-      partyVisual = makeParty(terrain, projection, fx.party);
+      partyVisual = makeParty(terrain, projection, fx.party, warbandModel);
       partyVisual.userData.selection = partySelection;
       model.add(partyVisual);
       targets?.push(partyVisual);

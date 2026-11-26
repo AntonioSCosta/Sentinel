@@ -278,3 +278,122 @@ O vídeo usa quadros determinísticos a 60 fps, a DPR 2, sem ampliação.
 - **A marcha continua a ser um salto de 300 ms por dia.** Fica para o M2/B3. A passada de cerca de 4 Hz ainda escorrega.
 - **O marcador da serra-refúgio** (uma pirâmide cinzenta) fica por baixo do bando na posição inicial da fixture. Pertence ao mapa, não ao bando.
 - **Validação pendente:** fluidez numa GPU real e revisão visual independente.
+
+---
+
+# M1.2 — Guerreiros do Blender a partir do corpo Quaternius
+
+Os bonecos procedurais do M1.1 foram substituídos por personagens adaptadas no Blender. A base é a mesma das batalhas:
+- o corpo masculino e os cabelos da **Universal Base Characters**;
+- as animações **Idle_Loop** e **Walk_Loop** da **Universal Animation Library** (Quaternius, **CC0 1.0**; `assets/CREDITS.md`, secção 5 de `docs/3d-character-pipeline-audit.md`).
+
+Nenhum humano foi criado de raiz e nenhuma peça é gerada no jogo. O procedural do M1.1 só aparece se o GLB não carregar.
+
+Não mudam:
+- a simulação, a duração da marcha, a cadência dos dias, as gravações;
+- a formação em cunha, a escala proporcional às aldeias;
+- a compensação de distância e o compromisso A;
+- a seleção e o anel.
+
+## Pipeline (Blender 5.3)
+
+1. **`tools/blender/warband_source.mjs`** junta ao `body.bin` os canais Idle_Loop e Walk_Loop do `anim_ual1.bin`, pelo nome do osso. Só copia dados.
+2. **`art/blender/src/guerreiros_build.py`** faz a modelação, com o módulo `bpy` 5.3.0, o mesmo Blender da casa redonda:
+   - **corpo:** importa o corpo com os 65 ossos e as duas ações. Reduz o corpo (Decimate simétrico, 12 566 → ~1 100 triângulos) e corta-o nas fronteiras das regiões de cor, para as pintar por face com bordas direitas: pele, túnica, cinto, braçadeiras, faixas das pernas, sapatos;
+   - **roupa:** veste uma casca de túnica suavizada (apaga a musculatura de super-herói), uma saia com pregas até meio da coxa, um cinto e um manto de lã. O manto vai por fora do corpo e da túnica (Shrinkwrap «Outside» e alisamento); nos ombros acaba antes do braço e a borda segue em parte o `upperarm`;
+   - **cabelos:** os mesmos das batalhas, presos ao osso `Head`, com o mesmo ajuste da franja do `src/rig.js`. Olhos e sobrancelhas ficam;
+   - **armas:** lança e caetra (calote com aro, anel pintado e umbo) são desenhadas na pose de repouso (Idle_Loop, fotograma 20) e levadas para a pose de ligação da mão direita e do antebraço esquerdo;
+   - **variantes:** quatro malhas, uma por guerreiro, num só material com cores por vértice:
+     - Viriato em lã crua clara (túnica e manto), cabelo comprido e barba, lança;
+     - A com caetra e lança;
+     - B com caetra e cabelo comprido;
+     - C com lança.
+3. **`tools/blender/export_warband.py`** exporta o esqueleto, as quatro malhas com pele e as duas ações.
+4. **`tools/export-map-assets.mjs`** comprime (meshopt, quantização) e escreve o `.glb.js`. `tools/check-map-assets.mjs` verifica a nova secção `characters` de `assets/map/budgets.json`:
+   - malhas, triângulos por malha e materiais;
+   - pele de 65 ossos;
+   - as duas animações, sem texturas.
+
+**Ficheiros:**
+- `art/blender/guerreiros.blend` (853 KB, Git LFS);
+- `assets/map/models/guerreiros.glb` (325 KB) e `.glb.js` (433 KB), em Git normal.
+
+**Reprodução:** `art/blender/README.md`. Duas corridas dão a mesma geometria e as mesmas animações; só os bytes do exportador podem variar.
+
+## Integração (`party.js`, `overlays.js`, `scene.js`)
+
+- **Carregamento:** `loadWarbandModel()` importa só o `GLTFLoader`, o descodificador meshopt, o `SkeletonUtils` e o `.glb.js`, não o motor de batalha.
+  - É chamado quando o mapa é criado e fica em cache para a sessão.
+  - As geometrias e o material ficam marcados como partilhados: `disposeGroup` não os liberta com um mundo, mas liberta os esqueletos.
+- **Por mundo:** clonam-se quatro esqueletos (`SkeletonUtils.clone`), cada um com a sua malha e o seu `AnimationMixer`.
+- **Se o modelo chegar depois do bando:** `useModel` troca as figuras uma vez, dentro do mesmo grupo. `partyBuilds` fica em 1, o anel mantém-se e as figuras simples são libertadas.
+- **Marcha:**
+  - a Walk_Loop mistura-se com a Idle_Loop pela amplitude que já existia (velocidade apresentada);
+  - a fase segue a distância apresentada, cerca de 1,25 ciclos por dia de marcha, como no M1.1;
+  - os braços da lança e da caetra mantêm a pega do Idle (fotograma 20). A lança não balança como um pêndulo; o braço livre balança;
+  - em repouso cada homem tem um fotograma de Idle diferente.
+- **Repouso estático:** o Idle não corre sozinho. O mapa só desenha quando há mudanças e não quero pô-lo a desenhar 60 vezes por segundo por causa da respiração.
+- **Igual ao M1.1:** rotação progressiva, alturas pelo terreno, sombras de contacto, escala de distância e anel.
+
+## Custos
+
+| Bando, incluindo sombras e anel | M0 (peão) | M1.1 procedural | **M1.2 Blender** |
+| --- | ---: | ---: | ---: |
+| Triângulos | — | 2 754 | **14 792** (3 247–3 886 por guerreiro) |
+| Draw calls do bando | 2 | 9 | **6** |
+| Draw calls da vista inicial (fixture do E2E) | 51 | 58 | **55** |
+| Triângulos da cena (a vegetação tem ~120 mil) | — | 123 mil | 135 mil (+10 %) |
+| Materiais / geometrias por mundo | 2 / 2 | 3 / 9 | 3 / 6 (4 partilhadas na sessão) |
+| Pose (CPU, SwiftShader) | — | 0,06 ms | 0,19–0,25 ms (4 misturadores, 65 ossos) |
+| Memória | — | geometria por mundo | 425 KB de geometria e 47 KB de animação, uma vez por sessão; ~6 KB de textura de ossos por homem e por mundo |
+| Ficheiros | — | — | GLB 325 KB (.glb.js 433 KB), .blend 853 KB (LFS) |
+
+**Triângulos por peça (Viriato):** corpo 1 668, túnica 395, saia 176, cinto 40, manto 252, cabelos 248 + 639 + 258, olhos 92, sobrancelhas 78, lança 40. A caetra, nos outros, tem 296.
+
+**Orçamento.** O antigo limite de 3 000 triângulos era para primitivas. Com personagens com pele, o novo teto é 4 500 por guerreiro (`budgets.json`). Justifica-se porque:
+- a cena continua dominada pela vegetação;
+- o bando desce de 9 para 6 draw calls;
+- a geometria carrega-se uma vez por sessão.
+
+**Sem LOD.** Um segundo conjunto de malhas com pele custaria memória e criaria uma troca visível, para poupar cerca de 10 % de triângulos numa cena barata. Não há ganho medível.
+
+**Garantias:**
+- Sem geometria nova por quadro de pose:
+  - o teste unitário cobre recursos iguais depois das poses;
+  - `e2e-campaign-party-render` cobre zero buffers criados ou libertados nos quadros só de pose, com o modelo já carregado.
+- Um mundo novo constrói o bando diretamente do modelo.
+
+## Avaliação visual
+
+Evidência em `production/qa/evidence/m1-warband/m1.2-blender/`:
+
+| Ficheiro | Conteúdo |
+| --- | --- |
+| `aproximado-dpr2.png` | zoom 4, DPR 2, escala nativa |
+| `medio-sem-anel.png` | zoom 2,2 nas quatro resoluções |
+| `normal-sem-anel.png` · `normal-com-anel.png` | vista normal, ampliada 3× bicúbica |
+| `afastado-sem-anel.png` | zoom 0,8 |
+| `orientacoes-dpr2.png` | quatro direções a 1280×800 e 844×390 |
+| `viriato-de-perto.png` | Viriato com a iluminação do mapa, de frente e de costas |
+| `marcha-de-perto.mp4` | Viriato e um companheiro a marchar pelo próprio `party.js` |
+| `marcha-4-direcoes.mp4` | M1.1 e M1.2 lado a lado, quatro direções, tempo real e câmara lenta ×4 |
+| `after/` | capturas do E2E nas quatro resoluções: normal, sem etiqueta, selecionado, afastado, aproximado, marchas e PT-PT |
+| `metrics.json` | métricas |
+
+**Zoom aproximado e médio:** a versão Blender é claramente superior. São pessoas com proporções naturais, túnica com volume, saia, cinto, braçadeiras, faixas nas pernas, manto, cabelos e barbas. A caetra tem aro, anel e umbo; a lança tem folha. O procedural lê-se como bonecos atarracados.
+
+**Animação:** é a Walk_Loop da UAL, com joelhos, ancas e braço livre. As armas mantêm a pega e a rotação é progressiva. O salto de 300 ms por dia continua (M2/B3).
+
+**Vista normal (1440, 1280, 1024):** legibilidade equivalente à do M1.1. Quatro homens separados e Viriato claro à frente, de qualquer lado. O grupo tem um pouco menos de massa escura: braços nus e caetras ocre clareiam figuras que o M1.1 tapava com o manto.
+
+**844×390:** mantém-se o compromisso A (anel e etiqueta).
+
+**Defeitos que ficam, à escala de retrato:**
+- o rosto Quaternius reduzido é simples;
+- as mãos são em bloco;
+- os mantos são superfícies de uma face, com o material desenhado dos dois lados;
+- a gola da túnica dos companheiros tem pequenas irregularidades.
+
+Nada disto se vê à escala do mapa. O Idle fica parado, para não obrigar o mapa a desenhar continuamente.
+
+**Veredito: GO visual.** Fica pendente a revisão visual independente e a confirmação de fluidez numa GPU real (as medições foram feitas em SwiftShader).
