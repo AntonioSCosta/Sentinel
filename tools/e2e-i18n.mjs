@@ -40,7 +40,9 @@ async function scenario(browserLocale, initial, next) {
     delete state.communities;
     state.food = 1000;
     state.done.push('cativos');
-    const save = JSON.stringify({ v: 1, phase: 'mapa', state, battle: null });
+    // uma entrada do Diário gravada antes da tradução do baralho: traz `text` em pt-PT, mas mostra-se na língua escolhida
+    const journal = [{ type: 'acontecimento', id: 'traidor', text: 'Um traidor foge de noite e leva armas consigo.', day: 1 }];
+    const save = JSON.stringify({ v: 1, phase: 'mapa', state, battle: null, journal });
     await page.addInitScript(save => {
       if (!localStorage.getItem('viriato.campaign')) localStorage.setItem('viriato.campaign', save);
       const getContext = HTMLCanvasElement.prototype.getContext;
@@ -95,6 +97,11 @@ async function scenario(browserLocale, initial, next) {
     assert.equal(await page.locator('[data-camera=reset]').textContent(), next === 'en' ? 'Centre' : 'Centrar');
     assert.deepEqual(await snapshot(), before);
     assert.equal(await mapPixels(), beforePixels, 'changing language preserves camera and rendered geometry');
+    await page.locator('#m-diary').click();
+    await page.locator('#mdiary-tab-historia').click();
+    assert.match(await page.locator('#mdiary-body').textContent(), next === 'en'
+      ? /A traitor flees in the night and takes weapons with him\./ : /Um traidor foge de noite e leva armas consigo\./);
+    await page.locator('#mdiary-close').click();
     if (captures) {
       await page.screenshot({ path: join(captures, `map-${next}.png`) });
       const layout = [['#mbot', '#mbot button'], ['#mtop', '#mtop button, #m-date, #mtop .res, #mtop .map-language'], ['#campaign-map-3d', '[data-camera]']];
