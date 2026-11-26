@@ -217,7 +217,25 @@ test('interrupções: tributo exigido, postura, colheita agrupados numa só (com
   s.food = 1;
   assert.deepEqual(detectInterruptions({ state: s, events: [], memory: mem }).map(x => x.type), [], 'comida baixa já não interrompe');
 });
-
+test('interrupcoes: comida baixa nao interrompe, mas e rastreada em memoria', () => {
+  const f = quietFlow(), s = f.state, mem = {};
+  s.food = 100;
+  detectInterruptions({ state: s, events: [], memory: mem });
+  assert.equal(mem.lowFood, false);
+  assert.equal(mem.emptyFood, false);
+  s.food = 5;
+  const r = detectInterruptions({ state: s, events: [], memory: mem });
+  assert.deepEqual(r.map(x => x.type), [], 'nao interrompe');
+  assert.equal(mem.lowFood, true);
+  assert.equal(mem.emptyFood, false);
+  s.food = 0;
+  detectInterruptions({ state: s, events: [], memory: mem });
+  assert.equal(mem.emptyFood, true);
+  // recuperacao
+  s.food = 100; detectInterruptions({ state: s, events: [], memory: mem });
+  s.food = 5; const r2 = detectInterruptions({ state: s, events: [], memory: mem });
+  assert.deepEqual(r2.map(x => x.type), [], 'nao interrompe apos recuperacao');
+});
 test('interrupções: força conhecida a menos de um dia do bando ou de uma aldeia amiga, uma vez por aproximação', () => {
   const f = quietFlow(), s = f.state, mem = {};
   s.intel.known = { p1: { kind: 'patrulha', x: s.party.x + MARCH_SPEED - 1, y: s.party.y, day: s.day, men: 6 } };

@@ -421,11 +421,11 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (!r) return r;
     if (dest && !r.refused && Math.hypot(flow.state.party.x - dest.x, flow.state.party.y - dest.y) < ARRIVAL) { const arrived = dest; log.push(() => tMap('arrived', { name: destName(arrived) })); logDirty = true; dest = null; }
     if (r.refused && o.kind === 'marchar') dest = null;
+    const wasLow = memory.lowFood ?? false, wasEmpty = memory.emptyFood ?? false;
     const reasons = r.refused ? [] : detectInterruptions({ state: flow.state, events: r.events, memory, battle: r.battle });
     // B3.1: comida baixa/esgotada é aviso, não interrupção. Aviso discreto no log, vermelho se esgotada.
     if (!r.refused) {
-      const fd = foodDays(flow.state), low = fd < LOW_FOOD_DAYS;
-      const wasLow = memory.lowFood ?? false, wasEmpty = memory.emptyFood ?? false, empty = fd <= 0;
+      const fd = foodDays(flow.state), low = fd < LOW_FOOD_DAYS, empty = fd <= 0;
       if (low && (!wasLow || (empty && !wasEmpty))) {
         const text = INTERRUPT.comida(fd);
         log.push(empty ? { text, severe: true } : text);
