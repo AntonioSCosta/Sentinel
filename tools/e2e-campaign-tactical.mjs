@@ -37,6 +37,12 @@ try {
   };
   const fight = page.locator('#mb-fight');
   const iframe = page.frameLocator('#campaign-tactical-arena');
+  // #start is static HTML; window.__proto only exists once the arena's module has run.
+  const arenaReady = async () => {
+    await iframe.locator('#start').waitFor({ timeout: 30000 });
+    const frame = await (await page.locator('#campaign-tactical-arena').elementHandle()).contentFrame();
+    await frame.waitForFunction(() => window.__proto, null, { timeout: 30000 });
+  };
   await page.goto(url);
   await openMap();
   await page.locator('#m-ambush').click();
@@ -57,7 +63,7 @@ try {
   await page.reload();
   await openMap();
   await fight.click();
-  await iframe.locator('#start').waitFor({ timeout: 30000 });
+  await arenaReady();
   assert.equal(await iframe.locator('h1').textContent(), 'The Ambush');
 
   // Keep the first arena's preparation queued until a second arena has opened.
@@ -75,7 +81,7 @@ try {
   await fight.waitFor();
   assert.deepEqual(await save(), pending);
   await fight.click();
-  await iframe.locator('#start').waitFor({ timeout: 30000 });
+  await arenaReady();
   await page.evaluate(async key => {
     window.releaseCampaignWrite();
     await navigator.locks.request(key, () => {});
