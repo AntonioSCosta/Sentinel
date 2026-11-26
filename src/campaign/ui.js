@@ -14,7 +14,7 @@ import { MARCH_SPEED, REACH, ARRIVAL, marchDays as marchDaysTo, inReach, nearRoa
 import { TRIBUTE, PUNISH } from './rome.js';
 import { placeName, communityOf, POSTURE_LABEL, SITUATION_LABEL, POSTURE_HINT, SITUATION_HINT, communityLine, chiefLine, officeLine, daysText, UI, ACTION_NO, EFFECT, DIARY, ROME_BAND } from './strings.js';
 import { buildIssues, detectInterruptions, foodDays, interruptionText, LOW_FOOD_DAYS } from './issues.js';
-import { dueScheduled } from './events.js';
+import { dueScheduled, DECK } from './events.js';
 import { SPEEDS, DAY_MS, loadSpeed, saveSpeed, standingOrder } from './pace.js';
 import { categoryOf } from './journal.js';
 import { youth, topMotives, IDENTITY, COMMUNITY_IDS } from './communities.js';
@@ -258,8 +258,9 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     : KIND_NAMES[place.kind] ? tMap(`kind.${place.kind}`) : place.kind;
   const tMap = (key, params) => i18n.t(`map.${key}`, params);
   const tIssue = (key, params) => tMap(`issuesCopy.${key}`, params);
-  const eventMessage = (ev, events) => ev.type === 'emboscada-tatica'
-    ? tMap(`tactical.outcome.${ev.outcome}`, ev) : eventText(ev, flow.state, events);
+  const eventMessage = (ev, events) => ev.type === 'emboscada-tatica' ? tMap(`tactical.outcome.${ev.outcome}`, ev)
+    : ev.type === 'acontecimento' && DECK.some(e => e.id === ev.id) ? tMap(`deck.${ev.id}`)   // saves antigos trazem também `text` em pt-PT: o id manda
+    : eventText(ev, flow.state, events);
   const duration = count => tMap('days', { count });
   const settlement = id => flow.state.world.settlements.find(x => x.id === id);
   const communityAt = id => { const k = communityOf(flow.state, id); return k ? flow.state.communities[k] : null; };

@@ -1,4 +1,8 @@
 export default {
+  "deck.enviado": "A messenger from the villages brings three volunteers to your band.",
+  "deck.seca": "Drought and rats spoil part of the supplies.",
+  "deck.traidor": "A traitor flees in the night and takes weapons with him.",
+  "deck.pastores": "Shepherds from the hills offer cheese and dried meat.",
   "tactical.kicker": "Battle",
   "tactical.title": "Ambush a Roman patrol",
   "tactical.fight": "Fight",
