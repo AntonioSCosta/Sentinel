@@ -35,6 +35,19 @@ for (const vp of [{ width: 1366, height: 768 }, { width: 1280, height: 800 }, { 
   if (!narrow) check(`${tag}: o mapa e a coluna ficam lado a lado`, !hit(cv, side) && cv.width >= vp.width * 0.6, `mapa ${fmt(cv)} | coluna ${fmt(side)}`);
   const issues = await page.evaluate(() => document.querySelectorAll('#missues-list .issue').length);
   check(`${tag}: os assuntos aparecem (${issues})`, issues >= 2);
+  // B3.1: comida baixa/esgotada não deve abrir a faixa "O tempo parou".
+  const foodPanel = await page.evaluate(() => {
+    const c = window.__game.campaign;
+    const originalFood = c.flow.state.food;
+    c.flow.state.food = 0;
+    c.render();
+    const displayed = !document.getElementById('m-int').classList.contains('hidden');
+    c.flow.state.food = originalFood;
+    c.render();
+    return displayed;
+  });
+  check(`${tag}: sem faixa de interrupção quando acaba a comida`, !foodPanel);
+
   const end = await page.evaluate(() => { const s = document.getElementById('mside'); s.scrollTop = s.scrollHeight; const l = s.querySelector('#missues-list').lastElementChild.getBoundingClientRect(), u = s.getBoundingClientRect(); return l.bottom <= u.bottom + 1; });
   check(`${tag}: o último assunto alcança-se a rolar`, end);
   const lg = await box('#mlog');
