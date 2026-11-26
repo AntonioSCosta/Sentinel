@@ -38,7 +38,7 @@ try {
       await shot('normal');
       const first = await page.evaluate(() => window.__game.campaign.mapMetrics());
       if (!baseline) {
-        assert.deepEqual([first.party.figures, first.party.meshes, first.party.materials], [4, 7, 2]);
+        assert.deepEqual([first.party.figures, first.party.meshes, first.party.materials], [4, 9, 3]);
         assert.ok(first.party.triangles <= 3000);
         const beforeSelect = await page.evaluate(() => ({ day: window.__game.campaign.flow.state.day,
           dest: window.__game.campaign.dest }));

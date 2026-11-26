@@ -188,3 +188,93 @@ A 844×390, a nota 4/5 **não é atingível com quatro modelos** sem os aumentar
 **Pendente:**
 - Validação de fluidez numa GPU real.
 - Um playtest de legibilidade com pessoas, porque as notas acima são minhas.
+
+---
+
+# M1.1 — Passagem artística: modelos suaves
+
+O criador aprovou o compromisso A (a 844×390 o bando localiza-se pelo anel e pela etiqueta) e pediu modelos simples, limpos e suaves: "smoothness vende". Esta passagem mantém a paleta, a formação, a escala moderada, a compensação de distância, a simulação e a duração da marcha.
+
+## Diagnóstico antes da passagem
+
+**Renderização:** já estava correta e não mudou.
+- `antialias: true` dá MSAA 4×, confirmado no contexto WebGL.
+- `pixelRatio` = min(DPR, 2), com o buffer de desenho a seguir o DPR.
+- Iluminação hemisférica mais direcional, materiais foscos.
+
+Nota: as folhas de comparação anteriores ampliavam com vizinho mais próximo e exageravam o serrilhado. As desta secção estão à escala nativa ou foram ampliadas com filtro bicúbico, e isso vem indicado.
+
+**Defeitos do modelo M1.1:**
+- sombreamento plano em cilindros de 6 a 8 lados;
+- túnica, manto, ombros e cinto empilhados como peças separadas;
+- cabelo em cone, como um chapéu;
+- figuras atarracadas, com pernas a cerca de 30 % da altura;
+- escudos octogonais;
+- lanças de secção quadrada;
+- pés em caixa;
+- membros rígidos sem joelho;
+- figuras sem contacto com o chão.
+
+## O que mudou (`party.js`)
+
+- **Corpo contínuo.** Cada homem tem um único corpo torneado (`LatheGeometry`) da bainha ao pescoço. As regiões de túnica, manto (costas e ombros; em Viriato, também o peito) e cinto são cores por vértice no mesmo contorno, não peças empilhadas. A secção é ligeiramente elíptica, mais larga que funda.
+- **Sombreamento suave.** `sculpt` transforma as normais de cada primitiva pela matriz de normais, em vez de as recalcular como facetas. O material deixou de usar `flatShading`.
+- **Proporções.** Altura de cerca de 15 unidades, pernas com cerca de 45 % (anca a 6,9), cabeça com cerca de 1/6 e ombros arredondados. O cabelo é uma calote esférica.
+- **Escudos, lanças e pés.**
+  - A caetra é uma calote abaulada com umbo.
+  - A lança tem haste de 6 lados e folha afilada.
+  - O pé é um elipsoide.
+  - Braços e canelas são cápsulas.
+  - A coxa é um tronco de cone aberto; as pontas ficam escondidas pela anca e pelo joelho.
+- **Articulações.** Coxa e canela são dois `InstancedMesh`. O joelho dobra-se (até 0,75 rad) só enquanto essa perna avança.
+  - Os braços balançam contra as pernas. Os do escudo e da lança movem-se menos.
+  - O corpo sobe ligeiramente a meio passo, inclina-se para a frente e balança um pouco de lado.
+  - A fase segue a distância apresentada e a amplitude segue a velocidade da interpolação, como antes.
+- **Sombra de contacto.** Um disco suave por homem, com alfa por vértice: centro a 0,7, borda transparente, opacidade 0,5. Não usa textura.
+  - Fica deitado sobre a inclinação local do terreno, calculada pelo gradiente de `heightAt`.
+  - Está deslocado 1,7 unidades na direção da luz principal da cena, `(-370, 620, -330)`. Assim aparece ao lado do homem em vez de ficar escondido sob o manto.
+  - Não acompanha o balanço do passo.
+  - Fica 0,6 unidades acima de `heightAt`, porque nas encostas a malha triangulada do terreno pode ficar ligeiramente acima da altura analítica.
+
+## Custos
+
+| Bando, incluindo o anel | M1.1 anterior | M1.1 polido |
+| --- | ---: | ---: |
+| Triângulos | 1188 | **2754** (corpos 1434, canelas e pés 592, braços 400, coxas 96, sombras 168, anel 64) |
+| Meshes / draw calls do bando | 7 | 9 (4 corpos e 4 instanciados, mais o anel) |
+| Geometrias / materiais | 7 / 2 | 9 / 3 (figuras, sombras, anel) |
+
+Sem geometria nova por quadro de pose: as matrizes das instâncias reescrevem-se nos mesmos buffers (teste unitário e `e2e-campaign-party-render`). A troca de mundo continua a libertar tudo. As sombras não usam textura, por isso não há nada extra a libertar.
+
+## Avaliação
+
+**Evidência** em `production/qa/evidence/m1-warband/m1.1-polido/`:
+
+| Folha | Conteúdo |
+| --- | --- |
+| `aproximado-dpr2.png` | zoom 4, DPR 2, escala nativa |
+| `orientacoes-dpr2.png` | quatro orientações a 1280×800 e 844×390, zoom 2,2 |
+| `normal-sem-anel.png` · `normal-com-anel.png` | vista normal nas quatro resoluções, ampliada 3× bicúbica |
+| `afastado-sem-anel.png` | zoom 0,8 |
+| `marcha-viriato.png` | quadros consecutivos de Viriato a marchar |
+| `sombras-terreno.png` | sombras em erva, areia, encosta e crista |
+| `marcha-polida.mp4` | quatro direções, M1.1 anterior ao lado do polido, tempo real e câmara lenta ×4 |
+
+O vídeo usa quadros determinísticos a 60 fps, a DPR 2, sem ampliação.
+
+**Já não parecem primitivas coladas.** No zoom aproximado, cada homem é uma silhueta única e arredondada, com cabeça, ombros, cintura, pernas com joelho e braços. Os escudos são discos limpos e as lanças finas.
+
+**Vista normal:**
+- A 1440, 1280 e 1024, os quatro homens continuam separados e Viriato continua claro à frente. As figuras têm um pouco menos de massa escura (22×26 px contra 25×27 a 1440×900), mas leem-se mais como pessoas.
+- A 844×390 o bando tem 12×14 px. É o limite de resolução aceite no compromisso A.
+
+**Sombras:**
+- Seguem a inclinação: o teste unitário compara a normal do disco com a do terreno.
+- Ficam ao lado de cada homem, do lado oposto à luz.
+- Não são discos pretos: são manchas suaves que somem para a borda.
+- Na areia clara notam-se mais do que na erva.
+
+**Limitações conhecidas:**
+- **A marcha continua a ser um salto de 300 ms por dia.** Fica para o M2/B3. A passada de cerca de 4 Hz ainda escorrega.
+- **O marcador da serra-refúgio** (uma pirâmide cinzenta) fica por baixo do bando na posição inicial da fixture. Pertence ao mapa, não ao bando.
+- **Validação pendente:** fluidez numa GPU real e revisão visual independente.
