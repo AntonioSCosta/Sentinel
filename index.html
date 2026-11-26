@@ -138,28 +138,77 @@
   #mend .stats{font-size:17px;gap:3px 30px;border-top:1px solid #4a3a2a;border-bottom:1px solid #4a3a2a;padding:10px 0;margin:4px 0 14px}
   #mend-chron{font-size:16px;color:var(--dim)}#mend-chron:empty{display:none}#mend-chron cite{display:block;font-size:14px;font-style:normal;margin-top:4px}
   #mcron{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(5,4,3,.86)}
-  #mcron .card{width:min(760px,94vw);max-height:90vh;display:flex;flex-direction:column;padding:22px 30px}
-  #mcron h2{margin:2px 0 6px;font-size:30px;font-weight:700;letter-spacing:.05em;color:var(--ink)}#mcron .brief{margin:0 0 10px;color:var(--dim);font-size:16px}
+  #mcron .card{box-sizing:border-box;width:min(822px,calc(100% - 20px));max-height:90vh;display:flex;flex-direction:column;padding:22px clamp(16px,4vw,30px)}
+  #mcron h2{margin:2px 0 6px;font-size:30px;font-weight:700;letter-spacing:.05em;color:var(--ink)}
   #mcron-list{list-style:none;margin:0;padding:0 6px 0 0;overflow:auto;flex:1;min-height:0;border-top:1px solid #4a3a2a}
   #mcron-list li{padding:12px 4px 12px;border-bottom:1px solid #3a2e22}#mcron-list li:focus{outline:2px solid var(--gold);outline-offset:-2px}
   #mcron-list h3{display:inline;margin:0 10px 0 0;font-family:'Cinzel',serif;font-weight:400;font-size:17px;color:var(--gold)}
   #mcron-list .chip{display:inline-block;padding:1px 8px;border:1px solid #6a5238;font-size:13px;letter-spacing:.06em;color:var(--dim);vertical-align:2px}
   #mcron-list .txt{margin:6px 0 0;font-size:16px;line-height:1.4}#mcron-list .cit{margin:4px 0 0;font-size:14px;color:var(--dim)}
-  #mcron-list li.locked h3{color:#8d7f6c}#mcron-list li.locked .lk{margin:4px 0 0;font-size:15px;font-style:italic;color:#8d7f6c}
+  #mcron-list .locked p{margin:0;font-size:15px;font-style:italic;color:var(--dim)}
   #mcron .row{margin-top:12px}
-  #camp-confirm{margin-top:12px;padding:12px 16px;border:1px solid #6a5238;background:rgba(16,13,10,.9)}#camp-confirm p{margin:0 0 8px}
-  /* menu: os dois botões principais ficam sempre à vista (rodapé fixo do cartão); as opções e os controlos rolam por cima */
-  #menu .card{padding-bottom:0}
-  .menu-foot{position:sticky;bottom:0;margin:0 -40px;padding:12px 40px 16px;background:#100d0a;border-top:1px solid #4a3a2a}
-  .menu-foot .row{margin:10px 0 0}
-  .menu-foot #camp-confirm{position:absolute;left:40px;right:40px;bottom:calc(100% + 8px);margin:0;background:#17120d;box-shadow:0 8px 24px rgba(0,0,0,.6)}
-  @media (max-height:820px){.menu-foot{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding-top:10px;padding-bottom:12px}.menu-foot .row{margin:0}}
-  @media (max-height:560px){
-    #menu .card{width:min(780px,94vw);padding:14px 28px 0}
-    #menu h1{font-size:40px;margin-top:2px}#menu h2{font-size:16px;margin:4px 0 8px}#menu .brief{font-size:15px;line-height:1.35;margin:0 0 6px}
-    .menu-foot{margin:0 -28px;padding:8px 28px 10px}
-    .menu-foot button.go{padding:10px 24px}
-    .menu-foot #camp-confirm{left:28px;right:28px}
+  /* menu: «Sentinel» ao centro, uma lista vertical à esquerda e uma janela por entrada; a floresta e a neblina ficam à vista */
+  #menu{display:grid;grid-template-columns:minmax(200px,260px) minmax(0,620px);grid-template-rows:auto minmax(0,1fr);justify-content:center;align-content:start;gap:clamp(14px,4vh,40px) clamp(28px,5vw,72px);padding:clamp(18px,7vh,80px) 24px clamp(14px,4vh,40px);box-sizing:border-box}   /* o véu escuro de .screen fica: a floresta e a neblina continuam por trás */
+  .menu-head{grid-column:1/-1;text-align:center;margin:0}
+  .menu-head h1{margin:0;padding-left:.1em;font-size:clamp(46px,7.5vw,92px);letter-spacing:.1em;font-weight:700;color:var(--ink);text-shadow:0 0 28px rgba(224,166,74,.16),0 2px 10px rgba(0,0,0,.9)}
+  .menu-year{margin:8px 0 0;padding-left:.32em;font-family:'Cinzel',serif;font-size:13px;letter-spacing:.32em;color:var(--ink);text-shadow:0 1px 3px #000}
+  .menu-side{grid-column:1;align-self:start}
+  .menu-nav{display:flex;flex-direction:column;gap:2px;padding:6px 0 6px 2px;border-left:1px solid;border-image:linear-gradient(transparent,#6b5438 18%,#6b5438 82%,transparent) 1}
+  .menu-nav button{position:relative;min-height:46px;padding:10px 12px 10px 26px;border:0;background:none;text-align:left;font-size:17px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink);text-shadow:0 1px 4px #000;transition:color .25s}
+  .menu-nav button::before{content:"";position:absolute;left:0;top:50%;width:0;height:1px;background:var(--gold);transition:width .25s}
+  .menu-nav button:hover,.menu-nav button:focus-visible{color:var(--gold)}
+  .menu-nav button:hover::before,.menu-nav button:focus-visible::before{width:12px}
+  .menu-nav button[aria-expanded="true"]{color:var(--gold)}
+  .menu-nav button[aria-expanded="true"]::before{width:18px}
+  .menu-nav button:focus-visible{outline:1px dotted var(--gold);outline-offset:-2px}
+  #menu #physnote,#menu #loaderr{margin:14px 0 0 2px;font-size:15px}
+  #menu .menu-win{grid-column:2;grid-row:2;align-self:start;box-sizing:border-box;width:auto;max-height:100%;padding:0;overflow:hidden;display:flex;flex-direction:column;outline:1px solid rgba(107,84,56,.35);outline-offset:-7px;box-shadow:0 20px 60px rgba(0,0,0,.7),inset 0 0 60px rgba(0,0,0,.45)}
+  #menu .menu-win[hidden]{display:none}
+  #menu #sec-language{justify-self:start;width:min(420px,100%)}
+  .win-head{flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 30px 12px;background:#100d0a;border-bottom:1px solid #4a3a2a}
+  .win-body{min-height:0;overflow:auto;padding:16px 30px 24px}
+  .win-foot{flex:none;display:flex;gap:10px;padding:12px 30px 16px;border-top:1px solid #3a2e22;background:#100d0a}
+  .win-head h2{margin:0;font-size:15px;letter-spacing:.34em;text-transform:uppercase;color:var(--gold);outline:none}
+  .win-head h2:focus-visible{outline:1px dotted var(--gold);outline-offset:4px}
+  .win-head [data-close]{display:none;min-width:44px;min-height:44px;padding:0;font-size:24px;line-height:1;letter-spacing:0;color:var(--ink);background:none}
+  .menu-win .brief{margin:0 0 16px}
+  .menu-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .chapters{display:grid;gap:6px;margin:0 0 14px}
+  .chapters button{text-align:left}
+  .menu-win .kicker{margin-top:4px}
+  #camp-confirm{margin-top:14px;padding:12px 16px;border:1px solid #6a5238;background:#17120d}#camp-confirm p{margin:0 0 8px}#camp-confirm .row{margin:0}
+  #menu-chron{list-style:none;margin:0;padding:0;border-top:1px solid #4a3a2a}
+  #menu-chron li{border-bottom:1px solid #3a2e22;padding:10px 2px}
+  #menu-chron summary{cursor:pointer;font-family:'Cinzel',serif;font-size:16px;color:var(--gold)}
+  #menu-chron .chip{display:inline-block;margin-left:10px;padding:1px 8px;border:1px solid #6a5238;font-family:'EB Garamond',serif;font-size:13px;letter-spacing:.06em;color:var(--dim);vertical-align:2px}
+  #menu-chron p{margin:6px 0 0;font-size:16px;line-height:1.4}#menu-chron .cit{font-size:14px;color:var(--dim)}
+  #menu-chron .locked{color:var(--dim);font-style:italic}
+  #sec-controls .keys{grid-template-columns:auto minmax(0,1fr) auto minmax(0,1fr)}
+  @media (prefers-reduced-motion:reduce){.menu-nav button,.menu-nav button::before{transition:none}}
+  /* ecrã estreito ou baixo: a lista fica ao centro e a janela abre por cima, a ocupar o ecrã */
+  @media (max-width:860px),(max-height:560px){
+    #menu{grid-template-columns:minmax(0,320px);justify-content:center;align-content:center;padding:14px 16px}
+    .menu-head h1{font-size:clamp(34px,9vw,56px)}
+    .menu-year{margin-top:4px}
+    .menu-nav button{min-height:40px;padding:7px 10px 7px 22px;font-size:15px}
+    #menu.has-window :is(.menu-head,.menu-side){visibility:hidden}
+    #menu.has-window::before{content:"";position:fixed;inset:0;background:rgba(5,4,3,.82);z-index:4}
+    #menu .menu-win{position:fixed;inset:10px;z-index:5;align-self:stretch;max-height:none;width:auto;background:#100d0a}
+    #menu #sec-language{inset:50% 10px auto;width:min(420px,calc(100% - 20px));max-height:calc(100% - 20px);margin-inline:auto;transform:translateY(-50%)}
+    .win-head{padding:10px 18px 8px}.win-body{padding:10px 18px 14px}.win-foot{padding:10px 18px 12px}
+    #menu .row{margin:8px 0}#menu .menu-win button:not([data-close]){min-height:38px;padding:7px 14px}
+    .win-head [data-close]{display:block}
+  }
+  @media (max-height:560px) and (min-width:700px){
+    #menu{grid-template-columns:minmax(0,260px) minmax(0,1fr);grid-template-rows:auto;align-content:center}
+    .menu-head{grid-column:1;text-align:left}
+    .menu-head h1{padding-left:0}
+    .menu-year{padding-left:0}
+    .menu-side{grid-column:1;grid-row:2}
+  }
+  @media (max-width:520px){
+    #sec-controls .keys{grid-template-columns:auto minmax(0,1fr)}
+    #camp-confirm{padding-inline:12px}
   }
   /* ---------- HUD ---------- */
   #hud{position:fixed;inset:0;pointer-events:none;user-select:none}
@@ -266,50 +315,87 @@
 </div>
 
 <div id="menu" class="screen">
-  <div class="card">
-    <p class="kicker" id="kicker">LUSITÂNIA · 147 A.C.</p>
+  <header class="menu-head">
     <h1>Sentinel</h1>
-    <p class="brief" id="brief">Três anos depois da traição de Galba, Roma volta a marchar pelos vales. Uma patrulha desce a estrada do vale. Viriato e os seus esperam-na escondidos no mato.</p>
-    <div class="row"><span class="lbl" data-i18n="interface.chapter">CAPÍTULO</span>
-      <button type="button" data-ch="prologo" aria-pressed="true" data-i18n="interface.prologue">Prólogo · A traição de Galba</button>
-      <button type="button" data-ch="cativos" aria-pressed="false" data-i18n="interface.captives">I · Os Cativos</button>
-      <button type="button" data-ch="emboscada" aria-pressed="false" data-i18n="interface.ambush">II · A Emboscada</button>
-      <button type="button" data-ch="acampamento" aria-pressed="false" data-i18n="interface.camp">III · O Acampamento</button>
-    </div>
-    <div class="row"><span class="lbl" data-i18n="interface.difficulty">DIFICULDADE</span>
-      <button type="button" data-diff="0" aria-pressed="false" data-i18n="interface.easy">Fácil</button>
-      <button type="button" data-diff="1" aria-pressed="true" data-i18n="interface.normal">Normal</button>
-      <button type="button" data-diff="2" aria-pressed="false" data-i18n="interface.hard">Difícil</button>
-    </div>
-    <div class="row"><span class="lbl" data-i18n="interface.graphics">GRÁFICOS</span>
-      <button type="button" data-q="low" aria-pressed="false" data-i18n="interface.low">Baixa</button>
-      <button type="button" data-q="medium" aria-pressed="true" data-i18n="interface.medium">Média</button>
-      <button type="button" data-q="high" aria-pressed="false" data-i18n="interface.high">Alta</button>
-    </div>
-    <div class="row"><label class="lbl" for="sens" data-i18n="interface.mouse">RATO</label><input id="sens" type="range" min="1" max="10" value="5"></div>
-    <div class="row"><label class="language-option" for="menu-language"><span data-i18n="interface.language">Idioma</span> <select id="menu-language" data-language><option value="en" lang="en">English</option><option value="pt-PT" lang="pt-PT">Português (Portugal)</option></select></label></div>
-    <div class="keys">
-      <b>W A S D</b><span data-i18n="interface.move">mover</span><b data-i18n="interface.mouse">RATO</b><span data-i18n="interface.look">olhar</span>
-      <b data-i18n="interface.click">CLIQUE</b><span data-i18n="interface.attack">atacar ou lançar — segura para mais força</span><b data-i18n="interface.rightClick">CLIQUE DIR.</b><span data-i18n="interface.shield">escudo</span>
-      <b>Q</b><span data-i18n="interface.parry">aparar com a falcata</span><b>Z</b><span data-i18n="interface.follow">companheiros: sigam-me</span><b>X</b><span data-i18n="interface.flag">companheiros: bandeira (aponta e clica)</span><b>T</b><span data-i18n="interface.charge">companheiros: ao ataque</span>
-      <b>R</b><span data-i18n="interface.clearShield">arrancar dardos do escudo</span><b>G</b><span data-i18n="interface.retreatHint">campanha: retirada, se houver serra perto</span>
-      <b data-i18n="interface.weaponKeys">1 2 3 / RODA</b><span data-i18n="interface.weapons">armas</span><b>SHIFT</b><span data-i18n="interface.sprint">correr</span>
-      <b data-i18n="interface.space">ESPAÇO</b><span data-i18n="interface.jump">saltar</span><b>C</b><span data-i18n="interface.crouch">agachar</span>
-      <b>E</b><span data-i18n="interface.use">usar</span><b>ESC</b><span data-i18n="interface.pauseKey">pausa</span>
-      <b>V</b><span data-i18n="interface.perspective">1.ª / 3.ª pessoa</span><span></span><span></span>
-    </div>
+    <p class="menu-year" data-i18n="interface.menuYear">147 A.C.</p>
+  </header>
+  <div class="menu-side">
+    <nav class="menu-nav" aria-label="Menu" data-i18n-aria="interface.menuNav">
+      <button type="button" id="tab-campaign" data-sec="campaign" aria-controls="sec-campaign" aria-expanded="false" data-i18n="interface.secCampaign"></button>
+      <button type="button" id="tab-missions" data-sec="missions" aria-controls="sec-missions" aria-expanded="false" data-i18n="interface.secMissions"></button>
+      <button type="button" id="tab-controls" data-sec="controls" aria-controls="sec-controls" aria-expanded="false" data-i18n="interface.secControls"></button>
+      <button type="button" id="tab-chronicle" data-sec="chronicle" aria-controls="sec-chronicle" aria-expanded="false" data-i18n="interface.secChronicle"></button>
+      <button type="button" id="tab-language" data-sec="language" aria-controls="sec-language" aria-expanded="false" data-i18n="interface.language"></button>
+    </nav>
     <p id="physnote" class="hidden" style="font-size:15px;color:var(--dim)" data-i18n="interface.physics">Física simplificada: o motor de física não carregou, o jogo continua jogável.</p>
     <p id="loaderr" class="hidden" data-i18n="interface.loadError">Não foi possível iniciar o motor 3D. Verifica se o navegador suporta WebGL, ativa a aceleração gráfica e recarrega a página.</p>
-    <div class="menu-foot">
-      <button type="button" class="go" id="start" disabled data-i18n="interface.loading">A CARREGAR…</button>
-      <div class="row"><button type="button" id="camp-new" data-i18n="interface.campaign">CAMPANHA — Um Ano de Guerra</button>
-        <button type="button" id="camp-cont" class="hidden" data-i18n="interface.continueCampaign">Continuar campanha</button></div>
-      <div id="camp-confirm" class="hidden" role="alertdialog" aria-modal="true" aria-labelledby="camp-confirm-t">
-        <p id="camp-confirm-t" data-i18n="interface.confirmReset">Há uma campanha a meio. Começar de novo apaga-a.</p>
-        <div class="row"><button type="button" id="camp-confirm-yes" data-i18n="interface.startOver">Começar de novo</button><button type="button" id="camp-confirm-no" data-i18n="interface.back">Voltar</button></div>
-      </div>
-    </div>
   </div>
+  <section id="sec-campaign" class="card menu-win" role="region" aria-labelledby="sec-campaign-h" hidden>
+    <header class="win-head"><h2 id="sec-campaign-h" tabindex="-1" data-i18n="interface.secCampaign"></h2><button type="button" data-close aria-label="Fechar" data-i18n-aria="interface.close">×</button></header>
+    <div class="win-body">
+      <p class="brief" data-i18n="interface.campaignNote"></p>
+      <div class="menu-actions">
+        <button type="button" id="camp-cont" class="go hidden" data-i18n="interface.continueCampaign">Continuar campanha</button>
+        <button type="button" id="camp-new" data-i18n="interface.campaign">NOVA CAMPANHA</button>
+      </div>
+      <div id="camp-confirm" class="hidden" role="alertdialog" aria-modal="true" aria-labelledby="camp-confirm-t">
+          <p id="camp-confirm-t" data-i18n="interface.confirmReset">Há uma campanha a meio. Começar de novo apaga-a.</p>
+          <div class="row"><button type="button" id="camp-confirm-yes" data-i18n="interface.startOver">Começar de novo</button><button type="button" id="camp-confirm-no" data-i18n="interface.cancel">Cancelar</button></div>
+        </div>
+    </div>
+  </section>
+  <section id="sec-missions" class="card menu-win" role="region" aria-labelledby="sec-missions-h" hidden>
+    <header class="win-head"><h2 id="sec-missions-h" tabindex="-1" data-i18n="interface.secMissions"></h2><button type="button" data-close aria-label="Fechar" data-i18n-aria="interface.close">×</button></header>
+    <div class="win-body">
+      <div class="chapters">
+        <button type="button" data-ch="prologo" aria-pressed="true" data-i18n="interface.prologue">Prólogo · A traição de Galba</button>
+          <button type="button" data-ch="cativos" aria-pressed="false" data-i18n="interface.captives">I · Os Cativos</button>
+          <button type="button" data-ch="emboscada" aria-pressed="false" data-i18n="interface.ambush">II · A Emboscada</button>
+          <button type="button" data-ch="acampamento" aria-pressed="false" data-i18n="interface.camp">III · O Acampamento</button>
+      </div>
+      <p class="kicker" id="kicker"></p>
+      <p class="brief" id="brief"></p>
+    </div>
+    <div class="win-foot"><button type="button" class="go" id="start" disabled data-i18n="interface.loading">A CARREGAR…</button></div>
+  </section>
+  <section id="sec-controls" class="card menu-win" role="region" aria-labelledby="sec-controls-h" hidden>
+    <header class="win-head"><h2 id="sec-controls-h" tabindex="-1" data-i18n="interface.secControls"></h2><button type="button" data-close aria-label="Fechar" data-i18n-aria="interface.close">×</button></header>
+    <div class="win-body">
+      <div class="row"><span class="lbl" data-i18n="interface.difficulty">DIFICULDADE</span>
+          <button type="button" data-diff="0" aria-pressed="false" data-i18n="interface.easy">Fácil</button>
+          <button type="button" data-diff="1" aria-pressed="true" data-i18n="interface.normal">Normal</button>
+          <button type="button" data-diff="2" aria-pressed="false" data-i18n="interface.hard">Difícil</button>
+        </div>
+      <div class="row"><span class="lbl" data-i18n="interface.graphics">GRÁFICOS</span>
+          <button type="button" data-q="low" aria-pressed="false" data-i18n="interface.low">Baixa</button>
+          <button type="button" data-q="medium" aria-pressed="true" data-i18n="interface.medium">Média</button>
+          <button type="button" data-q="high" aria-pressed="false" data-i18n="interface.high">Alta</button>
+        </div>
+      <div class="row"><label class="lbl" for="sens" data-i18n="interface.mouse">RATO</label><input id="sens" type="range" min="1" max="10" value="5"></div>
+      <div class="keys">
+          <b>W A S D</b><span data-i18n="interface.move">mover</span><b data-i18n="interface.mouse">RATO</b><span data-i18n="interface.look">olhar</span>
+          <b data-i18n="interface.click">CLIQUE</b><span data-i18n="interface.attack">atacar ou lançar — segura para mais força</span><b data-i18n="interface.rightClick">CLIQUE DIR.</b><span data-i18n="interface.shield">escudo</span>
+          <b>Q</b><span data-i18n="interface.parry">aparar com a falcata</span><b>Z</b><span data-i18n="interface.follow">companheiros: sigam-me</span><b>X</b><span data-i18n="interface.flag">companheiros: bandeira (aponta e clica)</span><b>T</b><span data-i18n="interface.charge">companheiros: ao ataque</span>
+          <b>R</b><span data-i18n="interface.clearShield">arrancar dardos do escudo</span><b>G</b><span data-i18n="interface.retreatHint">campanha: retirada, se houver serra perto</span>
+          <b data-i18n="interface.weaponKeys">1 2 3 / RODA</b><span data-i18n="interface.weapons">armas</span><b>SHIFT</b><span data-i18n="interface.sprint">correr</span>
+          <b data-i18n="interface.space">ESPAÇO</b><span data-i18n="interface.jump">saltar</span><b>C</b><span data-i18n="interface.crouch">agachar</span>
+          <b>E</b><span data-i18n="interface.use">usar</span><b>ESC</b><span data-i18n="interface.pauseKey">pausa</span>
+          <b>V</b><span data-i18n="interface.perspective">1.ª / 3.ª pessoa</span><span></span><span></span>
+        </div>
+    </div>
+  </section>
+  <section id="sec-chronicle" class="card menu-win" role="region" aria-labelledby="sec-chronicle-h" hidden>
+    <header class="win-head"><h2 id="sec-chronicle-h" tabindex="-1" data-i18n="interface.secChronicle"></h2><button type="button" data-close aria-label="Fechar" data-i18n-aria="interface.close">×</button></header>
+    <div class="win-body">
+      <ul id="menu-chron" aria-label="Entradas da Crónica" data-i18n-aria="interface.chronicleList"></ul>
+    </div>
+  </section>
+  <section id="sec-language" class="card menu-win" role="region" aria-labelledby="sec-language-h" hidden>
+    <header class="win-head"><h2 id="sec-language-h" tabindex="-1" data-i18n="interface.language"></h2><button type="button" data-close aria-label="Fechar" data-i18n-aria="interface.close">×</button></header>
+    <div class="win-body">
+      <div class="row"><label class="language-option" for="menu-language"><span data-i18n="interface.language">Idioma</span> <select id="menu-language" data-language><option value="en" lang="en">English</option><option value="pt-PT" lang="pt-PT">Português (Portugal)</option></select></label></div>
+    </div>
+  </section>
 </div>
 
 <div id="map" class="hidden">
@@ -383,7 +469,7 @@
       <button type="button" role="tab" id="mdiary-tab-lugares" data-tab="lugares" aria-controls="mdiary-body">Lugares</button>
     </div>
     <div id="mdiary-body" role="tabpanel" tabindex="0"></div>
-    <div class="row"><button type="button" id="m-cronica" aria-haspopup="dialog">Crónica</button><button type="button" id="mdiary-close">Fechar</button></div>
+    <div class="row"><button type="button" id="m-cronica" aria-haspopup="dialog" data-i18n="interface.secChronicle">Crónica</button><button type="button" id="mdiary-close">Fechar</button></div>
   </div></div>
   <div id="mtribute" class="hidden" role="dialog" aria-modal="true" aria-labelledby="mtribute-title" aria-describedby="mtribute-detail mtribute-consequence"><div class="card">
     <div class="decision-head"><span class="kicker" id="mtribute-deadline"></span><span class="decision-time" id="mtribute-time"></span></div>
@@ -407,13 +493,12 @@
       <span>Batalhas travadas</span><span data-k="battles"></span>
     </div>
     <p id="mend-chron"></p>
-    <div class="row"><button type="button" class="go" id="mend-new">Nova campanha</button><button type="button" id="mend-cronica" aria-haspopup="dialog">Crónica</button><button type="button" id="mend-menu">Voltar ao menu</button></div>
+    <div class="row"><button type="button" class="go" id="mend-new">Nova campanha</button><button type="button" id="mend-cronica" aria-haspopup="dialog" data-i18n="interface.secChronicle">Crónica</button><button type="button" id="mend-menu">Voltar ao menu</button></div>
   </div></div>
   <div id="mcron" class="hidden" role="dialog" aria-modal="true" aria-labelledby="mcron-title"><div class="card">
-    <p class="kicker">A GUERRA DE 147 A.C.</p><h2 id="mcron-title">Crónica</h2>
-    <p class="brief">O que dizem as fontes antigas, o que o jogo inventa e o que nelas se inspira. Os episódios abrem-se à medida que acontecem.</p>
-    <ul id="mcron-list" aria-label="Entradas da Crónica"></ul>
-    <div class="row"><button type="button" id="mcron-close">Fechar</button></div>
+    <p class="kicker" data-i18n="interface.menuYear">147 A.C.</p><h2 id="mcron-title" data-i18n="interface.secChronicle">Crónica</h2>
+    <ul id="mcron-list" aria-label="Entradas da Crónica" data-i18n-aria="interface.chronicleList"></ul>
+    <div class="row"><button type="button" id="mcron-close" data-i18n="interface.close">Fechar</button></div>
   </div></div>
 </div>
 

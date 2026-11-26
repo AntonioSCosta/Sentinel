@@ -58,7 +58,7 @@ async function scenario(browserLocale, initial, next) {
     assert.equal(await page.locator('#start').textContent(), initial === 'en' ? 'PLAY' : 'COMEÇAR');
     if (captures) {
       await page.setViewportSize({ width: 390, height: 730 });
-      await assertControls(page, [['#menu', '#menu .menu-foot button']]);
+      await assertControls(page, [['#menu', '#menu .menu-nav button'], ['#menu', '#sec-campaign button']]);
       await page.screenshot({ path: join(captures, `menu-${initial}.png`) });
       await page.setViewportSize({ width: 1366, height: 768 });
     }
@@ -113,6 +113,22 @@ async function scenario(browserLocale, initial, next) {
       await page.locator('#map-language').click({ trial: true });
       await page.screenshot({ path: join(captures, `map-phone-${next}.png`) });
     }
+
+    // The Chronicle uses the same localisation in the menu and from the campaign's Diary.
+    await page.locator('#m-diary').click();
+    await page.locator('#m-cronica').click();
+    const chronicle = page.getByRole('dialog', { name: next === 'en' ? 'Chronicle' : 'Crónica', exact: true });
+    const entries = chronicle.getByRole('list', { name: next === 'en' ? 'Chronicle entries' : 'Entradas da Crónica' });
+    assert.equal(await entries.locator('[data-entry="galba"] h3').textContent(), next === 'en' ? 'Galba’s Betrayal' : 'A traição de Galba');
+    assert.equal(await entries.locator('[data-entry="cativos"] .chip').textContent(), next === 'en' ? 'Inspired scene' : 'Cena inspirada');
+    assert.equal(await entries.locator('li').count(), 4);
+    if (captures) {
+      const card = await chronicle.locator('.card').boundingBox();
+      assert.ok(card && card.x >= 0 && card.x + card.width <= page.viewportSize().width);
+      await page.screenshot({ path: join(captures, `chronicle-diary-${next}.png`) });
+    }
+    await chronicle.getByRole('button', { name: next === 'en' ? 'Close' : 'Fechar', exact: true }).click();
+    await page.locator('#mdiary-close').click();
 
     const result = await page.evaluate(({ x, y }) => {
       const { campaign: c } = window.__game;

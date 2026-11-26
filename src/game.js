@@ -23,6 +23,7 @@ import { JAVELINS, throwPower, allyThrows, veliteState } from './missiles.js';
 import { haltLayout, isFighter, companionsFrom, canLeave, alertRadius, REINFORCE_AFTER, RELIEF, CUT_TIME, FREE_TO_LEAVE } from './captives.js';
 import { installHook } from './hook.js';
 import { createCampaignUI } from './campaign/ui.js';
+import { createMenu } from './menu.js';
 import { spawnPlan, tallyResult, isBridged, isStory, storyTally, forceMultipliers } from './campaign/bridge.js';
 import { YEAR_DAYS } from './campaign/clock.js';
 import { campStart, campGarrison, campPhase, CAMP_MISSIONS, TENTS_TO_BURN, RELIEF_GUARD } from './camp.js';
@@ -3196,16 +3197,21 @@ $('sens2').addEventListener('input', e => { setSens(+e.target.value); $('sens').
    ========================================================= */
 /* Campanha: ecrã do mapa (src/campaign/ui.js). Estado 'map': a arena não corre nem pede o rato. */
 const campUI = createCampaignUI({ document, window, storage, legacyMapForTests: legacyCampaignMapForTests, i18n, startBattle: spec => startCampaignBattle(spec), onClose: () => { campIntro = false; state = 'menu'; $('menu').classList.remove('hidden'); refreshCampMenu(); } });
+const menu = createMenu({ document, i18n });
 let continueMessage = 'interface.continueCampaign';
 function refreshCampMenu() {
   const saved = campUI.saveState();
   $('camp-cont').classList.toggle('hidden', !saved);
+  $('camp-new').classList.toggle('go', !saved);   // a ação principal é continuar, se houver campanha; senão, começar
   continueMessage = saved === 'fim' ? 'interface.result' : 'interface.continueCampaign';
   $('camp-cont').textContent = i18n.t(continueMessage);
   $('camp-confirm').classList.add('hidden');
+  menu.renderChronicle(campUI.savedState());
+  menu.open(saved ? 'campaign' : null);   // com campanha gravada, «Continuar» fica logo à vista
 }
 i18n.subscribe(() => {
   renderChapterBrief();
+  menu.renderChronicle();
   $('camp-cont').textContent = i18n.t(continueMessage);
   $('start').textContent = i18n.t($('start').disabled ? 'interface.loading' : 'interface.start');
   if ($('pausehint').textContent) $('pausehint').textContent = i18n.t('interface.pointerLock');

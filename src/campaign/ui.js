@@ -7,7 +7,7 @@ import { intelView, estimateMen, SCOUTS, RECON_RANGE, RECON_RADIUS } from './int
 import { createFlow, loadFlow, clearSave, STORAGE_KEY, WIN_MEN, WIN_FAME } from './flow.js';
 import { openTacticalArena } from './tactical-arena.js';
 import { campaignDateParts, dateLabel, season, daysLeft, YEAR_DAYS } from './clock.js';
-import { entryFor, CHRONICLE, SOURCE_LABELS, isUnlocked } from './chronicle.js';
+import { chronicleEntries, localizedChronicleEntry } from './chronicle-view.js';
 import { isBridged, isStory } from './bridge.js';
 import { START, foodPerDay } from './state.js';
 import { MARCH_SPEED, REACH, ARRIVAL, marchDays as marchDaysTo, inReach, nearRoad } from './simulation.js';
@@ -1079,7 +1079,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     for (const [k, v] of Object.entries(vals)) e.querySelector(`[data-k="${k}"]`).textContent = v;
     const chron = $('mend-chron'); chron.textContent = '';
     if (decisive) {
-      const ent = entryFor('vetilio'), line = ent.text.split(/(?<=\.)\s+/).find(x => x.includes('Periochae')) || ent.title;
+      const ent = localizedChronicleEntry('vetilio', i18n), line = ent.text.split(/(?<=\.)\s+/).find(x => x.includes('Periochae')) || ent.title;
       const c = doc.createElement('cite'); c.textContent = ent.citation;
       chron.append(line, c);
     } else if (!won) chron.textContent = 'Os montes ficaram em silêncio.';
@@ -1146,24 +1146,30 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   let cronOpener = null;
   const cronOpen = () => !$('mcron').classList.contains('hidden');
   function renderChronicle() {
-    const ul = $('mcron-list'); ul.textContent = '';
-    for (const [id, e] of Object.entries(CHRONICLE)) {
-      const li = doc.createElement('li'); li.dataset.entry = id; li.tabIndex = 0;
-      const h = doc.createElement('h3'); h.id = 'mcron-h-' + id; h.textContent = e.title; li.append(h);
-      li.setAttribute('aria-labelledby', h.id);
-      if (!isUnlocked(id, flow?.state)) {
+    const ul = $('mcron-list');
+    const focused = [...ul.children].indexOf(doc.activeElement), scrollTop = ul.scrollTop;
+    ul.textContent = '';
+    for (const entry of chronicleEntries(flow?.state, i18n)) {
+      const li = doc.createElement('li'); li.tabIndex = 0;
+      if (!entry) {
         li.classList.add('locked');
-        const p = doc.createElement('p'); p.className = 'lk'; p.id = 'mcron-l-' + id; p.textContent = 'Ainda não vivido'; li.append(p);
-        li.setAttribute('aria-describedby', p.id);
+        const p = doc.createElement('p'); p.id = `mcron-locked-${ul.children.length}`; p.textContent = i18n.t('interface.chronicleLocked'); li.append(p);
+        li.setAttribute('aria-labelledby', p.id);
       } else {
-        const chip = doc.createElement('span'); chip.className = 'chip'; chip.id = 'mcron-s-' + id; chip.textContent = SOURCE_LABELS[e.source]; li.append(chip);
-        const p = doc.createElement('p'); p.className = 'txt'; p.id = 'mcron-t-' + id; p.textContent = e.text; li.append(p);
+        const { id, title, sourceLabel, text, citation } = entry;
+        li.dataset.entry = id;
+        const h = doc.createElement('h3'); h.id = 'mcron-h-' + id; h.textContent = title; li.append(h);
+        li.setAttribute('aria-labelledby', h.id);
+        const chip = doc.createElement('span'); chip.className = 'chip'; chip.id = 'mcron-s-' + id; chip.textContent = sourceLabel; li.append(chip);
+        const p = doc.createElement('p'); p.className = 'txt'; p.id = 'mcron-t-' + id; p.textContent = text; li.append(p);
         const desc = [chip.id, p.id];
-        if (e.citation) { const c = doc.createElement('p'); c.className = 'cit'; c.id = 'mcron-c-' + id; c.textContent = e.citation; li.append(c); desc.push(c.id); }
+        if (citation) { const c = doc.createElement('p'); c.className = 'cit'; c.id = 'mcron-c-' + id; c.textContent = citation; li.append(c); desc.push(c.id); }
         li.setAttribute('aria-describedby', desc.join(' '));
       }
       ul.append(li);
     }
+    ul.children[focused]?.focus({ preventScroll: true });
+    ul.scrollTop = scrollTop;
   }
   function openChronicle(opener) {
     if (!flow || cronOpen()) return;
@@ -1183,12 +1189,12 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   $('mcron-close').addEventListener('click', closeChronicle);
   $('mcron').addEventListener('keydown', e => {
     if (e.key !== 'Tab') return;
-    const items = [...$('mcron').querySelectorAll('[data-entry], button')], first = items[0], last = items[items.length - 1];
+    const items = [...$('mcron-list').children, $('mcron-close')], first = items[0], last = items.at(-1);
     if (e.shiftKey && doc.activeElement === first) { e.preventDefault(); last.focus(); }
     else if (!e.shiftKey && doc.activeElement === last) { e.preventDefault(); first.focus(); }
   });
   $('mcron-list').addEventListener('keydown', e => {
-    const li = e.target.closest?.('[data-entry]'); if (!li) return;
+    const li = e.target.closest?.('li'); if (!li) return;
     const to = e.key === 'ArrowDown' ? li.nextElementSibling : e.key === 'ArrowUp' ? li.previousElementSibling
       : e.key === 'Home' ? li.parentElement.firstElementChild : e.key === 'End' ? li.parentElement.lastElementChild : null;
     if (to) { e.preventDefault(); to.focus(); }
@@ -1275,6 +1281,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (hover) hover.label = hoverLabel(hover.hit, hover);
     render();
     renderLog();
+    if (cronOpen()) renderChronicle();
   });
   return {
     open, close, render, order, openChronicle, closeChronicle, openDiary, closeDiary, simulateBattle, suspend, battleDone,
@@ -1285,6 +1292,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     get flow() { return flow; }, get active() { return active; }, mapMetrics: () => map3d?.metrics(),
     hasSave: () => !!loadFlow(storage),
     saveState: () => { const f = loadFlow(storage); return f ? (f.phase === 'fim' ? 'fim' : 'meio') : null; },
+    savedState: () => loadFlow(storage)?.state ?? null,
     resume: () => { const f = loadFlow(storage); if (f) open(f); return !!f; },
     fresh: seed => { open(createFlow({ storage, seed })); return flow; },
   };
