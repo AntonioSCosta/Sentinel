@@ -11,7 +11,7 @@ const status = document.querySelector('#status');
 const seedField = document.querySelector('#seed');
 const fileInput = document.querySelector('#save-file');
 
-function start() {
+async function start() {
   const output = document.querySelector('#selection');
   let current, selected, statusKey = 'map.preparing', statusParams;
   function setStatus(key, params) {
@@ -24,6 +24,11 @@ function start() {
       output.textContent = i18n.t('map.terrain', {
         x: i18n.number(selected.x, true), y: i18n.number(selected.y, true),
       });
+    } else if (selected?.type === 'settlement' && current?.comparison) {
+      const community = Object.values(current.comparison.communities).find(c => c.settlement === selected.id);
+      const situation = { tributada: 'scenarioTribute', castigada: 'scenarioPunished', queimada: 'inactive.queimada' }[community?.situation];
+      output.textContent = [label, community && i18n.t('map.issuesCopy.posture.' + community.posture),
+        situation && i18n.t('map.' + situation)].filter(Boolean).join(' · ');
     } else output.textContent = label ? `${label} · ${selected.id}` : '';
   }
   const map = createCampaignMapScene(canvas, document.querySelector('#map-labels'), (detail, label) => {
@@ -49,16 +54,18 @@ function start() {
     map.redraw();
   });
 
-  function show(snapshot, name) {
+  function show(snapshot, name, issues) {
     const { seed, world } = snapshot;
     const view = strategicView(snapshot);
-    map.load(seed, world, view);
-    current = { world, known: view.forces.length };
+    if (!issues || current?.world !== world) map.load(seed, world, view);
+    if (issues) map.present(view, { party: snapshot.party, issues, campaignLabels: true, showMapDetails: true });
+    current = { world, known: view.forces.length, comparison: issues && snapshot };
     selected = null;
     renderSelection('');
     seedField.value = String(seed);
     renderCounts();
-    setStatus(name ? 'map.imported' : 'map.generated', { name, seed: String(seed) });
+    if (issues) setStatus('map.scenarioDay', { day: snapshot.day, seed });
+    else setStatus(name ? 'map.imported' : 'map.generated', { name, seed: String(seed) });
   }
 
   function showGenerated(seed) {
@@ -139,7 +146,27 @@ function start() {
   });
   const requestedSeed = Number(new URLSearchParams(location.search).get('seed') ?? 1);
   const seed = Number.isSafeInteger(requestedSeed) ? requestedSeed : 1;
-  showGenerated(seed);
+  const url = new URL(location.href);
+  if (url.searchParams.has('scenario')) {
+    const [{ comparisonState, scenarioIds }, { buildIssues }] = await Promise.all([
+      import('../../tests/fixtures/valley-comparison.js'), import('../campaign/issues.js'),
+    ]);
+    const select = document.querySelector('#comparison-scenario');
+    document.querySelector('#comparison-controls').hidden = false;
+    document.querySelector('#seed-form').hidden = true;
+    fileInput.closest('label').hidden = true;
+    function switchScenario() {
+      const state = comparisonState(select.value);
+      const issues = Object.fromEntries(buildIssues(state).filter(i => i.place).map(i => [i.place, i.kind]));
+      show(state, null, issues);
+      url.searchParams.set('scenario', select.value);
+      history.replaceState(null, '', url);
+    }
+    const requested = url.searchParams.get('scenario');
+    select.value = scenarioIds.includes(requested) ? requested : 'start';
+    select.addEventListener('change', switchScenario);
+    switchScenario();
+  } else showGenerated(seed);
   if (new URLSearchParams(location.search).has('benchmark')) {
     map.measure().then(result => {
       canvas.dataset.benchmark = JSON.stringify(result);
@@ -147,10 +174,8 @@ function start() {
   }
 }
 
-try {
-  start();
-} catch (error) {
+start().catch(error => {
   console.error(error);
   status.textContent = i18n.t('map.viewerFailed');
   i18n.subscribe(() => { status.textContent = i18n.t('map.viewerFailed'); });
-}
+});

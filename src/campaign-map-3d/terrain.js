@@ -158,3 +158,27 @@ export function createCampaignTerrain(seed, world) {
   const settlements = world.settlements.map(place => ({ ...place, height: heightAt(place.x, place.y) }));
   return { w, h, columns, rows, heights, heightAt, river, riverY, road, settlements };
 }
+
+// Presentation coordinates only. The playable rectangle remains the pan target limit.
+export const marginWidth = ({ w, h }) => Math.max(600, 2 * Math.max(w, h));
+
+export function marginHeight(terrain, x, y, edgeX, edgeY, distance) {
+  const edge = terrain.heightAt(edgeX, edgeY);
+  const ridge = 75 + 28 * Math.sin(x / 83 + y / 117) + 16 * Math.sin(y / 47 - x / 61);
+  // Continue the boundary slope for the first few metres so a sudden change
+  // in the normal does not outline the playable rectangle in the lighting.
+  const length = Math.hypot(x - edgeX, y - edgeY);
+  if (!length) return edge;
+  const dx = (x - edgeX) / length, dy = (y - edgeY) / length;
+  const slope = (edge - terrain.heightAt(edgeX - dx * 4, edgeY - dy * 4)) / 4;
+  return lerp(edge + clamp(slope, -1, 1) * Math.min(length, 18), ridge, smooth(0, 170, distance));
+}
+
+// At ground height the inclined frustum has half-extents H*aspect and
+// H/cos(tilt). Its diagonal bounds any azimuth. Allow for the displacement
+// of its centre at the outer rim, whose height is in [31,119].
+export function framingHeight(terrain, aspect, tiltTangent, targetY, requested) {
+  const displacement = Math.max(Math.abs(targetY - 31), Math.abs(targetY - 119)) * tiltTangent;
+  const limit = (marginWidth(terrain) - displacement - 2) / Math.hypot(aspect, 1, tiltTangent);
+  return Math.min(requested, limit);
+}

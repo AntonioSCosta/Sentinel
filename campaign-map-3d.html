@@ -15,6 +15,14 @@
     <div class="brand">Sentinel</div>
     <span class="divider" aria-hidden="true"></span>
     <span class="view-name" data-i18n="map.page">Mapa estratégico 3D</span>
+    <label id="comparison-controls" hidden><span data-i18n="map.scenario">Scenario</span>
+      <select id="comparison-scenario">
+        <option value="start" data-i18n="map.scenarioStart">Opening</option>
+        <option value="rumor" data-i18n="map.rumor">Rumor</option>
+        <option value="old-sighting" data-i18n="map.scenarioOld">Old sighting</option>
+        <option value="community" data-i18n="map.scenarioCommunity">Changed communities</option>
+      </select>
+    </label>
     <form id="seed-form">
       <label for="seed" data-i18n="map.seed">Seed</label>
       <input id="seed" name="seed" type="number" step="1" value="1" required>

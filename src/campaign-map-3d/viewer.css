@@ -86,3 +86,6 @@ button:hover, .file-label:hover { background: #455042; }
   .map-controls button { padding-inline: 6px; }
   #zoom-in, #zoom-out { min-width: 29px; }
 }
+
+.topbar [hidden] { display: none !important; }
+#map-labels .has-issue::after { content: ' !'; color: #ffcf82; font-weight: bold; }

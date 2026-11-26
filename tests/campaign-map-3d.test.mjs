@@ -235,3 +235,42 @@ test('a tactical stroke keeps its dash spacing across terrain sampling segments'
   mesh.geometry.dispose();
   mesh.material.dispose();
 });
+
+test('comparison scenarios restore full v1 states on the same saved world and filter hidden forces', async () => {
+  const { comparisonState, scenarioIds } = await import('./fixtures/valley-comparison.js');
+  const { deserialize } = await import('../src/campaign/state.js');
+  const { buildIssues } = await import('../src/campaign/issues.js');
+  const states = scenarioIds.map(comparisonState);
+  for (const state of states) {
+    assert.equal(state.world, states[0].world);
+    assert.deepEqual(deserialize(serialize(state)), state);
+  }
+  const [start, rumor, old, altered] = states;
+  assert.equal(start.day, 0);
+  assert.deepEqual(strategicView(rumor).forces, []);
+  assert.equal(strategicView(rumor).zones[0].src, 'rumor');
+  const [last] = strategicView(old).forces;
+  assert.equal(last.age, 2);
+  assert.notEqual(last.x, old.patrols[0].x);
+  assert.equal(last.status, 'estimada');
+  assert.equal(buildIssues(altered).find(i => i.kind === 'decisao').place, altered.communities.ribeira.settlement);
+  assert.equal(strategicView(altered).places.find(p => p.id === altered.communities.souto.settlement).burnt, true);
+});
+
+test('outer terrain joins the valley and encloses rotated viewport corners at the pan limits', async () => {
+  const { framingHeight, marginHeight, marginWidth } = await import('../src/campaign-map-3d/terrain.js');
+  const terrain = createCampaignTerrain(1234, generateWorld(1234));
+  const pad = marginWidth(terrain), tilt = Math.hypot(.18, .82) / .91;
+  for (const x of [0, terrain.w / 2, terrain.w]) {
+    assert.equal(marginHeight(terrain, x, 0, x, 0, 0), terrain.heightAt(x, 0));
+  }
+  for (const aspect of [0.1, 0.5, 1, 1.6, 3, 24]) for (let i = 0; i < 24; i++) {
+    const a = i * Math.PI / 12;
+    const h = framingHeight(terrain, aspect, tilt, 70, 1e6);
+    for (const y of [31, 119]) for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+      const u = sx * h * aspect, v = sy * h * Math.hypot(1, tilt) + (y - 70) * tilt;
+      assert.ok(Math.abs(u * Math.cos(a) + v * Math.sin(a)) < pad);
+      assert.ok(Math.abs(-u * Math.sin(a) + v * Math.cos(a)) < pad);
+    }
+  }
+});

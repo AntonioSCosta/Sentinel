@@ -1,6 +1,6 @@
 import { mapForceName, mapPlaceName } from '../i18n/map-text.js';
 import * as THREE from 'three';
-import { createMapProjection, createCampaignTerrain, subdivideLine } from './terrain.js';
+import { createMapProjection, createCampaignTerrain, subdivideLine, marginHeight, framingHeight, marginWidth } from './terrain.js';
 import { levelRoundhouseSite, loadRoundhouse, roundhousePlacement } from './roundhouse.js';
 import { generateVegetation } from './strategic.js';
 import { disposeGroup, makeForest, makeIntelligence, makeParty, makePlanning } from './overlays.js';
@@ -17,11 +17,18 @@ function indexedGeometry(positions, indices) {
   return geometry;
 }
 
+const bank = new THREE.Color('#8e9267'), meadow = new THREE.Color('#687c51');
+const hills = new THREE.Color('#8a8c65'), rock = new THREE.Color('#9b9581');
+
+function groundColor(color, terrain, x, y, height) {
+  color.copy(meadow).lerp(bank, Math.max(0, 1 - Math.abs(y - terrain.riverY(x)) / 38) * 0.85);
+  color.lerp(hills, THREE.MathUtils.smoothstep(height, 45, 119));
+  color.lerp(rock, THREE.MathUtils.smoothstep(height, 100, 172));
+}
+
 function makeRelief(terrain, projection) {
   const { w, h, columns, rows, heights } = terrain;
   const positions = [], indices = [], colors = [];
-  const bank = new THREE.Color('#8e9267'), meadow = new THREE.Color('#687c51');
-  const hills = new THREE.Color('#8a8c65'), rock = new THREE.Color('#9b9581');
   const color = new THREE.Color();
   for (let row = 0; row <= rows; row++) {
     for (let col = 0; col <= columns; col++) {
@@ -29,9 +36,7 @@ function makeRelief(terrain, projection) {
       const map = { x: w * col / columns, y: h * row / rows };
       const height = heights[i], scene = projection.toScene(map, height);
       positions.push(scene.x, scene.y, scene.z);
-      color.copy(meadow).lerp(bank, Math.max(0, 1 - Math.abs(map.y - terrain.riverY(map.x)) / 38) * 0.85);
-      color.lerp(hills, THREE.MathUtils.smoothstep(height, 45, 119));
-      color.lerp(rock, THREE.MathUtils.smoothstep(height, 100, 172));
+      groundColor(color, terrain, map.x, map.y, height);
       colors.push(color.r, color.g, color.b);
       if (row < rows && col < columns) {
         const next = i + columns + 1;
@@ -44,21 +49,49 @@ function makeRelief(terrain, projection) {
   return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
 }
 
-function makeEdge(terrain, projection) {
-  const { w, h } = terrain;
-  const points = subdivideLine([{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h },
-    { x: 0, y: h }, { x: 0, y: 0 }], 2);
-  const positions = [], indices = [];
-  for (const [i, point] of points.entries()) {
-    const { x, y, z } = projection.toScene(point, terrain.heightAt(point.x, point.y));
-    positions.push(x, y, z, x, -22, z);
-    if (i > 0) {
-      const j = i * 2;
-      indices.push(j - 2, j, j - 1, j - 1, j, j + 1);
+// Join the outer slopes to every vertex of the playable mesh perimeter.
+// Only the central relief participates in picking.
+function makeMargins(terrain, projection) {
+  const { w, h, columns, rows } = terrain;
+  const border = [];
+  for (let i = 0; i < columns; i++) border.push([i / columns, 0]);
+  for (let i = 0; i < rows; i++) border.push([1, i / rows]);
+  for (let i = columns; i > 0; i--) border.push([i / columns, 1]);
+  for (let i = rows; i > 0; i--) border.push([0, i / rows]);
+  const positions = [], indices = [], colors = [];
+  const roadColor = new THREE.Color('#d6ba83'), riverColor = new THREE.Color('#65a4a8');
+  const haze = new THREE.Color('#a1af9e'), color = new THREE.Color();
+  for (const distance of [0, 8, 20, 40, 70, 110, 160, 230, 330, 490, 720, 1050, 1500, 2000]) {
+    const pad = distance / 2000 * marginWidth(terrain);
+    const start = positions.length / 3;
+    for (const [i, [u, v]] of border.entries()) {
+      const x = u * w + (2 * u - 1) * pad, y = v * h + (2 * v - 1) * pad;
+      const height = marginHeight(terrain, x, y, u * w, v * h, pad);
+      const point = projection.toScene({ x, y }, height);
+      positions.push(point.x, height, point.z);
+      groundColor(color, terrain, x, y, height);
+      // Carry the two routes into the foothills. Their colours fade with the
+      // same haze as the surrounding ground. The apron has no picking targets.
+      if (u === 0 || u === 1) {
+        const edgeX = u * w, edgeY = v * h;
+        const roadEnd = u === 0 ? terrain.road[0] : terrain.road.at(-1);
+        const bend = 8 * Math.sin(pad / 70);
+        const riverGap = Math.abs(edgeY - terrain.riverY(edgeX) - bend);
+        const roadGap = roadEnd ? Math.abs(edgeY - roadEnd.y + bend) : Infinity;
+        color.lerp(riverColor, 1 - THREE.MathUtils.smoothstep(riverGap, 2, 6));
+        color.lerp(roadColor, 1 - THREE.MathUtils.smoothstep(roadGap, 1, 4));
+      }
+      color.lerp(haze, THREE.MathUtils.smoothstep(distance, 0, 600));
+      colors.push(color.r, color.g, color.b);
+      if (start) {
+        const prev = start - border.length, j = (i + 1) % border.length;
+        indices.push(prev + i, prev + j, start + i, prev + j, start + j, start + i);
+      }
     }
   }
-  return new THREE.Mesh(indexedGeometry(positions, indices),
-    new THREE.MeshStandardMaterial({ color: '#4e4638', roughness: 1, side: THREE.DoubleSide }));
+  const geometry = indexedGeometry(positions, indices);
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
 }
 
 function makeRibbon(points, width, elevation, terrain, projection, color) {
@@ -157,7 +190,7 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
     position: new THREE.Vector3(),
     userData: { key: 'party', selection: partySelection, labelKey: 'map.band', className: 'party-label', priority: 12, lift: 19 },
   };
-  let model, terrain, relief, edge, projection, markers, intelligence, planning, partyVisual, targets, labels = [], selected;
+  let model, terrain, relief, projection, markers, intelligence, planning, partyVisual, targets, labels = [], selected;
   // The Blender figures load in the background as soon as the map exists; the band uses them as soon as they arrive.
   let warbandModel = null;
   loadWarbandModel().then(loaded => {
@@ -178,13 +211,11 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
     down.set(offset.x, 0, offset.z).normalize();
     const up = offset.clone().normalize().cross(right);
     let bottom = Infinity, top = -Infinity;
-    for (const mesh of [relief, edge]) {
-      const vertices = mesh.geometry.getAttribute('position');
-      for (let i = 0; i < vertices.count; i++) {
-        const v = up.x * vertices.getX(i) + up.y * vertices.getY(i) + up.z * vertices.getZ(i);
-        bottom = Math.min(bottom, v);
-        top = Math.max(top, v);
-      }
+    const vertices = relief.geometry.getAttribute('position');
+    for (let i = 0; i < vertices.count; i++) {
+      const v = up.x * vertices.getX(i) + up.y * vertices.getY(i) + up.z * vertices.getZ(i);
+      bottom = Math.min(bottom, v);
+      top = Math.max(top, v);
     }
     fitWidth = (Math.abs(right.x) * terrain.w + Math.abs(right.z) * terrain.h) / 2;
     fitHeight = (top - bottom) / 2;
@@ -323,10 +354,13 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
 
   function draw() {
     if (!terrain) return;
-    camera.position.copy(target).addScaledVector(offset, Math.max(terrain.w, terrain.h) + 400);
-    camera.lookAt(target);
     const aspect = screenWidth / screenHeight;
-    halfHeight = 1.08 * Math.max(fitHeight, fitWidth / aspect) / zoom;
+    halfHeight = framingHeight(terrain, aspect, horizontal / offset.y, target.y,
+      1.08 * Math.max(fitHeight, fitWidth / aspect) / zoom);
+    const distance = Math.max(terrain.w, terrain.h) + halfHeight * horizontal / offset.y + 400;
+    camera.position.copy(target).addScaledVector(offset, distance);
+    camera.far = distance * offset.length() * 2 + 800;
+    camera.lookAt(target);
     camera.left = -halfHeight * aspect; camera.right = halfHeight * aspect;
     camera.top = halfHeight; camera.bottom = -halfHeight;
     camera.updateProjectionMatrix();
@@ -458,9 +492,9 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
     }
     const group = new THREE.Group();
     relief = makeRelief(nextTerrain, projection);
-    edge = makeEdge(nextTerrain, projection);
+    const margins = makeMargins(nextTerrain, projection);
     treeCount = trees.length;
-    group.add(relief, edge, makeForest(trees, projection));
+    group.add(relief, margins, makeForest(trees, projection));
     const river = makeRibbon(nextTerrain.river, 9, () => 1.1, nextTerrain, projection, '#65a4a8');
     const road = makeRibbon(nextTerrain.road, 5.4, (x, y) =>
       1.45 + 2.1 * (1 - THREE.MathUtils.smoothstep(Math.abs(y - nextTerrain.riverY(x)), 4, 12)),
@@ -493,7 +527,7 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
   }
 
   function zoomBy(factor) {
-    zoom = THREE.MathUtils.clamp(zoom * factor, 0.8, 4);
+    zoom = THREE.MathUtils.clamp(zoom * factor, 1, 4);
     draw();
   }
 
