@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { subdivideLine } from './terrain.js';
 import { ringPoints, strokeVertices, tacticalRing, tacticalStroke } from './tactical-lines.js';
+import { makeWarband } from './party.js';
 
 const RUMOR = { color: '#ffbc75', width: 1.9, dash: 11, gap: 6 };
 const SCOUTED = { color: '#a6e2bf', width: 1.7 };
@@ -130,22 +131,61 @@ export function makePlanning(fx, terrain, projection) {
   return group;
 }
 
-/** Keep the old token and ring while updating their existing scene objects. */
-export function makeParty(terrain, projection, position) {
+/** Keep the selection ring and the four-figure warband alive for the loaded world. */
+const RING_MAX_SCALE = 2;   // the ring's vertex buffer is sized for this much screen-scale growth
+
+/** `model`: the Blender figures from loadWarbandModel(), or null for the procedural fallback until they load. */
+export function makeParty(terrain, projection, position, model = null) {
   const group = new THREE.Group();
   const ring = mutableStroke(terrain, projection, { color: '#ffea9b', width: 2.4 },
-    18 * (ringPoints({ x: 0, y: 0, r: 11 }).length - 1));
+    18 * (ringPoints({ x: 0, y: 0, r: 11 * RING_MAX_SCALE }).length - 1));
   group.add(ring.mesh);
-  const token = new THREE.Mesh(new THREE.CylinderGeometry(4, 7.5, 11, 4),
-    new THREE.MeshBasicMaterial({ color: '#ffe698' }));
-  token.rotation.y = Math.PI / 4;
-  group.add(token);
-  group.userData.updateParty = party => {
-    const p = projection.toScene(party, terrain.heightAt(party.x, party.y) + 9.5);
-    token.position.set(p.x, p.y, p.z);
-    ring.update(ringPoints({ ...party, r: 11 }));
+  let warband = makeWarband(model);
+  group.add(warband);
+  let previous, lastStep = 0, heading = 0, facing = 0, scale = 1;
+  group.userData.updateParty = (party, step = 0) => {
+    const dx = party.x - (previous?.x ?? party.x), dy = party.y - (previous?.y ?? party.y);
+    const travelled = Math.hypot(dx, dy);
+    if (travelled > 0.01) heading = Math.atan2(dx, dy);
+    previous = { x: party.x, y: party.y };
+    lastStep = step;
+    // Turn towards the displayed direction over a few frames (shortest way round); settle when the march ends.
+    const turn = Math.atan2(Math.sin(heading - facing), Math.cos(heading - facing));
+    facing = step ? facing + turn * 0.22 : heading;
+    group.userData.heading = facing;
+    const p = projection.toScene(party, terrain.heightAt(party.x, party.y));
+    warband.position.set(p.x, p.y, p.z);
+    warband.userData.update(party, facing, travelled, !!step, terrain);
+    ring.update(ringPoints({ ...party, r: 11 * scale }));
+  };
+  /** Distance compensation: the band and its ring grow together as the camera pulls back (1 = map scale). */
+  group.userData.setScreenScale = next => {
+    next = Math.min(next, RING_MAX_SCALE);
+    if (Math.abs(next - scale) < 0.005) return;
+    scale = next;
+    warband.scale.setScalar(scale);
+    if (previous) group.userData.updateParty(previous, lastStep);
+  };
+  const refreshStats = () => {
+    group.userData.stats = { ...warband.userData.stats, meshes: warband.userData.stats.meshes + 1,
+      triangles: warband.userData.stats.triangles + ring.mesh.geometry.drawRange.count / 3,
+      materials: warband.userData.stats.materials + 1, geometries: warband.userData.stats.geometries + 1 };
+  };
+  /** Swap in the Blender figures once they have loaded (once per world at most; the group and ring stay). */
+  group.userData.useModel = next => {
+    if (warband.userData.stats.model !== 'procedural') return;
+    const replaced = warband;
+    warband = makeWarband(next);
+    warband.scale.setScalar(scale);
+    group.remove(replaced);
+    replaced.userData.dispose();
+    disposeGroup(replaced);
+    group.add(warband);
+    refreshStats();
+    if (previous) group.userData.updateParty(previous, 0);
   };
   group.userData.updateParty(position);
+  refreshStats();
   return group;
 }
 
@@ -172,6 +212,8 @@ export function disposeGroup(group) {
   group.traverse(child => {
     if (child.isMesh || child.isLine) { resources.add(child.geometry); resources.add(child.material); }
     if (child.isInstancedMesh) child.dispose();
+    if (child.isSkinnedMesh) child.skeleton.dispose();   // the bone texture belongs to this world's clone
   });
-  for (const resource of resources) resource.dispose();
+  // Resources marked shared (the warband model, loaded once per session) outlive any one world.
+  for (const resource of resources) if (!resource.userData?.shared) resource.dispose();
 }

@@ -21,3 +21,11 @@ test('mapa 3D: o verificador falha quando uma peça passa o orçamento de triân
   const [r] = await checkAll(f);
   assert.ok(r.problems.some(p => /LOD0: \d+ triângulos > 1000/.test(p)), r.problems.join('; '));
 });
+
+test('mapa 3D: o verificador falha quando um guerreiro passa o orçamento de triângulos', async () => {
+  const B = JSON.parse(fs.readFileSync(BUDGETS, 'utf8'));
+  B.characters.guerreiros.maxTris = 1000;
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mapa3d-')), 'budgets.json'); fs.writeFileSync(f, JSON.stringify(B));
+  const r = (await checkAll(f)).find(entry => entry.name === 'guerreiros');
+  assert.ok(r.problems.some(p => /mapa_guerreiro_viriato: \d+ triângulos > 1000/.test(p)), r.problems.join('; '));
+});

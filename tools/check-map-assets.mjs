@@ -53,10 +53,50 @@ export async function checkPiece(name, spec, conv, dir = DIR) {
   return { name, problems, facts };
 }
 
+/**
+ * Lê e verifica um conjunto de personagens com esqueleto (os guerreiros do mapa): malhas esperadas, triângulos por malha,
+ * materiais, pele com o número de ossos previsto e animações. Não verifica altura nem pivot: nas malhas com pele
+ * quantizadas as posições estão normalizadas e a escala vive nas matrizes inversas de ligação.
+ */
+export async function checkCharacters(name, spec, conv, dir = DIR) {
+  await MeshoptDecoder.ready;
+  const io = new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({ 'meshopt.decoder': MeshoptDecoder });
+  const file = path.join(dir, spec.file), problems = [], facts = {};
+  if (!fs.existsSync(file)) return { name, problems: [`falta ${spec.file}`], facts };
+  if (!fs.existsSync(file + '.js')) problems.push(`falta ${spec.file}.js (o anfitrião do artefacto só serve .js)`);
+  const kb = fs.statSync(file).size / 1024; facts.kb = Math.round(kb);
+  if (kb > spec.maxKB) problems.push(`${facts.kb} KB > ${spec.maxKB} KB`);
+  const doc = await io.read(file), root = doc.getRoot();
+  const used = root.listExtensionsUsed().map(e => e.extensionName).filter(e => !conv.extensionsAllowed.includes(e));
+  if (used.length) problems.push(`extensões não previstas: ${used.join(', ')}`);
+  facts.meshes = {};
+  for (const meshName of spec.meshes) {
+    const node = root.listNodes().find(n => n.getName() === meshName);
+    if (!node?.getMesh()) { problems.push(`falta a malha ${meshName}`); continue; }
+    let tris = 0; const mats = new Set();
+    for (const p of node.getMesh().listPrimitives()) {
+      const idx = p.getIndices(); tris += (idx ? idx.getCount() : p.getAttribute('POSITION').getCount()) / 3;
+      mats.add(p.getMaterial());
+      if (!p.getAttribute('JOINTS_0') || !p.getAttribute('WEIGHTS_0')) problems.push(`${meshName}: sem pesos de esqueleto`);
+    }
+    facts.meshes[meshName] = tris;
+    if (tris > spec.maxTris) problems.push(`${meshName}: ${tris} triângulos > ${spec.maxTris}`);
+    if (mats.size > conv.maxMaterials) problems.push(`${meshName}: ${mats.size} materiais > ${conv.maxMaterials}`);
+    const joints = node.getSkin()?.listJoints().length ?? 0;
+    if (joints !== spec.joints) problems.push(`${meshName}: ${joints} ossos, esperava ${spec.joints}`);
+  }
+  facts.triangles = Object.values(facts.meshes).reduce((a, b) => a + b, 0);
+  facts.animations = root.listAnimations().map(a => a.getName());
+  for (const clip of spec.animations) if (!facts.animations.includes(clip)) problems.push(`falta a animação ${clip}`);
+  if (root.listTextures().length) problems.push('texturas não previstas: as cores vão nos vértices');
+  return { name, problems, facts };
+}
+
 export async function checkAll(budgetsFile = path.join(ROOT, 'assets/map/budgets.json'), dir = DIR) {
   const B = JSON.parse(fs.readFileSync(budgetsFile, 'utf8'));
   const out = [];
   for (const [name, spec] of Object.entries(B.pieces)) out.push(await checkPiece(name, spec, B.conventions, dir));
+  for (const [name, spec] of Object.entries(B.characters ?? {})) out.push(await checkCharacters(name, spec, B.conventions, dir));
   return out;
 }
 

@@ -4,7 +4,10 @@ import { createMapProjection, createCampaignTerrain, subdivideLine } from './ter
 import { levelRoundhouseSite, loadRoundhouse, roundhousePlacement } from './roundhouse.js';
 import { generateVegetation } from './strategic.js';
 import { disposeGroup, makeForest, makeIntelligence, makeParty, makePlanning } from './overlays.js';
+import { loadWarbandModel } from './party.js';
 import { leaderPath, pickStrategicPoint, positionLabels } from './interaction.js';
+
+const PARTY_PIXELS = 1.15, PARTY_MAX_SCALE = 1.8;   // band size floor (screen px per map unit) and its growth cap
 
 function indexedGeometry(positions, indices) {
   const geometry = new THREE.BufferGeometry();
@@ -149,11 +152,18 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
   const leaders = document.createElementNS(svg, 'svg');
   leaders.setAttribute('class', 'map-leaders');
   leaders.setAttribute('aria-hidden', 'true');
+  const partySelection = { type: 'party' };
   const partyMarker = {
     position: new THREE.Vector3(),
-    userData: { key: 'party', labelKey: 'map.band', className: 'party-label', priority: 12, lift: 17 },
+    userData: { key: 'party', selection: partySelection, labelKey: 'map.band', className: 'party-label', priority: 12, lift: 19 },
   };
   let model, terrain, relief, edge, projection, markers, intelligence, planning, partyVisual, targets, labels = [], selected;
+  // The Blender figures load in the background as soon as the map exists; the band uses them as soon as they arrive.
+  let warbandModel = null;
+  loadWarbandModel().then(loaded => {
+    warbandModel = loaded;
+    if (partyVisual) { partyVisual.userData.useModel(loaded); draw(); }
+  }).catch(error => console.warn('Could not load the warband figures; keeping the simple ones.', error));
   const counts = { planningBuilds: 0, partyBuilds: 0, poseUpdates: 0, releasedGroups: 0 };
   let placesKey, intelKey, planningKey, focusedPlace, issues, partyLabel, labelLocale;
   let campaignLabels, showMapDetails, communityPostures;
@@ -191,6 +201,7 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
   }
 
   function labelFor(selection) {
+    if (selection?.type === 'party') return i18n.t('map.band');
     const marker = targets?.find(({ userData }) =>
       userData.selection.type === selection?.type && userData.selection.id === selection?.id);
     return marker ? markerLabel(marker) : '';
@@ -300,6 +311,16 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
     houseLods[1].visible = !houseLods[0].visible;
   }
 
+  // The band keeps a readable size when the map is small on screen: below PARTY_PIXELS screen pixels per map
+  // unit it grows continuously (no model swap), up to PARTY_MAX_SCALE; closer in it is drawn at map scale.
+  function updatePartyScale() {
+    if (!partyVisual) return;
+    const pixels = screenHeight / (camera.top - camera.bottom);
+    const scale = THREE.MathUtils.clamp(PARTY_PIXELS / pixels, 1, PARTY_MAX_SCALE);
+    partyVisual.userData.setScreenScale(scale);
+    partyMarker.userData.lift = 19 * scale;
+  }
+
   function draw() {
     if (!terrain) return;
     camera.position.copy(target).addScaledVector(offset, Math.max(terrain.w, terrain.h) + 400);
@@ -310,6 +331,7 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
     camera.top = halfHeight; camera.bottom = -halfHeight;
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();
+    updatePartyScale();
     updateRoundhouse();
     renderer.render(scene, camera);
     layoutLabels();
@@ -374,8 +396,9 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
       intelKey = nextIntelKey;
     }
     selected = null;
-    targets = [...markers.children, ...intelligence.targets];
-    labels = [...targets.map(marker => makeLabel(marker, true)), ...intelligence.annotations.map(marker => makeLabel(marker))];
+    targets = [...markers.children, ...intelligence.targets, ...(partyVisual ? [partyVisual] : [])];
+    labels = [...targets.filter(marker => marker !== partyVisual).map(marker => makeLabel(marker, true)),
+      ...intelligence.annotations.map(marker => makeLabel(marker))];
     mountLabels();
   }
 
@@ -408,10 +431,12 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
   function setPartyPose(fx, redraw = true) {
     if (!terrain) return;
     if (!partyVisual) {
-      partyVisual = makeParty(terrain, projection, fx.party);
+      partyVisual = makeParty(terrain, projection, fx.party, warbandModel);
+      partyVisual.userData.selection = partySelection;
       model.add(partyVisual);
+      targets?.push(partyVisual);
       counts.partyBuilds++;
-    } else partyVisual.userData.updateParty(fx.party);
+    } else partyVisual.userData.updateParty(fx.party, fx.step);
     planning?.userData.updateParty(fx.party);
     const party = projection.toScene(fx.party, terrain.heightAt(fx.party.x, fx.party.y));
     partyMarker.position.set(party.x, party.y, party.z);
@@ -493,7 +518,8 @@ export function createCampaignMapScene(canvas, labelLayer, onSelect, i18n) {
   }
 
   function metrics() {
-    return { ...counts, geometries: renderer.info.memory.geometries, calls: renderer.info.render.calls };
+    return { ...counts, geometries: renderer.info.memory.geometries, calls: renderer.info.render.calls,
+      party: partyVisual && { ...partyVisual.userData.stats, heading: partyVisual.userData.heading } };
   }
 
   return { load, present, setPartyPose, resize, reset, pan, zoomBy, rotate, pick, hit, measure, metrics, labelFor, redraw: draw };

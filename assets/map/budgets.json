@@ -7,14 +7,27 @@
     "pivot": "centro da base, no chão (y = 0)",
     "maxTexture": 1024,
     "maxMaterials": 2,
-    "extensionsAllowed": ["EXT_meshopt_compression", "KHR_mesh_quantization", "KHR_texture_transform"]
+    "extensionsAllowed": [
+      "EXT_meshopt_compression",
+      "KHR_mesh_quantization",
+      "KHR_texture_transform"
+    ]
   },
   "pieces": {
     "casa_redonda": {
       "file": "casa_redonda.glb",
-      "lods": { "LOD0": 2000, "LOD1": 600 },
-      "height": [4.5, 7.0],
-      "footprint": [6.5, 8.0],
+      "lods": {
+        "LOD0": 2000,
+        "LOD1": 600
+      },
+      "height": [
+        4.5,
+        7.0
+      ],
+      "footprint": [
+        6.5,
+        8.0
+      ],
       "maxKB": 1100,
       "final": {
         "_": "O que a peça gasta na versão aprovada (Fase C, 2026-11-18); os tectos acima continuam a ser os limites. Serve para ver a folga e para detectar deriva num commit futuro.",
@@ -22,6 +35,25 @@
         "LOD1": 524,
         "kb": 986
       }
+    }
+  },
+  "characters": {
+    "guerreiros": {
+      "_": "Viriato e três companheiros do mapa estratégico: corpo Quaternius (CC0) vestido e reduzido no Blender (art/blender/guerreiros.blend), quatro malhas com pele num esqueleto de 65 ossos, Idle_Loop e Walk_Loop da Universal Animation Library (CC0).",
+      "file": "guerreiros.glb",
+      "meshes": [
+        "mapa_guerreiro_viriato",
+        "mapa_guerreiro_a",
+        "mapa_guerreiro_b",
+        "mapa_guerreiro_c"
+      ],
+      "maxTris": 4500,
+      "joints": 65,
+      "animations": [
+        "Idle_Loop",
+        "Walk_Loop"
+      ],
+      "maxKB": 400
     }
   }
 }

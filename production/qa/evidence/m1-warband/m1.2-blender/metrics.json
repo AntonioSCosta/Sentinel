@@ -1,0 +1,227 @@
+{
+ "environment": "Chromium headless + SwiftShader (MSAA 4x); seed 1234; same v1 save; frame timings in software rendering are relative only",
+ "source": {
+  "body_and_hair": "Quaternius Universal Base Characters (CC0 1.0), assets/chars/body.bin, hair_*.bin",
+  "animations": "Quaternius Universal Animation Library 1 (CC0 1.0): Idle_Loop, Walk_Loop from assets/chars/anim_ual1.bin",
+  "blender": "bpy 5.3.0 (Blender 5.3.0, PyPI); art/blender/src/guerreiros_build.py",
+  "blend": "art/blender/guerreiros.blend (853 KB, Git LFS)",
+  "glb": "assets/map/models/guerreiros.glb (325 KB; .glb.js 433 KB)"
+ },
+ "triangles_per_warrior": {
+  "viriato": 3886,
+  "companion_a": 3543,
+  "companion_b": 3884,
+  "companion_c": 3247
+ },
+ "triangles_by_part_viriato": {
+  "body": 1668,
+  "tunic_shell": 395,
+  "skirt": 176,
+  "belt": 40,
+  "cloak": 252,
+  "hair_buzzed": 248,
+  "hair_long": 639,
+  "hair_beard": 258,
+  "eyes": 92,
+  "brows": 78,
+  "spear": 40,
+  "caetra_on_others": 296
+ },
+ "band_including_shadows_and_ring": {
+  "m1_1_procedural": {
+   "triangles": 2754,
+   "draw_calls": 9,
+   "materials": 3,
+   "geometries_per_world": 9
+  },
+  "m1_2_blender": {
+   "triangles": 14792,
+   "draw_calls": 6,
+   "materials": 3,
+   "geometries_per_world": 6,
+   "shared_per_session": 4
+  }
+ },
+ "scene_initial_view_draw_calls": {
+  "m0": 51,
+  "m1_1_procedural": 58,
+  "m1_2_blender": 55
+ },
+ "scene_triangles_1440x900_normal": {
+  "m1_1_procedural": 123003,
+  "m1_2_blender": 135041
+ },
+ "pose_cpu_ms_swiftshader_page": {
+  "m1_1_procedural": 0.06,
+  "m1_2_blender": [
+   0.19,
+   0.25
+  ]
+ },
+ "memory": {
+  "geometry_kb_once_per_session": 424.8,
+  "animation_clips_kb": 46.9,
+  "bone_texture_kb_per_man_per_world": 6.25,
+  "vertices": 12416
+ },
+ "band_screen_size_px_without_ring_or_label": {
+  "m1_1_procedural": {
+   "1440x900-z0.8": [
+    22,
+    26
+   ],
+   "1440x900-z1": [
+    22,
+    26
+   ],
+   "1440x900-z2.2": [
+    39,
+    46
+   ],
+   "1440x900-z4": [
+    70,
+    84
+   ],
+   "1280x800-z0.8": [
+    22,
+    26
+   ],
+   "1280x800-z1": [
+    22,
+    26
+   ],
+   "1280x800-z2.2": [
+    33,
+    40
+   ],
+   "1280x800-z4": [
+    60,
+    72
+   ],
+   "1024x600-z0.8": [
+    17,
+    20
+   ],
+   "1024x600-z1": [
+    21,
+    25
+   ],
+   "1024x600-z2.2": [
+    25,
+    30
+   ],
+   "1024x600-z4": [
+    46,
+    55
+   ],
+   "844x390-z0.8": [
+    10,
+    11
+   ],
+   "844x390-z1": [
+    12,
+    14
+   ],
+   "844x390-z2.2": [
+    22,
+    26
+   ],
+   "844x390-z4": [
+    26,
+    32
+   ]
+  },
+  "m1_2_blender": {
+   "1440x900-z0.8": [
+    33,
+    29
+   ],
+   "1440x900-z1": [
+    33,
+    29
+   ],
+   "1440x900-z2.2": [
+    58,
+    50
+   ],
+   "1440x900-z4": [
+    105,
+    91
+   ],
+   "1280x800-z0.8": [
+    32,
+    28
+   ],
+   "1280x800-z1": [
+    33,
+    29
+   ],
+   "1280x800-z2.2": [
+    49,
+    43
+   ],
+   "1280x800-z4": [
+    90,
+    78
+   ],
+   "1024x600-z0.8": [
+    25,
+    22
+   ],
+   "1024x600-z1": [
+    31,
+    27
+   ],
+   "1024x600-z2.2": [
+    38,
+    33
+   ],
+   "1024x600-z4": [
+    69,
+    60
+   ],
+   "844x390-z0.8": [
+    14,
+    12
+   ],
+   "844x390-z1": [
+    18,
+    16
+   ],
+   "844x390-z2.2": [
+    33,
+    29
+   ],
+   "844x390-z4": [
+    39,
+    34
+   ]
+  }
+ },
+ "e2e_per_resolution": {
+  "1440x900": {
+   "model": "blender",
+   "party_builds_after_four_marches": 1,
+   "final_heading": 0,
+   "errors": []
+  },
+  "1280x800": {
+   "model": "blender",
+   "party_builds_after_four_marches": 1,
+   "final_heading": 0,
+   "errors": []
+  },
+  "1024x600": {
+   "model": "blender",
+   "party_builds_after_four_marches": 1,
+   "final_heading": 0,
+   "errors": []
+  },
+  "844x390": {
+   "model": "blender",
+   "party_builds_after_four_marches": 1,
+   "final_heading": 0,
+   "errors": []
+  }
+ }
+}

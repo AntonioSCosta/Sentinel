@@ -5,7 +5,7 @@
   display: inline-flex; align-items: center; gap: 4px; pointer-events: none; letter-spacing: normal;
 }
 :is(#campaign-map-3d, #map-labels) .map-label.party-label {
-  background: #332d17; color: #fff1b0; border-color: #ebce76; font-weight: 700;
+  background: #332d17; color: #fff1b0; border-color: #ebce76; font-weight: 700; pointer-events: auto;
 }
 :is(#campaign-map-3d, #map-labels) .map-label.rumor-zone { color: #ffd7a1; border-color: #ffbc75; border-style: dashed; }
 :is(#campaign-map-3d, #map-labels) .map-label.scouted-zone { color: #c6f0d4; border-color: #a6e2bf; }

@@ -342,10 +342,10 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const e = t < 0.5 ? 2 * t * t : 1 - ((-2 * t + 2) ** 2) / 2;
     shown = { x: anim.from.x + (anim.to.x - anim.from.x) * e, y: anim.from.y + (anim.to.y - anim.from.y) * e };
     walk = t * Math.PI * 5;
-    if (map3d) map3d.pose({ party: shown }); else paint();
+    if (map3d) map3d.pose({ party: shown, step: walk }); else paint();
     if (t < 1) { rafId = win.requestAnimationFrame(frame); return; }
     shown = { x: anim.to.x, y: anim.to.y }; anim = null; walk = 0;
-    if (map3d) map3d.pose({ party: shown }); else paint();
+    if (map3d) map3d.pose({ party: shown, step: walk }); else paint();
   }
   function stopMarch() { if (rafId) win.cancelAnimationFrame?.(rafId); rafId = 0; anim = null; walk = 0; }
 
@@ -926,12 +926,14 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   function pointAt(hit) {
     if (!hit || !flow) return null;
     if (hit.type === 'terrain') return hit;
+    if (hit.type === 'party') return flow.state.party;
     if (hit.type === 'settlement') return settlement(hit.id);
     return intelView(flow.state).forces.find(force => force.id === hit.id);
   }
 
   function mapAction(hit, at, event) {
     if (!active || flow.phase !== 'mapa' || decisionOverlay || !at) return;
+    if (hit?.type === 'party') return;
     if (mode === 'reconhecer') {
       reconClick = event ? { t: event.timeStamp, x: event.clientX, y: event.clientY } : null;
       mode = null;
