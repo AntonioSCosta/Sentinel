@@ -8,7 +8,7 @@ import { ROOT, startBrowser } from './e2e-lib.mjs';
 
 const out = process.argv[2];
 if (out) await mkdir(out, { recursive: true });
-const { browser, url, close } = await startBrowser();
+const { browser, url, close } = await startBrowser({ entry: 'index.html?manual=1&map=3d' });
 const stages = [], errors = [], warnings = [], cosmeticRequests = [];
 const checkpoint = makeCheckpoint();
 const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf-8' }).trim();

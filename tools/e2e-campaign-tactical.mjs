@@ -33,7 +33,7 @@ try {
   const flag = (key, yes) => page.evaluate(([key, yes]) => yes ? sessionStorage.setItem(key, '1') : sessionStorage.removeItem(key), [key, yes]);
   const openMap = async () => {
     await page.locator('#camp-cont:not(.hidden)').click({ timeout: 60000 });
-    await page.locator('#campaign-map-3d[data-status=ready]').waitFor({ timeout: 60000 });
+    await page.locator('#mapcv').waitFor({ timeout: 60000 });
   };
   const fight = page.locator('#mb-fight');
   const iframe = page.frameLocator('#campaign-tactical-arena');
@@ -125,7 +125,7 @@ try {
   await flag('m31-fail-save', false);
   await iframe.locator('#campaign-return').click();
   await page.locator('#map:not(.hidden)').waitFor();
-  await page.locator('#campaign-map-3d[data-status=ready]').waitFor();
+  await page.locator('#mapcv').waitFor();
   assert.equal(await page.locator('#campaign-tactical-arena').count(), 0);
   assert.equal(await page.locator('html').getAttribute('lang'), 'pt-PT');
   const resolved = await save();

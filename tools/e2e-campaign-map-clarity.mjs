@@ -7,7 +7,7 @@ import { startBrowser } from './e2e-lib.mjs';
 const out = process.argv[2];
 const baseline = process.env.SENTINEL_MAP_BASELINE;
 if (out) await mkdir(out, { recursive: true });
-const { url, browser, close } = await startBrowser({ root: baseline });
+const { url, browser, close } = await startBrowser({ root: baseline, entry: 'index.html?manual=1&map=3d' });
 const sizes = [[1440, 900], [1280, 800], [1024, 600], [844, 390], [432, 390]];
 const shot = (page, name) => out && page.screenshot({ path: join(out, name + '.jpg'), type: 'jpeg', quality: 80 });
 const fixture = newCampaign(1234);

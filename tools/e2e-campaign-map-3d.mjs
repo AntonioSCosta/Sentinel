@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { newCampaign } from '../src/campaign/state.js';
 import { startE2E } from './e2e-lib.mjs';
 
-const { url, browser, check, finish } = await startE2E();
+const { url, browser, check, finish } = await startE2E({ entry: 'index.html?manual=1&map=3d' });
 const captures = process.argv[2];
 if (captures) await mkdir(captures, { recursive: true });
 
