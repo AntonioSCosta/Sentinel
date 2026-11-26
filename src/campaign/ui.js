@@ -437,7 +437,19 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (!r) return r;
     if (dest && !r.refused && Math.hypot(flow.state.party.x - dest.x, flow.state.party.y - dest.y) < ARRIVAL) { const arrived = dest; log.push(() => tMap('arrived', { name: destName(arrived) })); logDirty = true; dest = null; }
     if (r.refused && o.kind === 'marchar') dest = null;
+    const wasLow = memory.lowFood ?? false, wasEmpty = memory.emptyFood ?? false;
     const reasons = r.refused ? [] : detectInterruptions({ state: flow.state, events: r.events, memory, battle: r.battle });
+    // B3.1: apenas transições de provisões geram mensagens. Não interrompem a marcha.
+    if (!r.refused) {
+      const fd = foodDays(flow.state), low = fd < LOW_FOOD_DAYS, empty = fd <= 0;
+      if (low && (!wasLow || (empty && !wasEmpty))) {
+        const messageKey = empty ? 'noFood' : 'foodTitle';
+        log.push({ text: () => tIssue(messageKey, { duration: duration(fd) }), severe: empty });
+        logDirty = true;
+      }
+      memory.lowFood = low;
+      memory.emptyFood = empty;
+    }
     if (reasons.length || flow.phase !== 'mapa') { interrupt = reasons.filter(x => x.type !== 'batalha'); tributeNotice = null; running = false; if (timer) win.clearTimeout?.(timer); timer = 0; }
     else if (running) schedule();   // uma ordem dada a meio de um dia reinicia o relógio: o dia seguinte vem um dia inteiro depois, não o que faltava
     render();
@@ -813,7 +825,11 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
 
   function renderLog() {
     const ul = $('mlog');
-    ul.replaceChildren(...log.slice(-LOG_LINES).map(line => el('li', null, typeof line === 'function' ? line() : line)));
+    ul.replaceChildren(...log.slice(-LOG_LINES).map(line => {
+      const content = typeof line === 'function' ? line() : typeof line === 'object' && line !== null
+        ? (typeof line.text === 'function' ? line.text() : line.text) : line;
+      return el('li', typeof line === 'object' && line !== null && line.severe ? 'warn' : null, content);
+    }));
   }
 
   // --- render ---

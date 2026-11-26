@@ -21,7 +21,7 @@ const forceLabel = (i18n, kind) => i18n.t(`map.force.${['patrulha', 'comboio', '
 const postureLabel = (i18n, posture) => copy(i18n, `posture.${posture}`);
 const recentKey = (day, type, id) => `j:${day}:${type}:${id ?? ''}`;
 
-export const LOW_FOOD_DAYS = 5;   // comida para menos de cinco dias: assunto e interrupção
+export const LOW_FOOD_DAYS = 5;   // comida para menos de cinco dias: aviso discreto (não interrompe)
 export const RECENT_DAYS = 5;     // um acontecimento fica estes dias na coluna (depois só no Diário)
 export const NEAR = MARCH_SPEED;  // «a menos de um dia»: um dia de marcha do bando
 
@@ -94,10 +94,9 @@ export function buildIssues(state, journal = [], { dismissed = new Set(), i18n =
 
 /**
  * O que obriga o tempo a parar depois de um dia: um pedido novo (tributo), uma força romana vista hoje a menos de um dia do
- * bando ou de uma aldeia amiga ou comprometida, um encontro que pede batalha, uma mudança de postura, a colheita, e a comida
- * a passar para menos de LOW_FOOD_DAYS dias. Devolve [{ type, text, place? }] (vazio: o tempo continua). Todos os motivos
+ * bando ou de uma aldeia amiga ou comprometida, um encontro que pede batalha, uma mudança de postura e a colheita. Devolve [{ type, text, place? }] (vazio: o tempo continua). Todos os motivos
  * do mesmo dia vêm juntos (uma só interrupção). `memory` (objeto que a interface guarda) evita repetir o mesmo aviso: a
- * mesma força enquanto continua perto, e a comida enquanto continua baixa.
+ * mesma força enquanto continua perto. A comida é apenas rastreada para avisos no log.
  */
 export function detectInterruptions({ state, events = [], memory = {}, battle = null }) {
   const out = [];
@@ -111,8 +110,9 @@ export function detectInterruptions({ state, events = [], memory = {}, battle = 
     else if (ev.type === 'colheita') add('colheita', { event: ev });
   }
   const fd = foodDays(state), low = fd < LOW_FOOD_DAYS;
-  if (low && !memory.lowFood) add('comida', { foodDays: fd });
+  // Comida baixa/esgotada é aviso, não uma razão para parar o relógio.
   memory.lowFood = low;
+  memory.emptyFood = fd <= 0;
   const friends = state.communities ? COMMUNITY_IDS.map(id => state.communities[id]).filter(c => alive(c) && (c.posture === 'amiga' || c.posture === 'comprometida')) : [];
   const was = new Set(memory.near || []), near = [];
   for (const f of intelView(state).forces) {

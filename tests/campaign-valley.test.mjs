@@ -3,7 +3,7 @@
 // fila de assuntos, interrupções e tempo. Tudo puro (sem DOM).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { newCampaign, serialize } from '../src/campaign/state.js';
+import { newCampaign, serialize, foodPerDay } from '../src/campaign/state.js';
 import { createFlow, loadFlow, STORAGE_KEY } from '../src/campaign/flow.js';
 import { stepDay } from '../src/campaign/simulation.js';
 import { makeRng } from '../src/campaign/rng.js';
@@ -229,16 +229,25 @@ test('o idioma muda os textos da decisão e da mesma interrupção sem mudar o e
 
 // ——— interrupções ———
 
-test('interrupções: tributo exigido, postura, colheita e comida baixa, agrupados numa só', () => {
+test('interrupções: tributo exigido, postura e colheita agrupados; comida não interrompe', () => {
   const f = quietFlow(), s = f.state, id = s.communities.vau.settlement;
   const mem = {};
   const r = detectInterruptions({ state: s, events: [{ type: 'tributo-exigido', id, food: 5, day: 10 }, { type: 'postura', id, community: 'vau', from: 'amiga', to: 'neutra' }, { type: 'colheita', season: 'primavera', total: 9, villages: [] }, { type: 'espera' }], memory: mem });
   assert.deepEqual(r.map(x => x.type), ['pedido', 'postura', 'colheita']);
-  s.food = 1;
-  assert.deepEqual(detectInterruptions({ state: s, events: [], memory: mem }).map(x => x.type), ['comida']);
-  assert.deepEqual(detectInterruptions({ state: s, events: [], memory: mem }), [], 'não repete enquanto a comida continuar baixa');
-  s.food = 1e4; detectInterruptions({ state: s, events: [], memory: mem }); s.food = 1;
-  assert.deepEqual(detectInterruptions({ state: s, events: [], memory: mem }).map(x => x.type), ['comida'], 'volta a avisar se recuperou e voltou a baixar');
+  s.food = foodPerDay(s.men) * 2; // 2 dias de comida: baixa, mas não esgotada.
+  assert.equal(foodDays(s), 2);
+  assert.deepEqual(detectInterruptions({ state: s, events: [], memory: mem }).map(x => x.type), [], 'comida baixa nunca interrompe');
+  assert.equal(mem.lowFood, true);
+  assert.equal(mem.emptyFood, false);
+  s.food = 0;
+  assert.deepEqual(detectInterruptions({ state: s, events: [], memory: mem }), [], 'comida esgotada também não interrompe');
+  assert.equal(mem.emptyFood, true);
+  s.food = 1e4;
+  detectInterruptions({ state: s, events: [], memory: mem });
+  assert.equal(mem.lowFood, false);
+  assert.equal(mem.emptyFood, false);
+  s.food = foodPerDay(s.men) * 2;
+  assert.deepEqual(detectInterruptions({ state: s, events: [], memory: mem }), [], 'nova quebra não interrompe');
 });
 
 test('interrupções: força conhecida a menos de um dia do bando ou de uma aldeia amiga, uma vez por aproximação', () => {
