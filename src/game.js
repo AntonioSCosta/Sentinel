@@ -3207,7 +3207,7 @@ function refreshCampMenu() {
   $('camp-cont').textContent = i18n.t(continueMessage);
   $('camp-confirm').classList.add('hidden');
   menu.renderChronicle(campUI.savedState());
-  menu.open(saved ? 'campaign' : null);   // com campanha gravada, «Continuar» fica logo à vista
+  menu.open('campaign');
 }
 i18n.subscribe(() => {
   renderChapterBrief();
@@ -3245,15 +3245,12 @@ $('camp-new').addEventListener('click', () => {   // uma campanha a meio não se
 $('camp-confirm-yes').addEventListener('click', () => { $('camp-confirm').classList.add('hidden'); startCampaign(); });
 $('camp-confirm-no').addEventListener('click', () => { $('camp-confirm').classList.add('hidden'); $('camp-new').focus(); });
 $('camp-confirm').addEventListener('keydown', e => {
-  if (e.key === 'Escape' || e.code === 'Escape') { e.preventDefault(); $('camp-confirm-no').click(); return; }
-  if (e.key !== 'Tab') return;   // o foco fica nos dois botões
-  const a = $('camp-confirm-yes'), b = $('camp-confirm-no'), cur = document.activeElement;
-  if (e.shiftKey ? cur === a : cur === b) { e.preventDefault(); (e.shiftKey ? b : a).focus(); }
+  if (e.key === 'Escape' || e.code === 'Escape') { e.preventDefault(); $('camp-confirm-no').click(); }
 });
 $('camp-cont').addEventListener('click', () => openCampaign(() => campUI.resume()));
 refreshCampMenu();
-let menuT = 0;
 function step(dt) {
+  if (state === 'menu') return;
   if (state === 'map') { frameNo++; skipHint(); return; }   // o «ENTER para saltar» do epílogo não fica no mapa
   frameNo++;
   updateBoughs(P.pos.x, P.pos.z, camera.position.x, camera.position.z);
@@ -3274,16 +3271,9 @@ function step(dt) {
       const cp = V(P.pos.x, P.pos.y, P.pos.z).addScaledVector(back, 2.4 + k * 1.6).add(V(0, 1.6 + k * 2.4, 0));
       camera.position.lerp(cp, Math.min(1, dt * 3)); camera.lookAt(P.pos.x, P.pos.y + .3, P.pos.z);
     }
-  } else if (state === 'menu') {
-    menuT += dt * .04;
-    const cx = CAMP.x + 20, cz = 40;
-    camera.position.set(cx + Math.sin(menuT) * 90, 42, cz + Math.cos(menuT) * 90);
-    camera.lookAt(cx, 8, cz - 40);
-    sun.position.set(cx, 0, cz).addScaledVector(SUN_DIR, 150); sun.target.position.set(cx, 0, cz);
-    VM.visible = false;
   }
   if (campBattle && state === 'play') checkCampaignBattle(dt);   // também quando um romano cai sem passar por damageEnemy
-  if (state !== 'menu') VM.visible = view === 'first' && (state === 'play' || state === 'pause');
+  VM.visible = view === 'first' && (state === 'play' || state === 'pause');
   updateFires(dt); updateParticles(dt); updateTrails(dt); updateSignal(dt); updateWisps(dt);
 }
 const AV = soldier('lusitano', { scale: 1.04, outfit: 'lusitano_b', hair: ['hair_long', 'hair_beard'], hairColor: 0x2a1d14, cap: false }); scene.add(AV.root); AV.root.visible = false;
@@ -3311,7 +3301,7 @@ $('start').disabled = false; $('start').textContent = i18n.t('interface.start');
 return {
   startCampaign, showCampaignMap, get campIntro() { return campIntro; }, campaignStorage: storage, campaign: campUI, startCampaignBattle,
   campaignTest: { YEAR_DAYS, get retreat() { const r = campBattle?.retreat; return r ? { on: r.on, at: { ...r.at }, via: r.via ? { ...r.via } : null, dir: r.dir } : { on: false, at: null, via: null }; }, forceBattle: spec => { const f = campUI.flow; f.battle = spec; f.phase = 'batalha'; campUI.render(); return f; } },
-  start: (d, ch = 'emboscada') => { if (d != null) diff = d; setChapter(ch); startGame(false); }, startIntro: (ch = chapter) => { setChapter(ch); startGame(true); }, get civs() { return civs; }, get riders() { return riders; }, get chapter() { return chapter; }, MEADOW, ESCAPE, CASTRO, roadX, get carts() { return carts; }, get introT() { return introT; }, step, render: () => { if (state === 'map') return; updateBoughs(P.pos.x, P.pos.z, camera.position.x, camera.position.z); cullChunks(CHUNKS, camera.position); cullCharacters(enemies, camera.position); cullCharacters(allies, camera.position); cullCharacters(civs, camera.position); R.render(); }, setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
+  start: (d, ch = 'emboscada') => { if (d != null) diff = d; setChapter(ch); startGame(false); }, startIntro: (ch = chapter) => { setChapter(ch); startGame(true); }, get civs() { return civs; }, get riders() { return riders; }, get chapter() { return chapter; }, MEADOW, ESCAPE, CASTRO, roadX, get carts() { return carts; }, get introT() { return introT; }, step, render: () => { if (state === 'menu' || state === 'map') return; updateBoughs(P.pos.x, P.pos.z, camera.position.x, camera.position.z); cullChunks(CHUNKS, camera.position); cullCharacters(enemies, camera.position); cullCharacters(allies, camera.position); cullCharacters(civs, camera.position); R.render(); }, setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
   P, supplyTents, heightAt, CAMP, scene, camera, CHUNKS,
   get enemies() { return enemies; }, get allies() { return allies; }, setCompanions: n => { companions = n; }, forceDir: d => { forcedDir = d; }, get order() { return order; }, get placing() { return placing; }, flag: FLAG, flagAt, hurtAllyForTest: (a, d) => hurtAlly(a, d, a.pos.clone()), get mission() { return mission; }, get tentsBurnt() { return tentsBurnt; }, alertForTest: e => alert(e), get halt() { return halt; }, get companions() { return companions; }, get alarm() { return alarm; }, get nextChapter() { return nextChapter; }, HALT, WOODS, CSTART, get state() { return state; },
   get projectiles() { return projectiles; }, get pickups() { return pickups; },
@@ -3336,7 +3326,7 @@ export async function boot(i18n = bindDocumentLanguage(window)) {
   const legacyCampaignMapForTests = testQuery.get('manual') === '1' && testQuery.get('legacy-map-test') === '1';
   const game = await createGame({ legacyCampaignMapForTests, i18n, chars, THREE, renderer, canvas, document, window, rapier, loader: new THREE.TextureLoader(), quality: (() => { try { return window.localStorage.getItem('viriato.quality') || 'medium'; } catch (_) { return 'medium'; } })() });
   if (!game.physicsOk) document.getElementById('physnote').classList.remove('hidden');
-  let last = 0;
+  let last = null, frameId = null;
   // tuning aids: F8 = slow motion (1×, ½×, ¼×); window.__moves / window.__combat = poses and timings, editable live in the console
   let timeScale = 1;
   window.addEventListener('keydown', e => { if (e.code !== 'F8') return; e.preventDefault(); timeScale = timeScale === 1 ? .5 : timeScale === .5 ? .25 : 1; game.prompt && game.prompt(`Velocidade ${timeScale === 1 ? 'normal' : timeScale === .5 ? '½×' : '¼×'}`); });
@@ -3354,13 +3344,28 @@ export async function boot(i18n = bindDocumentLanguage(window)) {
   };
   i18n.subscribe(renderFps);
   const frame = t => {
-    const dt = Math.min(.05, (t - last) / 1000 || 0) * timeScale; last = t;
+    const dt = last === null ? 0 : Math.min(.05, (t - last) / 1000) * timeScale;
+    last = t;
     game.step(dt); game.render();
     const f = tickFps(fps, t);
     if (f != null) { lastFps = f; renderFps(); }
-    requestAnimationFrame(frame);
+    frameId = requestAnimationFrame(frame);
   };
-  if (!manual) requestAnimationFrame(frame);
+  if (!manual) {
+    // The menu has its own still image and needs no simulation or WebGL frames.
+    const menu = document.getElementById('menu');
+    const syncFrameLoop = () => {
+      if (menu.classList.contains('hidden')) {
+        if (frameId === null) frameId = requestAnimationFrame(frame);
+      } else if (frameId !== null) {
+        cancelAnimationFrame(frameId);
+        frameId = last = null;
+        Object.assign(fps, newFps());
+      }
+    };
+    new MutationObserver(syncFrameLoop).observe(menu, { attributes: true, attributeFilter: ['class'] });
+    syncFrameLoop();
+  }
   window.__game = game;
 }
 
