@@ -54,7 +54,6 @@ export function communityLine(c) {
 }
 
 /** Cartela do mapa. */
-export const MAP_TITLE = 'Montes Hermínios', MAP_SUBTITLE = 'Lusitânia, 147 a.C.';
 
 export const daysText = n => `${n} ${n === 1 ? 'dia' : 'dias'}`;
 
@@ -110,9 +109,9 @@ export const UI = {
   idle: 'Acampado: o bando espera ordens.',
   goPick: 'Clica no mapa para onde ir (ou numa povoação) · ESC desiste',
   goingTo: (name, days, food) => `Destino: ${name} — ${daysText(days)}, cerca de ${food} de comida.`,
-  waiting: 'Emboscada montada: o bando espera na estrada.',
-  waitingFar: 'À espera, mas longe da estrada: daqui não se embosca ninguém.',
-  hiding: 'O bando está escondido.',
+  waiting: 'Emboscada montada: o bando espera na estrada · clica no mapa para voltar a marchar',
+  waitingFar: 'À espera, mas longe da estrada: daqui não se embosca ninguém · clica no mapa para marchar',
+  hiding: 'O bando está escondido · clica no mapa para voltar a marchar',
   arrived: name => `Chegaste a ${name}.`,
   issues: 'Assuntos', noIssues: 'Nada espera por ti. O vale segue a sua vida.',
   decision: 'Decisão', attention: 'Atenção', deadline: d => (d <= 0 ? 'último dia' : `prazo: ${daysText(d)}`),

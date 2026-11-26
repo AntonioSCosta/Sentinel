@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeView, toScreen, toWorld, hitTest, drawMap, layoutMapLabels } from '../src/campaign/map-view.js';
 import { newCampaign } from '../src/campaign/state.js';
-import { placeName, MAP_TITLE } from '../src/campaign/strings.js';
+import { placeName } from '../src/campaign/strings.js';
 
 /** Põe à vista do jogador as forças do estado (como se o bando as visse hoje): a vista só desenha o que ele sabe. */
 function sighted(s) {
@@ -69,14 +69,14 @@ test('hitTest finds settlement, patrol, praetor; nearest wins; null outside', ()
   assert.equal(hitTest(v, s, far.x, far.y), null);
 });
 
-test('drawMap writes names (as comunidades com o seu nome) and the map title, balances save/restore, resets dash', () => {
+test('drawMap writes names (as comunidades com o seu nome) and no map title card, balances save/restore, resets dash', () => {
   const s = newCampaign(3);
   s.day = 40;
   const v = makeView(s.world, 800, 600), c = fakeCtx();
   drawMap(c, v, s);
   const texts = c.calls.filter(x => x[0] === 'fillText').map(x => x[1]);
   for (const st of s.world.settlements) assert.ok(texts.includes(placeName(s, st.id)), st.name);
-  assert.ok(texts.includes(MAP_TITLE), 'a data saiu do mapa: está na barra de cima');
+  assert.ok(!texts.includes('Montes Hermínios'), 'a cartela com o nome da terra saiu do mapa');
   assert.ok(texts.includes('Viriato'));
   assert.ok(count(c, 'save') > 0);
   assert.equal(count(c, 'save'), count(c, 'restore'));

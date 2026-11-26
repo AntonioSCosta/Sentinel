@@ -231,7 +231,8 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   let flow = null, view = null, active = false, selected = null, logDirty = true;
   let tacticalArena = null, tacticalNotice = null;
   let anim = null, shown = null, facing = 1, walk = 0, rafId = 0, hover = null, paintPending = false;
-  let mode = null, reconClick = null, focus = null;   // mode: null | 'ir' | 'reconhecer'
+  let refineTimer = 0;
+  let mode = null, reconClick = null, focus = null;   // mode: null | 'reconhecer' (marchar é o clique simples no mapa)
   let dest = null, stance = null;                     // a ordem permanente do bando quando o tempo corre
   let speed = loadSpeed(storage), running = false, timer = 0;
   let memory = {}, interrupt = [], dismissed = new Set(), flash = {}, flashT = 0, logTimer = 0;
@@ -321,6 +322,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
       fx.symbols = illustrated.symbols;
     }
     drawMap(ctx, view, flow.state, fx);
+    if (fx.landscape?.stale) { win.clearTimeout(refineTimer); refineTimer = win.setTimeout(schedulePaint, 130); }   // o zoom ainda mexia: repinta nítido quando assentar
     if (Object.keys(fl).length && !flashT && typeof win.requestAnimationFrame === 'function' && !reduceMotion()) flashT = win.requestAnimationFrame(() => { flashT = 0; paint(); });
   }
   /** Redesenha no máximo uma vez por frame (o rato pode disparar dezenas de eventos por segundo). */
@@ -409,13 +411,11 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
 
   // --- barra de baixo: ordem permanente do bando ---
   function renderStatus() {
-    $('m-go').setAttribute('aria-pressed', mode === 'ir' || !!dest ? 'true' : 'false');
     $('m-ambush').setAttribute('aria-pressed', stance === 'esperar' ? 'true' : 'false');
     $('m-hide').setAttribute('aria-pressed', stance === 'esconder' ? 'true' : 'false');
     $('m-recon').setAttribute('aria-pressed', mode === 'reconhecer' ? 'true' : 'false');
     let message = tMap('idle');
-    if (mode === 'ir') message = tMap('goPick');
-    else if (mode === 'reconhecer') message = tMap('reconMode', { scouts: SCOUTS });
+    if (mode === 'reconhecer') message = tMap('reconMode', { scouts: SCOUTS });
     else if (dest) {
       const days = marchDays(dest);
       message = tMap('going', { name: destName(), duration: duration(days), food: days * foodPerDay(flow.state.men) });
@@ -967,9 +967,16 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     return intelView(flow.state).forces.find(force => force.id === hit.id);
   }
 
+  /** O bando é também o «parar» da marcha em curso (era o botão «Ir»). Com o reconhecimento armado o clique é do reconhecimento. */
+  function stopOrder() {
+    if (mode || !dest) return false;
+    setDest(null);
+    return true;
+  }
+
   function mapAction(hit, at, event) {
     if (!active || flow.phase !== 'mapa' || decisionOverlay || !at) return;
-    if (hit?.type === 'party') return;
+    if (hit?.type === 'party') { stopOrder(); return; }
     if (mode === 'reconhecer') {
       reconClick = event ? { t: event.timeStamp, x: event.clientX, y: event.clientY } : null;
       mode = null;
@@ -977,7 +984,6 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
       return;
     }
     if (sameReconClick(event)) return;
-    if (mode === 'ir') { setDest(hit?.type === 'settlement' ? settlement(hit.id) : at); return; }
     if (hit?.type === 'settlement') { pick(hit.id); return; }
     if (hit && hit.type !== 'terrain') {
       const force = intelView(flow.state).forces.find(f => f.id === hit.id);
@@ -992,6 +998,8 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const { sx, sy } = mapPoint(e);
     const hit = hitTest(view, flow.state, sx, sy);
     const p = toWorld(view, { x: sx, y: sy });
+    const onBand = [shown, flow.state.party].some(b => b && Math.hypot(toScreen(view, b).x - sx, toScreen(view, b).y - sy) <= 14);   // o marcador ou o ponto onde chega
+    if (onBand && stopOrder()) return;
     if (illustrated && !hit && outsideWorld(p)) return;
     mapAction(hit, illustrated && hit ? pointAt(hit) : p, e);
   }
@@ -1053,7 +1061,6 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   }
 
   // --- botões ---
-  $('m-go').addEventListener('click', () => { if (!active || flow?.phase !== 'mapa') return; if (dest && mode !== 'ir') { setDest(null); return; } setMode('ir'); });
   $('m-ambush').addEventListener('click', () => { if (active && flow?.phase === 'mapa') setStance('esperar'); });
   $('m-hide').addEventListener('click', () => { if (active && flow?.phase === 'mapa') setStance('esconder'); });
   $('m-recon').addEventListener('click', () => { if (active && flow?.phase === 'mapa') setMode('reconhecer'); });

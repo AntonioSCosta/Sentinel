@@ -47,8 +47,9 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   check('HUD shows men, food autonomy, arms and fame toward the year-end goal', num('m-men') === s.men && /\d+ dias/.test($('m-food').textContent) && $('m-food-raw').textContent.includes(String(s.food)) && num('m-arms') === s.arms && $('m-fame').textContent === `${s.fame} / ${WIN_FAME}`);
   check('HUD shows date and season', $('m-date').textContent.length > 3 && $('m-season').textContent.length > 2);
   check('log is a live status region', $('mlog').getAttribute('role') === 'status');
-  check('the bottom bar has only Ir, Emboscar, Esconder, Reconhecer and Diário (no Acampar)', ['m-go', 'm-ambush', 'm-hide', 'm-recon', 'm-diary'].every(id => $(id)?.tagName === 'BUTTON' && $(id).textContent.trim())
-    && $('mbot').querySelectorAll('button').length === 5 && !$('m-acampar'));
+  check('the bottom bar has only Emboscar, Esconder, Reconhecer and Diário (no Ir, no Acampar)', ['m-ambush', 'm-hide', 'm-recon', 'm-diary'].every(id => $(id)?.tagName === 'BUTTON' && $(id).textContent.trim())
+    && $('mbot').querySelectorAll('button').length === 4 && !$('m-go') && !$('m-acampar'));
+  check('the top bar has no language selector and the map has no title card', !$('map-language') && !$('mtop').querySelector('select'));
   check('the time starts paused, with pause, 1×, 2× and 4×', !G.campaign.running && $('m-pause').getAttribute('aria-pressed') === 'true' && [...$('m-time').querySelectorAll('[data-speed]')].map(b => b.dataset.speed).join() === '1,2,4');
   // um dia sem ordem: o bando acampa (parar é não dar ordem)
   const d0 = s.day, date0 = $('m-date').textContent; G.campaign.step();
@@ -738,7 +739,27 @@ function fixWave({ G, doc, win, check, st, setGod, $, shown }) {
     check('on the map an arrow key sets a destination one day north', !!G.campaign.dest && Math.round(G.campaign.dest.y) === Math.round(y1 - 45));
     G.campaign.pause();
     win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'ArrowUp', key: 'ArrowUp' }));
-    $('m-go').click();   // com destino, «Ir» cancela-o
+    const warband = { x: rv.ox + f.state.party.x * rv.scale, y: rv.oy + f.state.party.y * rv.scale };
+    const clickWarband = () => cv.dispatchEvent(new win.MouseEvent('click', { clientX: warband.x, clientY: warband.y, bubbles: true }));
+    const marching = !!G.campaign.dest;
+    clickWarband();   // com destino, clicar no bando cancela a marcha (era o «Ir»)
+    check('clicking the warband cancels a standing march', marching && !G.campaign.dest);
+    $('m-recon').click();
+    check('scouting mode is armed', $('m-recon').getAttribute('aria-pressed') === 'true' && /ESC/.test($('m-status').textContent));
+    win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'Escape', key: 'Escape' }));
+    check('Esc drops an armed scouting mode and the map goes back to marching', $('m-recon').getAttribute('aria-pressed') === 'false' && G.campaign.active);
+    $('m-recon').click(); $('m-recon').click();
+    check('clicking Reconhecer again drops the scouting mode too', $('m-recon').getAttribute('aria-pressed') === 'false');
+    $('m-ambush').click();
+    check('after Emboscar the status line says how to march again', G.campaign.stance === 'esperar' && /clica no mapa/.test($('m-status').textContent));
+    const west = { x: rv.ox + (f.state.party.x - 60) * rv.scale, y: rv.oy + f.state.party.y * rv.scale };   // longe do último clique de reconhecimento
+    cv.dispatchEvent(new win.MouseEvent('click', { clientX: west.x, clientY: west.y, bubbles: true }));
+    check('a click on the map after Emboscar goes back to marching', !!G.campaign.dest && G.campaign.stance === null);
+    G.campaign.pause(); clickWarband();
+    $('m-hide').click();
+    check('after Esconder the status line says how to march again', G.campaign.stance === 'esconder' && /clica no mapa/.test($('m-status').textContent));
+    $('m-hide').click();
+    check('Esconder toggles off with a second click', G.campaign.stance === null);
     $('m-recon').click();
     const d2 = f.state.day;
     G.campaign.order({ kind: 'acampar' });
