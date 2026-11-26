@@ -483,22 +483,17 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   function renderIssues() {
     const box = $('missues'), list = $('missues-list'), panel = !!(selected && flow.phase === 'mapa');
     box.classList.toggle('hidden', panel);
-    // a interrupção (um só cartão por dia, com todos os motivos) + avisos (comida) sem parar o relógio
+    // Apenas decisões que realmente interrompem o tempo usam esta faixa.
+    // Avisos de provisões ficam no log e na lista existente de assuntos.
     const ib = $('m-int');
-    const lowFood = foodDays(flow.state) < LOW_FOOD_DAYS;
-    ib.classList.toggle('hidden', !interrupt.length && !lowFood);
-    if (interrupt.length || lowFood) {
+    ib.classList.toggle('hidden', !interrupt.length);
+    if (interrupt.length) {
       const ul = $('m-int-list'); ul.textContent = '';
       for (const x of interrupt) {
         const li = el('li');
         if (x.place) { const b = el('button', 'link', x.text); b.type = 'button'; b.addEventListener('click', () => pick(x.place)); li.append(b); }
         else if (x.at) { const b = el('button', 'link', x.text); b.type = 'button'; b.addEventListener('click', () => { focus = { x: x.at.x, y: x.at.y, r: 0 }; schedulePaint(); }); li.append(b); }
         else li.textContent = x.text;
-        ul.append(li);
-      }
-      if (lowFood) {
-        const fd = foodDays(flow.state);
-        const li = el('li', fd <= 0 ? 'warn' : null, INTERRUPT.comida(fd));
         ul.append(li);
       }
     }
