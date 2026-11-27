@@ -80,6 +80,11 @@ export const bandOf = a => BANDS.reduce((id, b) => (a >= b.min ? b.id : id), BAN
 export function raiseAttention(state, kind) {
   const n = ATTENTION_GAIN[kind];
   if (n === undefined) throw new Error(`atenção: causa desconhecida «${kind}»`);
+  return gainAttention(state, n);
+}
+
+/** Sobe a atenção `n` pontos (causas que não são do GDD de Roma: os capitães, captains-data.js). { from, to } se mudou de faixa. */
+export function gainAttention(state, n) {
   const r = ensureRome(state), from = bandOf(r.attention);
   r.attention = Math.min(100, r.attention + n);
   const to = bandOf(r.attention);

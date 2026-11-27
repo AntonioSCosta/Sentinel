@@ -3,6 +3,7 @@
 // state.praetor); a interface só recebe intelView(state), que é feito apenas de state.intel.
 import { makeRng } from './rng.js';
 import { communityAt, newsFrom } from './communities.js';
+import { sightOf, exactMen, reportDelay, reconRadius } from './captains.js';
 
 export const SIGHT = 150;            // o bando vê uma força a esta distância (o pretor vê o bando a 140)
 export const FORGET = 8;             // dias: um avistamento mais velho do que isto sai do mapa
@@ -135,18 +136,20 @@ export function rememberForce(state, id) {
  * `recon` é o ponto de um reconhecimento ordenado hoje; `dayEvents` são os eventos do dia (fumo de aldeias).
  * Devolve os eventos novos: { type: 'reconhecimento', … } e { type: 'relato', id } por cada relato que chega.
  */
-export function updateIntel(state, { recon = null, dayEvents = [] } = {}) {
+export function updateIntel(state, { recon = null, dayEvents = [], hidden = false } = {}) {
   const it = ensureIntel(state), day = state.day, events = [], real = realForces(state);
-  const scouted = new Set(recon ? real.filter(f => dist(f, recon) <= RECON_RADIUS).map(f => f.id) : []);
+  // capitães: o Batedor vê mais longe escondido e reconhece mais largo; o Veterano conta os homens; Olhos de Coruja apressam os relatos
+  const sight = sightOf(state, SIGHT, hidden), radius = reconRadius(state, RECON_RADIUS), est = exactMen(state) ? n => n : estimateMen;
+  const scouted = new Set(recon ? real.filter(f => dist(f, recon) <= radius).map(f => f.id) : []);
   // 1. observação direta; quem entra na vista hoje (ontem não se via) tem uma linha no diário
   for (const f of real) {
     const d = dist(f, state.party);
-    if (d > SIGHT) continue;
+    if (d > sight) continue;
     const before = it.known[f.id], fresh = !before || before.day < day - 1;
     see(it, f, day);
     if (!fresh || d <= CLOSE || scouted.has(f.id)) continue;
     const ev = { type: 'avistamento', id: f.id, kind: f.kind, bearing: compass(f.x - state.party.x, f.y - state.party.y), far: Math.round(d) };
-    if (num(f.men)) ev.men = estimateMen(f.men);
+    if (num(f.men)) ev.men = est(f.men);
     if (it.known[f.id].dir) ev.dir = it.known[f.id].dir;
     if (f.name) ev.name = f.name;
     events.push(ev);
@@ -155,9 +158,9 @@ export function updateIntel(state, { recon = null, dayEvents = [] } = {}) {
   if (recon) {
     const found = real.filter(f => scouted.has(f.id));
     for (const f of found) see(it, f, day);
-    for (const [id, k] of Object.entries(it.known)) if (k.day !== day && dist(k, recon) <= RECON_RADIUS) delete it.known[id];
-    addReport(it, { kind: found.length ? 'forcas' : 'livre', x: recon.x, y: recon.y, r: RECON_RADIUS, seen: day, got: day, rel: 'certa', src: 'batedores',
-      found: found.map(f => f.kind), sizes: found.map(f => (num(f.men) ? estimateMen(f.men) : 0)), dirs: found.map(f => it.known[f.id].dir || '') });
+    for (const [id, k] of Object.entries(it.known)) if (k.day !== day && dist(k, recon) <= radius) delete it.known[id];
+    addReport(it, { kind: found.length ? 'forcas' : 'livre', x: recon.x, y: recon.y, r: radius, seen: day, got: day, rel: 'certa', src: 'batedores',
+      found: found.map(f => f.kind), sizes: found.map(f => (num(f.men) ? est(f.men) : 0)), dirs: found.map(f => it.known[f.id].dir || '') });
     events.push({ type: 'reconhecimento', found: found.map(f => f.kind), to: { x: recon.x, y: recon.y } });
   }
   // 3. avistamentos velhos de mais saem do mapa
@@ -184,12 +187,12 @@ export function updateIntel(state, { recon = null, dayEvents = [] } = {}) {
       const rule = news(near);
       if (rule.chance < 1 && !rng.chance(rule.chance)) continue;   // a neutra só às vezes
       const base = Math.min(3, Math.floor(dist(near, state.party) / MESSENGER));
-      const delay = rule.delay === null ? base : rule.delay === 0 ? 0 : Math.max(rule.delay, base);   // a comprometida no próprio dia; a amiga com pelo menos um dia
+      const delay = reportDelay(state, rule.delay === null ? base : rule.delay === 0 ? 0 : Math.max(rule.delay, base));   // a comprometida no próprio dia; a amiga com pelo menos um dia
       // A zona tem de conter qualquer posição em que a aldeia podia ter visto a força: o raio é o
       // próprio alcance da deteção (50; 90 para o exército do pretor). Um raio menor faria o relato mentir.
       const r = { kind: f.kind, x: near.x, y: near.y, r: sight, seen: day, got: day + delay, rel: 'boa', src: 'aldeia', place: near.id, fid: f.id };
       if (f.name) r.name = f.name;
-      if (num(f.men)) r.men = estimateMen(f.men);   // contaram-nos de longe: uma estimativa, não o número
+      if (num(f.men)) r.men = est(f.men);   // contaram-nos de longe: uma estimativa, não o número
       const dir = headingOf(f, null, day);
       if (dir) r.dir = dir;
       addReport(it, r);

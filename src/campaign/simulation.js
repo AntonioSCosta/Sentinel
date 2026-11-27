@@ -3,7 +3,8 @@
 import { romansCampaign } from './clock.js';
 import { praetorStep } from './praetor.js';
 import { foodPerDay, checkRuin } from './state.js';
-import { communityAt, recruitLimit, levy, loseMen } from './communities.js';
+import { communityAt, recruitLimit, levy, loseMen, youth } from './communities.js';
+import { reconRange, reconFood, famineSave, nearestBlame, recruitArms, volunteers, ambushKeep, captainRng } from './captains.js';
 import { closeDay } from './harvest.js';
 import { noteSupport } from './rome.js';
 import { updateIntel, SCOUTS, RECON_RANGE } from './intel.js';
@@ -92,11 +93,13 @@ function applyOrder(state, order) {
       if (v?.burnt) return invalid('queimada', s.id);
       const c = communityAt(state, s.id);
       if (!c) return s.kind === 'aldeia' ? refuse({ type: 'recrutar-recusado', id: s.id, why: 'sem-comunidade' }) : invalid('desconhecido');
-      const { limit: n, why } = recruitLimit(c, state.arms);   // postura, jovens e armas; a fama não conta (GDD v2)
+      const { limit, why } = recruitLimit(c, state.arms);   // postura, jovens e armas; a fama não conta (GDD v2)
       if (why === 'sem-armas') return refuse({ type: 'sem-armas', id: s.id });   // não gasta a vez da aldeia
       if (why) return refuse({ type: 'recrutar-recusado', id: s.id, why, ...(why === 'postura' ? { posture: c.posture } : {}) });
+      const extra = volunteers(state, c);   // Querido do Povo: mais um voluntário, se houver jovens e armas
+      const n = extra && youth(c) > limit && state.arms >= recruitArms(state, limit + extra) ? limit + extra : limit;
       levy(c, n, state.day);   // os jovens saem da aldeia (e, acima de um sexto, custam confiança)
-      state.men += n; state.arms -= n;
+      state.men += n; state.arms -= recruitArms(state, n);   // Ferreiro: um em cada três vem armado da forja
       if (v) v.recruitedDay = state.day;   // só registo: já não há espera entre recrutamentos
       return { events: [{ type: 'recrutou', id: s.id, men: n }, ...noteSupport(state, c.id, 'homens')], encounter: null };   // Roma repara (rome.js)
     }
@@ -124,7 +127,9 @@ function applyOrder(state, order) {
       const to = order.to;
       if (!to || !Number.isFinite(to.x) || !Number.isFinite(to.y)) return invalid('destino');
       if (state.men < SCOUTS + 1) return refuse({ type: 'reconhecer-recusado', why: 'homens' });
-      if (dist(to, party) > RECON_RANGE) return refuse({ type: 'reconhecer-recusado', why: 'longe' });
+      if (dist(to, party) > reconRange(state, RECON_RANGE)) return refuse({ type: 'reconhecer-recusado', why: 'longe' });
+      const food = reconFood(state);   // o Batedor Nocturno leva mantimentos
+      if (food) state.food = Math.max(0, state.food - food);
       return { events: [], encounter: null, recon: { x: Math.min(world.w, Math.max(0, to.x)), y: Math.min(world.h, Math.max(0, to.y)) } };
     }
     case 'acampar': case 'esperar': case 'esconder': return none;
@@ -178,7 +183,9 @@ function spawnPatrol(state, rng) {
 }
 
 function feed(state, events) {
-  const need = foodPerDay(state.men);
+  let need = foodPerDay(state.men);
+  const save = need > 1 && famineSave(state, Math.floor(state.food / need));   // Ladrão de Galinhas: com fome à porta, come-se menos
+  if (save) { need = Math.max(1, need - save.save); nearestBlame(state, save.trust, 'galinhas', 'Desaparecem galinhas quando o bando passa'); }
   if (state.food >= need) { state.food -= need; return; }
   state.food = 0;
   const dead = Math.min(state.men, Math.max(1, Math.floor(state.men * STARVE)));
@@ -214,6 +221,8 @@ function detect(state, order, hidden, events) {
   let spotted = null;
   if (foe && onRoad && !foe.hunt) {
     spotted = spottedAmbush(state, foe);   // Roma aprendeu: batedores ou guarnição descobrem a emboscada
+    const cover = spotted ? ambushKeep(state) : null;   // Fundibulário junto à serra, Emboscador Nato: sorteio próprio, não o do dia
+    if (cover?.by && !captainRng(state, 'emboscada').chance(cover.keep)) { events.push({ type: 'capitao', what: 'encoberta', id: cover.by.id, name: cover.by.name }); spotted = null; }
     if (spotted) events.push({ type: 'emboscada-descoberta', why: spotted });
     else {
       const threat = villageThreat(state);
@@ -260,7 +269,7 @@ export function stepDay(state, order, rng, atBreak) {
   let encounter = res.encounter;
   if (!encounter && !state.over && !blocked) encounter = detect(state, order, hidden, events);
   // o que o jogador ficou a saber hoje (só lê as posições; os encontros acima usam sempre as reais)
-  events.push(...updateIntel(state, { recon: res.recon, dayEvents: events }));
+  events.push(...updateIntel(state, { recon: res.recon, dayEvents: events, hidden }));
   // esperar e esconder respondem sempre no diário (o resto do dia explica-se pelos outros eventos)
   if (!encounter && !state.over && (order.kind === 'esperar' || order.kind === 'esconder')) {
     events.push({ type: 'espera', order: order.kind, road: nearRoad(state.world, state.party), food: food - state.food });

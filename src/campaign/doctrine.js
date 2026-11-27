@@ -80,16 +80,16 @@ export function sectorOf(world, p) {
   return Math.min(SECTORS - 1, Math.floor(best * SECTORS / road.length));
 }
 
-/** Regista um combate: o padrão, o troço e a atividade, e onde o bando foi visto. */
-export function observe(state, spec) {
+/** Regista um combate: o padrão (com peso `weight`: o Incendiário apaga metade do rasto), o troço e a atividade, e onde o bando foi visto. */
+export function observe(state, spec, weight = 1) {
   const d = ensureDoctrine(state);
   d.activity += 1;
   const where = spec?.where;
   if (where && Number.isFinite(where.x) && Number.isFinite(where.y)) d.lastSeen = { x: where.x, y: where.y, day: state.day };
   const pat = patternOf(spec);
   if (!pat) return;
-  d.mem[pat] += 1;
-  if (where && Number.isFinite(where.x) && Number.isFinite(where.y) && (pat === 'emboscada' || pat === 'coluna')) d.sectors[sectorOf(state.world, where)] += 1;
+  d.mem[pat] += weight;
+  if (where && Number.isFinite(where.x) && Number.isFinite(where.y) && (pat === 'emboscada' || pat === 'coluna')) d.sectors[sectorOf(state.world, where)] += weight;
 }
 
 /** Pressão romana na região: fama (permanente) mais atividade recente (decai). */

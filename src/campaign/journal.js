@@ -11,7 +11,7 @@ const CATEGORY = {
   'tributo-exigido': 'roma', castigo: 'roma', 'castigo-fim': 'roma', ocupada: 'roma', 'ocupada-fim': 'roma', 'comunidade-queimada': 'roma',
   'aldeia-queimada': 'roma', denuncia: 'roma', 'roma-atencao': 'roma', doutrina: 'roma', cacadores: 'roma',
   postura: 'postura', 'aldeia-fome': 'postura', 'aldeia-fome-fim': 'postura',
-  vitoria: 'bando', derrota: 'bando', retirada: 'bando', fuga: 'bando', fome: 'bando', acontecimento: 'bando', 'emboscada-tatica': 'bando',
+  vitoria: 'bando', derrota: 'bando', capitao: 'bando', retirada: 'bando', fuga: 'bando', fome: 'bando', acontecimento: 'bando', 'emboscada-tatica': 'bando',
   colheita: 'vale', 'comunidade-abandonada': 'vale',
 };
 export const categoryOf = type => CATEGORY[type] ?? null;

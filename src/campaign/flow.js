@@ -4,11 +4,12 @@ import { makeRng } from './rng.js';
 import { YEAR_DAYS } from './clock.js';
 import { newCampaign, serialize, deserialize, foodPerDay } from './state.js';
 import { makePraetor } from './praetor.js';
-import { stepDay, ownEffect } from './simulation.js';
+import { stepDay, ownEffect, inReach } from './simulation.js';
+import { ensureCaptains, afterDay, afterBattle, afterTribute, awayOf, chooseCard, setActive, answerCrisis, answerDeserter, recruitCaptain } from './captains.js';
 import { battleSpec, BATTLE_TYPES, applyResult, applyPatrolResult, withdrawFrom, ALLY_CAP } from './battles.js';
 import { dueScheduled, rollEvent } from './events.js';
 import { ensureIntel, forgetForce, rememberForce, intelView } from './intel.js';
-import { ensureCommunities } from './communities.js';
+import { ensureCommunities, communityAt } from './communities.js';
 import { payTribute, refuseTribute } from './rome.js';
 import { postureSnapshot, postureChanges, postureDiff, splitSameOccurrence, record, validJournal } from './journal.js';
 import { createPatrolEncounter, PATROL_ENGINE, patrolCasualties, patrolOf, preparePatrol, restorePatrol } from './tactical-patrol.js';
@@ -42,6 +43,7 @@ function asSeen(state) {
 function build(state, storage, phase, battle, journal = [], savedRaw = null, tactical = null, m3 = null) {
   ensureIntel(state);   // campanha nova ou gravação antiga: o jogador começa a saber o que tem à vista
   ensureCommunities(state);   // gravação v1 de antes das comunidades: ganha-as no estado inicial
+  ensureCaptains(state);      // campanha nova ou gravação de antes dos capitães: dois, sorteados só pela semente
   /** Corre `fn` (que mexe no estado) e acrescenta aos eventos as mudanças de postura; regista tudo no Diário do dia. */
   const chronicle = (fn, day = () => state.day) => {
     const before = postureSnapshot(state), out = fn();
@@ -83,6 +85,7 @@ function build(state, storage, phase, battle, journal = [], savedRaw = null, tac
       if (refused) return { events, battle: null, refused: true };   // nada mudou: nem dia, nem acontecimentos, nem save
       const ev = rollEvent(state, rng);
       if (ev) events.push({ type: 'acontecimento', ...ev });
+      if (!state.over) events.push(...afterDay(state, events));   // capitães: lealdade, forja, crises, desertor (sorteios próprios)
       const end = postureSnapshot(state), ordered = postureDiff(before, mid ?? end, state), closing = mid ? postureDiff(mid, end, state) : [];
       const late = events.slice(dayBreak).concat(closing), { back, stay } = splitSameOccurrence(late);
       record(flow.journal, state.day - 1, events.slice(0, dayBreak).concat(ordered, back));   // a ordem, a marcha, o pretor, a postura que a ordem mudou: o dia que acabou
@@ -106,7 +109,10 @@ function build(state, storage, phase, battle, journal = [], savedRaw = null, tac
     withdraw() {
       if (flow.phase !== 'batalha' || flow.tactical) return { events: [], refused: true };
       let events = null;
-      chronicle(() => ({ events: (events = withdrawFrom(state, flow.battle)) || [] }));
+      chronicle(() => {
+        if ((events = withdrawFrom(state, flow.battle))) events.push(...afterBattle(state, flow.battle, events));
+        return { events: events || [] };
+      });
       if (!events) return { events: [], refused: true };
       flow.battle = null;
       yearEnd();
@@ -117,7 +123,12 @@ function build(state, storage, phase, battle, journal = [], savedRaw = null, tac
     finishBattle(result) {
       if (flow.phase !== 'batalha' || flow.tactical) return { events: [], refused: true };
       const battle = flow.battle;
-      const { events } = chronicle(() => ({ events: applyResult(state, battle, result ?? {}) }));
+      const away = awayOf(state);
+      const { events } = chronicle(() => {
+        const ev = applyResult(state, battle, result ?? {});
+        ev.push(...afterBattle(state, battle, ev, { awayBefore: away }));
+        return { events: ev };
+      });
       if (result?.won && battle?.foeId !== undefined) {
         // Só se esquece uma força que deixou de existir. O pretor derrotado numa defesa de aldeia
         // recua e sobrevive: nesse caso volta a ser visto, com os homens que lhe restam.
@@ -149,7 +160,9 @@ function build(state, storage, phase, battle, journal = [], savedRaw = null, tac
       const next = { ...structuredClone(mutable), world };
       const journal = [...flow.journal];
       const before = postureSnapshot(next);
+      const away = awayOf(next);
       const events = applyPatrolResult(next, flow.battle, casualties);
+      events.push(...afterBattle(next, flow.battle, events, { awayBefore: away }));
       if (casualties.romanSurvivors > 0) rememberForce(next, flow.battle.foeId);
       else forgetForce(next, flow.battle.foeId);
       events.push(...postureChanges(before, next));
@@ -173,9 +186,27 @@ function build(state, storage, phase, battle, journal = [], savedRaw = null, tac
     const r = chronicle(() => ({ events: kind === 'pagar' ? payTribute(state, id) : refuseTribute(state, id) }));
     if (!r.events.length || r.events[0].type === 'tributo-sem-comida') return { events: r.events, refused: true };   // nada mudou (rome.js garante-o)
     if (kind === 'recusar') record(flow.journal, state.day, [{ type: 'tributo-recusado', id: state.communities[id].settlement }]);
+    else afterTribute(state);   // o Saqueador não gosta de ver a comida ir para Roma
     flow.save();
     return { events: r.events, refused: false };
   }
+  /** Uma ordem aos capitães (captains.js): não gasta o dia, regista-se no Diário e grava. { ok, why, events }. */
+  function captainOrder(fn) {
+    if (flow.phase !== 'mapa') return { ok: false, why: 'fase', events: [] };
+    let r;
+    chronicle(() => { r = fn(); return { events: r.events }; });
+    if (r.ok) flow.save();
+    return r;
+  }
+  flow.chooseCard = (id, card) => captainOrder(() => chooseCard(state, id, card));
+  flow.setCaptainActive = (id, on) => captainOrder(() => setActive(state, id, on));
+  flow.answerCrisis = (id, answer) => captainOrder(() => answerCrisis(state, id, answer));
+  flow.answerDeserter = accept => captainOrder(() => answerDeserter(state, accept));
+  /** Recruta o capitão da comunidade que vive em `settlementId` (é preciso lá estar). */
+  flow.recruitCaptain = settlementId => captainOrder(() => {
+    const c = communityAt(state, settlementId), s = state.world.settlements.find(x => x.id === settlementId);
+    return c && s ? recruitCaptain(state, c.id, { inReach: inReach(state.party, s) }) : { ok: false, why: 'nenhum', events: [] };
+  });
   flow.payTribute = id => tribute('pagar', id);
   flow.refuseTribute = id => tribute('recusar', id);
   /**

@@ -4,6 +4,7 @@ import { validDoctrine, validHunter } from './doctrine.js';
 import { validIntel } from './intel.js';
 import { newCommunities, validCommunities, loseMen } from './communities.js';
 import { validRome } from './rome.js';
+import { validCaptains } from './captains.js';
 
 /** Tabela de equilíbrio, afinada na Task 18 com `npm run balance` (ver a spec, secção 9). */
 export const START = { men: 14, food: 60, arms: 15, fame: 20 };
@@ -62,5 +63,6 @@ export function deserialize(text) {
   if (!o.world.settlements.every(s => isObj(s) && typeof s.id === 'string' && num(s.x) && num(s.y))) return null;
   if ('communities' in o && !(validCommunities(o.communities, o.world) && sumAway(o) <= o.men)) return null;   // as cinco comunidades do vale, ligadas ao mundo, e os homens delas no bando não passam do bando (opcional: gravações antigas não as têm)
   if ('rome' in o && !validRome(o.rome)) return null;   // atenção de Roma, suspeitas e denúncias (opcional: gravações antigas não o têm)
+  if ('captains' in o && !validCaptains(o)) return null;   // capitães do bando (opcional: gravações antigas ganham-nos ao carregar)
   return o;
 }

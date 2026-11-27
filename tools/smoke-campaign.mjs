@@ -48,7 +48,7 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   check('HUD shows date and season', $('m-date').textContent.length > 3 && $('m-season').textContent.length > 2);
   check('log is a live status region', $('mlog').getAttribute('role') === 'status');
   check('the bottom bar has only Emboscar, Esconder, Reconhecer and Diário (no Ir, no Acampar)', ['m-ambush', 'm-hide', 'm-recon', 'm-diary'].every(id => $(id)?.tagName === 'BUTTON' && $(id).textContent.trim())
-    && $('mbot').querySelectorAll('button').length === 4 && !$('m-go') && !$('m-acampar'));
+    && $('mbot').querySelectorAll(':scope > button').length === 4 && !$('m-go') && !$('m-acampar'));   // os selos dos capitães vivem em #m-captains
   check('the top bar has no language selector and the map has no title card', !$('map-language') && !$('mtop').querySelector('select'));
   check('the time starts paused, with pause, 1×, 2× and 4×', !G.campaign.running && $('m-pause').getAttribute('aria-pressed') === 'true' && [...$('m-time').querySelectorAll('[data-speed]')].map(b => b.dataset.speed).join() === '1,2,4');
   // um dia sem ordem: o bando acampa (parar é não dar ordem)

@@ -11,6 +11,8 @@ import { MARCH_SPEED, nearRoad } from './simulation.js';
 import { COMMUNITY_IDS } from './communities.js';
 import { PUNISH, SEEN_RANGE } from './rome.js';
 import { placeName } from './strings.js';
+import { ARCHETYPES, RULES } from './captains-data.js';
+import { desertionMen } from './captains.js';
 import { createI18n } from '../i18n/index.js';
 import { mapPlaceName } from '../i18n/map-text.js';
 
@@ -56,6 +58,7 @@ export function buildIssues(state, journal = [], { dismissed = new Set(), i18n =
       detail: t('tributeWhat', { food: c.due.food, have: c.food }),
       actions: [{ id: 'pagar', label: t('pay') }, { id: 'recusar', label: t('refuse') }] });
   }
+  out.push(...captainIssues(state, i18n));
   // atenção, agora
   const fd = foodDays(state);
   if (fd < LOW_FOOD_DAYS) out.push({ key: 'comida', kind: 'atencao', type: 'comida', title: t(fd <= 0 ? 'noFood' : 'foodTitle', { duration: i18n.t('map.days', { count: fd }) }), place: null, community: null, deadline: null,
@@ -93,6 +96,32 @@ export function buildIssues(state, journal = [], { dismissed = new Set(), i18n =
 }
 
 /**
+ * As decisões dos capitães (captains.js): a crise de lealdade e o desertor romano têm prazo; a evolução espera pelo jogador.
+ * Cada uma traz `captain` (o id) e as ações que a interface oferece no painel de decisão.
+ */
+function captainIssues(state, i18n) {
+  const out = [], day = state.day, t = (key, params) => i18n.t(`map.captains.${key}`, params), S = RULES.loyalty.share;
+  const base = { place: null, community: null, consequence: null };
+  for (const c of state.captains || []) if (c.crisis && day < c.crisis.due) {
+    out.push({ ...base, key: `capitao-crise:${c.id}:${c.crisis.due}`, kind: 'decisao', type: 'capitao-crise', captain: c.id,
+      title: t('issue.crisis', { name: c.name }), deadline: c.crisis.due - day, detail: t('issue.crisisDetail', { loyalty: c.loyalty }),
+      consequence: t(ARCHETYPES[c.archetype].betrays ? 'issue.crisisBetray' : 'issue.crisisDesert', { men: desertionMen(state, c) }),
+      actions: [{ id: 'parte', label: t('issue.share', { food: S.food, arms: S.arms }), info: t('issue.shareInfo') },
+        { id: 'partir', label: t('issue.letGo'), info: t('issue.letGoInfo') }] });
+  }
+  const o = state.captainOffer;
+  if (o && day < o.due) out.push({ ...base, key: `capitao-desertor:${o.due}`, kind: 'decisao', type: 'capitao-desertor', captain: null,
+    title: t('issue.deserter'), deadline: o.due - day, detail: t('issue.deserterDetail', { name: o.captain.name }), consequence: t('issue.deserterGone'),
+    actions: [{ id: 'aceitar', label: t('issue.accept'), info: t('issue.acceptInfo') }, { id: 'recusar', label: t('issue.refuse'), info: t('issue.refuseInfo') }] });
+  for (const c of state.captains || []) if (c.offer) {
+    out.push({ ...base, key: `capitao-evolucao:${c.id}:${c.lastCard}`, kind: 'decisao', type: 'capitao-evolucao', captain: c.id,
+      title: t('issue.evolve', { name: c.name }), deadline: null, detail: t(c.offer.why === 'nivel' ? 'issue.evolveLevel' : 'issue.evolveBattle', { name: c.name, level: c.level }),
+      actions: c.offer.options.map(id => ({ id, label: t(`trait.${id}`), gain: t(`traitGain.${id}`), cost: t(`traitCost.${id}`) })) });
+  }
+  return out;
+}
+
+/**
  * O que obriga o tempo a parar depois de um dia: um pedido novo (tributo), uma força romana vista hoje a menos de um dia do
  * bando ou de uma aldeia amiga ou comprometida, um encontro que pede batalha, uma mudança de postura e a colheita. Devolve [{ type, text, place? }] (vazio: o tempo continua). Todos os motivos
  * do mesmo dia vêm juntos (uma só interrupção). `memory` (objeto que a interface guarda) evita repetir o mesmo aviso: a
@@ -108,6 +137,7 @@ export function detectInterruptions({ state, events = [], memory = {}, battle = 
     if (ev.type === 'tributo-exigido') add('pedido', { event: ev }, { place: ev.id });
     else if (ev.type === 'postura') add('postura', { event: ev }, { place: ev.id });
     else if (ev.type === 'colheita') add('colheita', { event: ev });
+    else if (ev.type === 'capitao' && (ev.what === 'crise' || ev.what === 'desertor')) add('capitao', { event: ev });   // decisões com prazo
   }
   const fd = foodDays(state), low = fd < LOW_FOOD_DAYS;
   // Comida baixa/esgotada é aviso, não uma razão para parar o relógio.
@@ -139,6 +169,7 @@ export function interruptionText(reason, state, i18n) {
     case 'colheita': return t('colheita', { season: i18n.t(`map.season.${ev.season}`), total: ev.total });
     case 'comida': return t(reason.foodDays <= 0 ? 'emptyFood' : 'lowFood', { duration: i18n.t('map.days', { count: reason.foodDays }) });
     case 'forca': return t(reason.nearPlace ? 'forceByPlace' : 'forceByBand', { who: forceLabel(i18n, reason.kind), name: name(reason.nearPlace) });
+    case 'capitao': return i18n.t(`map.captains.stop.${ev.what}`, { name: ev.name });
     default: return t('batalha');
   }
 }
