@@ -2,6 +2,7 @@
 import { spend, checkRuin } from './state.js';
 import { observe } from './doctrine.js';
 import { raiseAttention, syncBurnt } from './rome.js';
+import { doctrineWeight, legacyBonus, lossKeep, withdrawKeep } from './captains.js';
 
 export const ALLY_CAP = 25;
 export const ENEMY_CAP = 30;
@@ -41,7 +42,7 @@ function retreatOf(type, state) {
 function withdrawOf(type, state, retreat) {
   if (!RETREAT_TYPES.includes(type)) return { possible: false, why: 'escolhida' };
   if (!retreat.possible) return { possible: false, why: 'sem-serra' };
-  const rate = WITHDRAW_LOSS[type] ?? 0, men = Number.isFinite(state.men) ? state.men : 0;
+  const rate = (WITHDRAW_LOSS[type] ?? 0) * withdrawKeep(state), men = Number.isFinite(state.men) ? state.men : 0;   // Conhecedor dos Trilhos: metade
   return { possible: true, serraId: retreat.serraId, lost: rate > 0 ? Math.min(men, Math.max(1, Math.round(men * rate))) : 0 };
 }
 
@@ -62,7 +63,7 @@ export function battleSpec(enc, state, rng) {
     type, seed: rng.int(1, 2 ** 31 - 1), site,
     allies: Math.min(state.men, ALLY_CAP), realMen: state.men,
     enemies: { legio: shown - velites, velites, centurion: type === 'decisiva' || type === 'historica' },
-    bonus: { allies: Math.max(0, state.men - ALLY_CAP), enemies: Math.max(0, total - ENEMY_CAP) },
+    bonus: { allies: Math.max(0, state.men - ALLY_CAP) + legacyBonus(state, type), enemies: Math.max(0, total - ENEMY_CAP) },   // Veterano: conhece a linha romana
     retreat: retreatOf(type, state),
   };
   spec.withdraw = withdrawOf(type, state, spec.retreat);
@@ -117,9 +118,9 @@ export function applyResult(state, spec, result) {
   const killed = Number.isFinite(result.enemiesKilled) ? Math.max(0, Math.floor(result.enemiesKilled)) : 0;
   state.kills = (state.kills || 0) + killed;        // para o ecrã de fim do ano
   state.battles = (state.battles || 0) + 1;
-  observe(state, spec);   // Roma aprende com o combate, ganhe ou perca (doctrine.js)
+  observe(state, spec, doctrineWeight(state));   // Roma aprende com o combate, ganhe ou perca (doctrine.js)
   const raw = Number.isFinite(result.alliesLost) ? Math.max(0, result.alliesLost) : 0;
-  const scaled = Math.round(raw * spec.realMen / Math.max(1, spec.allies));
+  const scaled = Math.round(raw * spec.realMen / Math.max(1, spec.allies) * (result.won ? 1 : lossKeep(state)));   // Duro de Roer
   const lost = Math.min(state.men, scaled);
   spend(state, { men: lost });
   const events = [];
@@ -170,7 +171,7 @@ export function applyPatrolResult(state, spec, { alliedDead, romanDead, romanSur
   spend(state, { men: alliedDead });
   state.kills = (state.kills || 0) + romanDead;
   state.battles = (state.battles || 0) + 1;
-  observe(state, spec);
+  observe(state, spec, doctrineWeight(state));
   if (romanSurvivors > 0) state.patrols.find(p => p.id === spec.foeId).men = romanSurvivors;
   else state.patrols = state.patrols.filter(p => p.id !== spec.foeId);
 

@@ -103,7 +103,7 @@ async function scenario(browserLocale, initial, next) {
     await page.locator('#mdiary-close').click();
     if (captures) {
       await page.screenshot({ path: join(captures, `map-${next}.png`) });
-      const layout = [['#mbot', '#mbot button'], ['#mtop', '#mtop button, #m-date, #mtop .res'], ['#campaign-map-3d', '[data-camera]']];
+      const layout = [['#mbot', '#mbot > button'], ['#mtop', '#mtop button, #m-date, #mtop .res'], ['#campaign-map-3d', '[data-camera]']];
       await page.setViewportSize({ width: 844, height: 390 });
       await assertControls(page, layout);
       await page.screenshot({ path: join(captures, `map-small-${next}.png`) });

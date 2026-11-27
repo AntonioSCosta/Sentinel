@@ -20,6 +20,8 @@ import { categoryOf } from './journal.js';
 import { youth, topMotives, IDENTITY, COMMUNITY_IDS } from './communities.js';
 import { winterReserve } from './harvest.js';
 import { drawLegend } from './map-view.js';
+import { activeCaptains, captainAt, reconRange, reconRadius } from './captains.js';
+import { RULES as CAPTAIN_RULES, TRAITS, SCARS } from './captains-data.js';
 
 /** Relatos de Roma (doctrine.js): o que muda quando uma contramedida entra e quando sai. */
 const DOCTRINE_TEXT = {
@@ -269,6 +271,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   const tMap = (key, params) => i18n.t(`map.${key}`, params);
   const tIssue = (key, params) => tMap(`issuesCopy.${key}`, params);
   const eventMessage = (ev, events) => ev.type === 'emboscada-tatica' ? tMap(`tactical.outcome.${ev.outcome}`, ev)
+    : ev.type === 'capitao' ? captainLog(ev)
     : ev.type === 'acontecimento' && DECK.some(e => e.id === ev.id) ? tMap(`deck.${ev.id}`)   // saves antigos trazem também `text` em pt-PT: o id manda
     : eventText(ev, flow.state, events);
   const duration = count => tMap('days', { count });
@@ -303,7 +306,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   }
   function paint() {
     if (!active || !flow) return;
-    const scouting = mode === 'reconhecer' && flow.phase === 'mapa' ? { range: RECON_RANGE, radius: RECON_RADIUS, ok: !!hover && inRecon(hover) } : null;
+    const scouting = mode === 'reconhecer' && flow.phase === 'mapa' ? { range: reconRange(flow.state, RECON_RANGE), radius: reconRadius(flow.state, RECON_RADIUS), ok: !!hover && inRecon(hover) } : null;
     const fl = {}, t = now();
     for (const [id, t0] of Object.entries(flash)) { const k = 1 - (t - t0) / 1600; if (k > 0) fl[id] = k; else delete flash[id]; }
     const fx = { party: shown || flow.state.party, logicalParty: flow.state.party, facing, step: walk, selected, hover, trail, reach: REACH,
@@ -485,8 +488,9 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
       if (ev.id && ['postura', 'castigo', 'ocupada', 'comunidade-queimada', 'comunidade-abandonada', 'tributo-pago', 'castigo-fim', 'ocupada-fim'].includes(ev.type)) flash[ev.id] = now();
       // The state strip or decision panel presents these events. The journal retains every event.
       if (['postura', 'colheita', 'tributo-exigido', 'tributo-pago', 'tributo-recusado'].includes(ev.type)) continue;
+      if (ev.type === 'capitao' && ['evolucao', 'crise', 'desertor', 'acalmou', 'fama'].includes(ev.what)) continue;   // o selo, os assuntos e o topo já o mostram
       if (t === lastSaid && log.length) { repeat += 1; log[log.length - 1] = `${t} (${repeat}.º dia)`; }
-      else { lastSaid = t; repeat = 1; log.push(ev.type === 'emboscada-tatica' ? () => eventMessage(ev) : t); }
+      else { lastSaid = t; repeat = 1; log.push(ev.type === 'emboscada-tatica' || ev.type === 'capitao' ? () => eventMessage(ev) : t); }
       logDirty = true;
     }
     if (log.length > 40) log.splice(0, log.length - 40);
@@ -518,7 +522,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (map3d) schedulePaint();
   }
   function renderIssues() {
-    const box = $('missues'), list = $('missues-list'), panel = !!(selected && flow.phase === 'mapa');
+    const box = $('missues'), list = $('missues-list'), panel = !!((selected || capSelected) && flow.phase === 'mapa');
     box.classList.toggle('hidden', panel);
     const covered = i => interrupt.some(x => {
       if (x.type !== i.type) return false;
@@ -582,13 +586,13 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   let tributeKey = null, tributeNotice = null, tributeContent = '', stripContent = '';
   let decisionOverlay = null, decisionOpener = null;
   const deferredTributes = new Set();
-  const pendingTributes = () => currentIssues().filter(i => i.kind === 'decisao');
+  const pendingTributes = () => currentIssues().filter(i => i.type === 'tributo');
   const nextTribute = () => pendingTributes().find(i => !deferredTributes.has(i.key));
 
   function reviewButton(issue) {
     const button = el('button', '', tIssue('review'));
     button.type = 'button'; button.dataset.act = 'ver-decisao'; button.setAttribute('aria-haspopup', 'dialog');
-    button.addEventListener('click', () => openTribute(issue.key));
+    button.addEventListener('click', () => (issue.type === 'tributo' ? openTribute(issue.key) : openCapDecision(issue.key)));
     return button;
   }
   function openTribute(key) {
@@ -682,7 +686,13 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     for (const [index, text] of lines.entries()) {
       const reason = reasons[index];
       const li = el('li', '', text);
-      if (reason?.place || reason?.at || reason?.type === 'comida') {
+      const capIssue = reason?.type === 'capitao' && currentIssues().find(i => i.type === (reason.event.what === 'crise' ? 'capitao-crise' : 'capitao-desertor')
+        && (i.captain ?? null) === (reason.event.what === 'crise' ? reason.event.id : null));
+      if (capIssue) {
+        const button = el('button', 'link', text); button.type = 'button';
+        button.addEventListener('click', () => openCapDecision(capIssue.key));
+        li.replaceChildren(button);
+      } else if (reason?.place || reason?.at || reason?.type === 'comida') {
         const label = reason.type === 'comida' ? tIssue('foodAction') : text;
         const button = el('button', 'link', label); button.type = 'button';
         if (reason.type === 'comida') li.append(' ', button); else li.replaceChildren(button);
@@ -710,7 +720,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   // --- painel da povoação escolhida ---
   function pick(id) {
     if (!active || !flow || flow.phase !== 'mapa') return;
-    selected = id; if (narrow()) setSide(true);
+    selected = id; capSelected = null; if (narrow()) setSide(true);
     render();
     $('mctx').querySelector('h3')?.focus?.();
   }
@@ -813,6 +823,14 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
       out.push(r.refused ? { id, label, why: refusedText(r.events[0], days), run: null } : { id, label, info: effects(r, c?.id), run: () => step(o) });
     };
     if (s.kind === 'aldeia' || (c && s.kind === 'castro')) add('recrutar', UI.panel.recruit, { kind: 'recrutar', id: s.id });
+    if (c) {   // um capitão da comunidade (captains.captainAt): só se mostra quando o jogador pode fazer algo por isso
+      const k = captainAt(flow.state, c.id, { inReach: here });
+      if (k.archetype && [null, 'postura', 'longe', 'custo'].includes(k.why)) {
+        const label = tCap('recruit', { archetype: tCap(`archetype.${k.archetype}`) });
+        out.push(k.why ? { id: 'capitao', label, why: tCap(`recruitNo.${k.why}`), run: null }
+          : { id: 'capitao', label, info: tCap('recruitInfo', CAPTAIN_RULES.recruit), run: () => { const r = flow.recruitCaptain(s.id); if (r.ok) say(r.events); render(); } });
+      }
+    }
     if (s.kind === 'castro') add('pedir-ajuda', UI.panel.help, { kind: 'pedir-ajuda', id: s.id });
     if (s.kind === 'posto' && !placeState(s, flow.state)) add('atacar', UI.panel.attack, { kind: 'atacar', id: s.id });
     if (!here) { const d = marchDays(s); out.push({ id: 'ir', label: UI.panel.goHere, info: tMap('route', { duration: duration(d), food: d * foodPerDay(flow.state.men) }), run: () => setDest(s) }); }
@@ -852,6 +870,156 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     }));
   }
 
+  // --- capitães (captains.js): selos no rodapé, ficha no painel lateral, decisões num painel temporário ---
+  const tCap = (key, params) => tMap(`captains.${key}`, params);
+  const ROMAN = ['', 'I', 'II', 'III', 'IV'];
+  const GLYPH = {   // traço de pena, na cor do bronze: lua, funda, martelo, saco, chama, elmo
+    batedor: '<path d="M15.5 3.5a8.5 8.5 0 1 0 5 13.5 6.8 6.8 0 0 1-5-13.5z"/><path d="M8.5 12.5h4"/>',
+    fundibulario: '<circle cx="12" cy="16" r="2.6"/><path d="M3.5 5.5c2.6 6.2 14.4 6.2 17 0"/><path d="M12 10.5v2.9"/>',
+    ferreiro: '<path d="M10.5 9.5 4 20"/><path d="M8 7.5l3-3.5 6 1.5 2.5 3-2 3.5-4.5-1z"/>',
+    saqueador: '<path d="M9.5 4h5l-1.2 3.2c3.4 1 5.7 4.4 5 8.3-.7 4.3-11.9 4.3-12.6 0-.7-3.9 1.6-7.3 5-8.3z"/><path d="M9.8 7.2h4.4"/>',
+    incendiario: '<path d="M12 3.2c.8 3.6 5.6 5.4 4.8 10.3a4.9 4.9 0 0 1-9.6 0c0-2.6 1.6-3.7 2-6.2 1 1.6 1.7 2.4 2.7 2.6.4-2.4-.6-4.4.1-6.7z"/>',
+    veterano: '<path d="M5.5 15a6.5 6.5 0 0 1 13 0v3.5h-13z"/><path d="M12 8.5V4"/><path d="M8 4.5h8"/><path d="M9 18.5v-3h6v3"/>',
+  };
+  let capSelected = null, capKey = null, capsKey = '', capPanelKey = '', capDlgKey = '';
+  const capOf = id => flow.state.captains?.find(c => c.id === id) ?? null;
+  const ringOf = l => (l <= CAPTAIN_RULES.loyalty.crisis ? '#c8382a' : l < 50 ? '#c07a32' : '#d8b25e');
+  const capName = id => tCap(`archetype.${id}`);
+  function captainLog(ev) {
+    const key = ev.what === 'desertou' && ev.men ? 'desertouMen' : ev.what;
+    return tCap(`log.${key}`, { ...ev, archetype: ev.archetype ? capName(ev.archetype) : '', card: ev.card ? tCap(`trait.${ev.card}`) : '',
+      scar: ev.scar ? tCap(`trait.${ev.scar}`) : '', fame: ev.fame > 0 ? `+${ev.fame}` : ev.fame });
+  }
+  function selectCaptain(id) {
+    if (!active || !flow || flow.phase !== 'mapa') return;
+    capSelected = id;
+    if (id) { selected = null; if (narrow()) setSide(true); }
+    render();
+    if (id) $('mcap').querySelector('h3')?.focus?.();
+    else $('m-captains').querySelector('.cap')?.focus?.();
+  }
+  /** Os selos: um por capitão, com a lealdade no anel, o nível e um ponto quando há uma decisão dele à espera. */
+  function renderCaptains() {
+    const box = $('m-captains'), list = flow.state.captains || [];
+    const key = JSON.stringify([i18n.locale, capSelected, list.map(c => [c.id, c.level, c.loyalty, c.active, !!c.offer, !!c.crisis])]);
+    if (key === capsKey) return;
+    capsKey = key;
+    const had = box.contains(doc.activeElement) ? doc.activeElement.dataset.cap : null;
+    box.textContent = '';
+    for (const c of list) {
+      const b = el('button', `cap${c.active ? '' : ' reserve'}${c.crisis ? ' crisis' : ''}`); b.type = 'button'; b.dataset.cap = c.id;
+      b.style.setProperty('--l', c.loyalty); b.style.setProperty('--ring', ringOf(c.loyalty));
+      const status = c.crisis ? tCap('issue.crisis', { name: c.name }) : c.offer ? tCap('pending') : null;
+      const head = tCap(c.active ? 'tip' : 'tipReserve', { name: c.name, archetype: capName(c.archetype), level: c.level, loyalty: c.loyalty });
+      b.title = [head, status, tCap(`passive.${c.archetype}`)].filter(Boolean).join('\n');
+      b.setAttribute('aria-label', [head, status].filter(Boolean).join(' · '));
+      b.setAttribute('aria-pressed', capSelected === c.id ? 'true' : 'false');
+      const face = el('span', 'face'); face.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${GLYPH[c.archetype]}</svg>`;
+      b.append(face, el('span', 'lvl', ROMAN[c.level]));
+      if (c.offer || c.crisis) b.append(el('span', 'dot'));
+      b.addEventListener('click', () => selectCaptain(capSelected === c.id ? null : c.id));
+      box.append(b);
+    }
+    if (had) box.querySelector(`[data-cap="${CSS_ESC(had)}"]`)?.focus?.();
+  }
+  /** A ficha do capitão escolhido, no lugar dos assuntos: o que faz no mapa e na batalha, traços, lealdade e reserva. */
+  function renderCaptain() {
+    const box = $('mcap'), c = capSelected && flow.phase === 'mapa' ? capOf(capSelected) : null;
+    if (capSelected && !c) capSelected = null;
+    box.classList.toggle('hidden', !c);
+    if (!c) { capPanelKey = ''; return; }
+    const full = !c.active && activeCaptains(flow.state).length >= CAPTAIN_RULES.active;
+    const pending = currentIssues().filter(i => i.captain === c.id);
+    const key = JSON.stringify([i18n.locale, c, full, flow.state.day, pending.map(i => i.key)]);
+    if (key === capPanelKey) return;
+    capPanelKey = key;
+    box.textContent = '';
+    const back = el('button', 'back', tCap('back')); back.type = 'button'; back.addEventListener('click', () => selectCaptain(null));
+    const h = el('h3', null, c.name); h.id = 'mcap-name'; h.tabIndex = -1;
+    box.append(back, h, el('p', 'sub', `${capName(c.archetype)} · ${tCap('level', { level: c.level })} · ${c.active ? tCap('active') : tCap('reserve')}`));
+    for (const i of pending) {
+      const row = el('div', 'act'), b = el('button', null, i.type === 'capitao-evolucao' ? tCap('pending') : tCap('resolve'));
+      b.type = 'button'; b.setAttribute('aria-haspopup', 'dialog'); b.addEventListener('click', () => openCapDecision(i.key));
+      row.append(b, el('small', null, i.title)); box.append(row);
+    }
+    box.append(el('h4', null, tCap('loyalty', { value: c.loyalty })));
+    const bar = el('div', 'bar'), fill = el('i'); fill.style.width = `${c.loyalty}%`; fill.style.background = ringOf(c.loyalty); bar.append(fill);
+    const next = CAPTAIN_RULES.xp.levels[c.level - 1];
+    box.append(bar, el('p', 'dim', next === undefined ? tCap('xpMax') : tCap('xp', { xp: c.xp, next })));
+    box.append(el('h4', null, tCap('onMap')), el('p', 'gain', tCap(`passive.${c.archetype}`)), el('p', 'cost', tCap(`costs.${c.archetype}`)));
+    box.append(el('h4', null, tCap('inBattle')), el('p', 'dim', tCap('skillSoon', { skill: tCap(`skill.${c.activeSkill}`) })));
+    box.append(el('h4', null, tCap('traits')));
+    if (!c.traits.length) box.append(el('p', 'dim', tCap('noTraits')));
+    else {
+      const ul = el('ul', 'traits');
+      for (const t of c.traits) {
+        const li = el('li', SCARS[t] ? 'scar' : '');
+        li.append(el('b', null, `${tCap(`trait.${t}`)} · ${tCap(`rarity.${SCARS[t] ? 'cicatriz' : TRAITS[t].rarity}`)}`), el('p', 'gain', tCap(`traitGain.${t}`)), el('p', 'cost', tCap(`traitCost.${t}`)));
+        ul.append(li);
+      }
+      box.append(ul);
+    }
+    box.append(el('h4', null, tCap('recent')));
+    if (!c.notes?.length) box.append(el('p', 'dim', tCap('noRecent')));
+    else {
+      const ul = el('ul', 'notes');
+      for (const n of c.notes) {
+        const li = el('li', n.d > 0 ? 'up' : 'down');
+        li.append(el('b', null, `${n.d > 0 ? '+' : '−'}${Math.abs(n.d)}`), ` ${tCap(`why.${n.why}`)}`);
+        if (n.day !== flow.state.day) li.append(el('span', 'dim', ` · ${tIssue('ago', { duration: duration(flow.state.day - n.day) })}`));
+        ul.append(li);
+      }
+      box.append(ul);
+    }
+    const row = el('div', 'act'), toggle = el('button', null, c.active ? tCap('toReserve') : tCap('toBand'));
+    toggle.type = 'button';
+    if (full) { toggle.disabled = true; row.append(toggle, el('small', null, tCap('full'))); }
+    else { toggle.addEventListener('click', () => { flow.setCaptainActive(c.id, !c.active); render(); }); row.append(toggle); }
+    box.append(row);
+  }
+  function openCapDecision(key) {
+    if (!active || flow.phase !== 'mapa' || decisionOverlay || !currentIssues().some(i => i.key === key)) return;
+    capKey = key; render();
+  }
+  function closeCapDecision() { if (decisionOverlay === $('mcapdlg')) { capKey = null; render(); } }
+  const capBlocked = (issue, id) => (issue.type === 'capitao-crise' && id === 'parte'
+    && (flow.state.food < CAPTAIN_RULES.loyalty.share.food || flow.state.arms < CAPTAIN_RULES.loyalty.share.arms) ? tCap('issue.noShare')
+    : issue.type === 'capitao-desertor' && id === 'aceitar' && flow.state.captains.length >= CAPTAIN_RULES.max ? tCap('issue.full') : null);
+  /** O painel temporário: escolher um traço, resolver uma crise de lealdade ou responder ao desertor. */
+  function renderCapDialog() {
+    const panel = $('mcapdlg'), issue = capKey ? currentIssues().find(i => i.key === capKey) : null;
+    if (capKey && !issue) capKey = null;
+    panel.classList.toggle('hidden', !issue);
+    if (!issue) { capDlgKey = ''; return; }
+    const key = JSON.stringify([i18n.locale, issue.key, flow.state.food, flow.state.arms, flow.state.captains.length, running]);
+    if (key === capDlgKey) return;
+    capDlgKey = key;
+    $('mcapdlg-kicker').textContent = issue.deadline == null ? tIssue('decision') : `${tIssue('decision')} · ${tIssue('deadline', { duration: duration(issue.deadline) })}`;
+    $('mcapdlg-time').textContent = tIssue(running ? 'running' : 'paused');
+    $('mcapdlg-title').textContent = issue.title;
+    $('mcapdlg-detail').textContent = issue.detail ?? '';
+    $('mcapdlg-consequence').textContent = issue.consequence ?? '';
+    const box = $('mcapdlg-options');
+    box.textContent = '';
+    for (const a of issue.actions) {
+      const b = el('button', 'decision-choice'); b.type = 'button'; b.dataset.act = a.id;
+      if (issue.type === 'capitao-evolucao') b.append(el('span', 'rar', tCap(`rarity.${TRAITS[a.id].rarity}`)), el('b', null, a.label),
+        el('small', 'gain', `${tCap('gain')}: ${a.gain}`), el('small', 'cost', `${tCap('cost')}: ${a.cost}`));
+      else { b.append(el('b', null, a.label)); if (a.info) b.append(el('small', null, a.info)); }
+      const why = capBlocked(issue, a.id);
+      if (why) { b.disabled = true; b.append(el('small', 'cost', why)); }
+      else b.addEventListener('click', () => applyCapDecision(issue, a.id));
+      box.append(b);
+    }
+  }
+  function applyCapDecision(issue, id) {
+    if (!active || flow.phase !== 'mapa' || decisionOverlay !== $('mcapdlg')) return;
+    const r = issue.type === 'capitao-evolucao' ? flow.chooseCard(issue.captain, id)
+      : issue.type === 'capitao-crise' ? flow.answerCrisis(issue.captain, id) : flow.answerDeserter(id === 'aceitar');
+    if (r.ok) { capKey = null; say(r.events); interrupt = interrupt.filter(x => x.type !== 'capitao' || currentIssues().some(i => i.type.startsWith('capitao-') && i.deadline != null)); }
+    render();
+  }
+
   // --- render ---
   function render() {
     if (!active || !flow) return;
@@ -865,7 +1033,8 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
       logTimer = win.setTimeout?.(() => { logTimer = 0; $('mlog').classList.add('faded'); }, LOG_MS) ?? 0;
     }
     renderBattle(); renderEnd(); renderTribute(); renderStateStrip(); renderIssues(); renderContext(); renderTip();
-    syncDecisionOverlay(flow.phase === 'batalha' ? $('mbattle') : tributeKey ? $('mtribute') : null);
+    renderCaptains(); renderCaptain(); renderCapDialog();
+    syncDecisionOverlay(flow.phase === 'batalha' ? $('mbattle') : tributeKey ? $('mtribute') : capKey ? $('mcapdlg') : null);
     if (diaryOpen()) renderDiary();
     const busy = flow.phase !== 'mapa' || map3d?.failed === true;
     for (const b of $('map').querySelectorAll('#mbot [data-act], #m-time [data-speed], #m-pause')) b.disabled = busy;
@@ -873,7 +1042,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   }
 
   // --- reconhecimento ---
-  const inRecon = p => Math.hypot(p.x - flow.state.party.x, p.y - flow.state.party.y) <= RECON_RANGE;
+  const inRecon = p => Math.hypot(p.x - flow.state.party.x, p.y - flow.state.party.y) <= reconRange(flow.state, RECON_RANGE);
   const sameReconClick = event => event && reconClick && event.timeStamp >= reconClick.t && event.timeStamp - reconClick.t < 600 &&
     Math.hypot(event.clientX - reconClick.x, event.clientY - reconClick.y) <= 8;
 
@@ -1080,6 +1249,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (issue) openTribute(issue.key);
   });
   $('mtribute-later').addEventListener('click', deferTribute);
+  $('mcapdlg-later').addEventListener('click', closeCapDecision);
   $('m-side-toggle').addEventListener('click', () => setSide(!sideOpen()));
   $('m-map-details').addEventListener('click', () => {
     if (!active || flow?.phase !== 'mapa' || decisionOverlay) return;
@@ -1287,6 +1457,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (e.key === 'Escape') {
       e.preventDefault(); e.stopImmediatePropagation();
       if (decisionOverlay === $('mtribute')) deferTribute();
+      else if (decisionOverlay === $('mcapdlg')) closeCapDecision();
     } else if (e.key === 'Tab') {
       const controls = dialogControls(decisionOverlay), first = controls[0], last = controls.at(-1);
       const current = doc.activeElement;
@@ -1301,6 +1472,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (cronOpen()) { closeChronicle(); return; }
     if (diaryOpen()) { closeDiary(); return; }
     if (mode) { mode = null; render(); return; }
+    if (capSelected) { selectCaptain(null); return; }
     if (selected) { unpick(); return; }
     if (narrow() && sideOpen()) { setSide(false); return; }
     close();
@@ -1310,6 +1482,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     tacticalArena?.dispose(); tacticalArena = null; tacticalNotice = null;
     pause();
     syncDecisionOverlay(null); tributeKey = null; tributeNotice = null; tributeContent = ''; deferredTributes.clear();
+    capSelected = null; capKey = null; capsKey = ''; capPanelKey = ''; capDlgKey = '';
     reconClick = null;
     flow = f; active = true; selected = null; log.length = 0; logDirty = true; lastSaid = null; repeat = 1;
     stopMarch(); shown = null; hover = null; facing = 1; trail.length = 0; mode = null; dest = null; stance = null;

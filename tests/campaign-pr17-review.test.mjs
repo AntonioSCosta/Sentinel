@@ -101,7 +101,7 @@ test('preview: o efeito da própria ordem (homens, armas, comida, confiança) ba
   const r = f.order({ kind: 'recrutar', id: p.id });
   const got = r.events.find(e => e.type === 'recrutou'), want = pv.events.find(e => e.type === 'recrutou');
   assert.deepEqual(got, want);
-  assert.equal(pv.state.men - men, got.men); assert.equal(arms - pv.state.arms, got.men);
+  assert.equal(pv.state.men - men, got.men); assert.equal(arms - pv.state.arms, arms - s.arms, 'as armas previstas são as gastas (o Ferreiro arma um em cada três)');
   assert.equal(pv.state.communities.souto.trust, trust + (s.communities.souto.trust - trust) , 'a confiança prevista é a da própria ordem');
   assert.equal(pv.state.communities.souto.trust - trust, s.communities.souto.trust - trust);
 });

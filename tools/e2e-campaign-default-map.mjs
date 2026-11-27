@@ -45,9 +45,30 @@ try {
     assert.deepEqual(await renderer(page), { canvas: true, stage3d: null }, 'mapa ilustrado visível, 3D nunca montado');
     await page.waitForTimeout(500);
     // HUD limpo: sem «Ir», sem seletor de idioma no cabeçalho; a marcha é o clique simples no mapa.
-    assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('#mbot button')].map(b => b.id)), ['m-ambush', 'm-hide', 'm-recon', 'm-diary']);
+    assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('#mbot > button')].map(b => b.id)), ['m-ambush', 'm-hide', 'm-recon', 'm-diary']);
     assert.equal(await page.locator('#m-go, #map-language, #mtop select').count(), 0);
     await shot(page, '01-mapa-inicial');
+    // Capitães: dois selos discretos; a ficha abre no painel lateral, no lugar dos assuntos, e fecha com Esc (fica no mapa)
+    assert.equal(await page.locator('#m-captains .cap').count(), 2);
+    await page.locator('#m-captains .cap').first().click();
+    await page.locator('#mcap h3').waitFor();
+    assert.equal(await page.locator('#mcap h3').textContent(), await page.evaluate(() => window.__game.campaign.flow.state.captains[0].name));
+    assert.equal(await page.locator('#missues').isVisible(), false);
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#mcap').isVisible(), false);
+    assert.equal(await page.locator('#mapcv').isVisible(), true);
+    // «Ir até aqui»: clique real numa povoação do vale (longe do bando) → painel → botão → ordem de marcha para ela
+    const village = await page.evaluate(() => {
+      const c = window.__game.campaign, s = c.flow.state, v = c.view(), r = document.getElementById('mapcv').getBoundingClientRect();
+      const ids = Object.values(s.communities).map(k => k.settlement);
+      const p = s.world.settlements.filter(x => ids.includes(x.id)).map(x => ({ ...x, d: Math.hypot(x.x - s.party.x, x.y - s.party.y) })).filter(x => x.d > 40).sort((a, b) => a.d - b.d)[0];
+      return { x: p.x, y: p.y, sx: r.left + v.ox + p.x * v.scale, sy: r.top + v.oy + p.y * v.scale };
+    });
+    await page.mouse.click(village.sx, village.sy);
+    await page.locator('#mctx [data-act="ir"]').click();
+    const going = await page.evaluate(() => window.__game.campaign.dest);
+    assert.ok(going && Math.hypot(going.x - village.x, going.y - village.y) < 1, '«Ir até aqui» ordena a marcha para a povoação');
+    await page.evaluate(() => { window.__game.campaign.pause(); window.__game.campaign.select(null); });
 
     const box = await page.locator('#mapcv').boundingBox();
     const initial = await camera(page);
