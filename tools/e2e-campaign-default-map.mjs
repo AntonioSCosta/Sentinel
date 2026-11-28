@@ -45,18 +45,29 @@ try {
     assert.deepEqual(await renderer(page), { canvas: true, stage3d: null }, 'mapa ilustrado visível, 3D nunca montado');
     await page.waitForTimeout(500);
     // HUD limpo: sem «Ir», sem seletor de idioma no cabeçalho; a marcha é o clique simples no mapa.
-    assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('#mbot > button')].map(b => b.id)), ['m-camp', 'm-ambush', 'm-hide', 'm-recon', 'm-diary']);
+    assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('#mbot > button')].map(b => b.id)), ['m-camp', 'm-ambush', 'm-hide', 'm-recon', 'm-diary', 'm-comp']);
     assert.equal(await page.locator('#m-go, #map-language, #mtop select').count(), 0);
     await shot(page, '01-mapa-inicial');
-    // Capitães: dois selos discretos; a ficha abre no painel lateral, no lugar dos assuntos, e fecha com Esc (fica no mapa)
-    assert.equal(await page.locator('#m-captains .cap').count(), 2);
-    await page.locator('#m-captains .cap').first().click();
-    await page.locator('#mcap h3').waitFor();
-    assert.equal(await page.locator('#mcap h3').textContent(), await page.evaluate(() => window.__game.campaign.flow.state.captains[0].name));
-    assert.equal(await page.locator('#missues').isVisible(), false);
+    // Companheiros: um só botão no extremo direito da barra; o painel ascendente abre no primeiro companheiro, deixa os Assuntos à vista e fecha com Esc
+    const names = await page.evaluate(() => window.__game.campaign.flow.state.captains.map(c => c.name));
+    assert.equal(await page.locator('#m-captains, #mcap').count(), 0, 'sem selos permanentes nem ficha na coluna');
+    assert.equal(await page.locator('#m-tray').isVisible(), false);
+    const clock = () => page.evaluate(() => { const c = window.__game.campaign; return JSON.stringify([c.running, c.paused, c.speed, !!c.dest, c.stance, c.flow.state.day]); });
+    const clockBefore = await clock();
+    await page.locator('#m-comp').click();
+    await page.locator('#m-tray h3').waitFor();
+    assert.equal(await page.locator('#m-tray h3').textContent(), names[0]);
+    assert.equal(await page.locator('#m-tray .rrow').count(), names.length);
+    const size = await page.locator('#m-tray').boundingBox();
+    await page.locator('#m-tray .rrow').nth(1).click();
+    assert.equal(await page.locator('#m-tray h3').textContent(), names[1]);
+    const size2 = await page.locator('#m-tray').boundingBox();
+    assert.deepEqual([size2.width, size2.height], [size.width, size.height], 'o painel mantém as dimensões entre seleções');
+    assert.equal(await page.locator('#missues').isVisible(), true, 'os Assuntos continuam à vista');
     await page.keyboard.press('Escape');
-    assert.equal(await page.locator('#mcap').isVisible(), false);
+    assert.equal(await page.locator('#m-tray').isVisible(), false);
     assert.equal(await page.locator('#mapcv').isVisible(), true);
+    assert.equal(await clock(), clockBefore, 'abrir, consultar e fechar o painel não mexe no relógio');
     // «Ir até aqui»: clique real numa povoação do vale (longe do bando) → painel → botão → ordem de marcha para ela
     const village = await page.evaluate(() => {
       const c = window.__game.campaign, s = c.flow.state, v = c.view(), r = document.getElementById('mapcv').getBoundingClientRect();

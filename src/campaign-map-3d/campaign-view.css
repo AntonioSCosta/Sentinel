@@ -50,7 +50,7 @@
   #map #mtop .res { grid-area: 3 / 1 / 4 / 3; gap: 4px; }
   #map #mtop .res b { margin-right: 2px; }
   #map #mtop .res span { font-size: 13px; }
-  #map :is(#mapcv, #campaign-map-3d, #mside) { top: 104px; height: calc(100% - 152px); }
+  #map :is(#mapcv, #campaign-map-3d, #mside) { top: 104px; height: calc(100% - 104px - var(--map-compact-footer, 56px) + 8px); }
 }
 @media (min-width: 620px) and (max-width: 900px), (min-width: 620px) and (max-height: 480px) {
   #map:has(#mside:not(.closed)) #campaign-map-3d :is(.map-dock, .map-preview) { right: 350px; }

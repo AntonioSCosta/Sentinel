@@ -22,8 +22,8 @@ for (const vp of [{ width: 1366, height: 768 }, { width: 1280, height: 800 }, { 
   for (const id of ['m-date', 'm-pause', 'm-men', 'm-food', 'm-arms']) { const b = await box('#' + id); check(`${tag}: «${id}» à vista na barra de cima`, inside(b, vp), fmt(b)); }
   for (const s of [1, 2, 4]) { const b = await box(`[data-speed="${s}"]`); check(`${tag}: ${s}× à vista`, inside(b, vp), fmt(b)); }
   const bot = await page.evaluate(() => [...document.querySelectorAll('#mbot > button')].map(b => b.textContent.trim()));
-  check(`${tag}: a barra de baixo tem só Acampar, Emboscar, Esconder, Reconhecer e Diário (sem «Ir»: marchar é o clique no mapa)`, bot.join('|') === 'Acampar|Emboscar|Esconder|Reconhecer|Diário', bot.join('|'));
-  for (const id of ['m-ambush', 'm-hide', 'm-recon', 'm-diary']) { const b = await box('#' + id); check(`${tag}: «${id}» à vista`, inside(b, vp), fmt(b)); }
+  check(`${tag}: a barra de baixo tem só Acampar, Emboscar, Esconder, Reconhecer, Diário e Companheiros (sem «Ir»: marchar é o clique no mapa)`, bot.join('|') === 'Acampar|Emboscar|Esconder|Reconhecer|Diário|Companheiros', bot.join('|'));
+  for (const id of ['m-ambush', 'm-hide', 'm-recon', 'm-diary', 'm-comp']) { const b = await box('#' + id); check(`${tag}: «${id}» à vista`, inside(b, vp), fmt(b)); }
   const hint = await page.evaluate(() => [...document.querySelectorAll('div')].some(d => /ENTER para saltar/.test(d.textContent) && d.children.length === 0 && getComputedStyle(d).display !== 'none' && d.getBoundingClientRect().width > 0));
   check(`${tag}: «ENTER para saltar» não aparece no mapa`, !hint);
   const veil = await page.evaluate(() => [...document.body.children].filter(e => !e.closest('#map') && getComputedStyle(e).position === 'fixed' && getComputedStyle(e).display !== 'none' && +getComputedStyle(e).opacity > 0 && e.id !== 'gl' && e.getBoundingClientRect().width > innerWidth * 0.9 && (parseInt(getComputedStyle(e).zIndex) || 0) > 0).map(e => e.id || e.className || e.tagName));
