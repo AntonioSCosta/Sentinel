@@ -21,9 +21,7 @@ const startMap = async (page, locale) => {
     game.campaignStorage.clear();
     game.startCampaign(1234);
     game.showCampaignMap();
-    const language = document.getElementById('pause-language');
-    language.value = locale;
-    language.dispatchEvent(new Event('change', { bubbles: true }));
+    game.i18n.setLocale(locale);
   }, locale);
   await page.locator('#mapcv').waitFor({ timeout: 60000 });
 };
@@ -52,7 +50,7 @@ async function decisions(page) {
   }
 
   const panel = page.locator('#mtribute'), pay = panel.locator('[data-act=pagar]');
-  const refuse = panel.locator('[data-act=recusar]'), language = panel.locator('select');
+  const refuse = panel.locator('[data-act=recusar]'), later = panel.locator('#mtribute-later');
   const pending = await save(page);
   await panel.waitFor();
   const bounds = await panel.locator('.card').boundingBox();
@@ -62,8 +60,9 @@ async function decisions(page) {
   assert.equal(await page.locator('#mctx').isVisible(), true);
   assert.equal(await page.locator('#mctx').evaluate(el => el.closest('#mside').inert), true);
   assert.equal(await pay.evaluate(el => document.activeElement === el), true);
+  assert.equal(await panel.locator('select').count(), 0, 'sem seletor de idioma na decisão (só no menu principal)');
   await page.keyboard.press('Shift+Tab');
-  assert.equal(await language.evaluate(el => document.activeElement === el), true);
+  assert.equal(await later.evaluate(el => document.activeElement === el), true);
   await page.keyboard.press('Tab');
   await page.keyboard.press('ArrowRight');
   await page.mouse.click(16, compact.height - 16);
@@ -72,10 +71,10 @@ async function decisions(page) {
   assert.equal(await save(page), pending);
   await shot(page, '02-after-tribute-compact');
 
-  await language.focus();
-  await language.selectOption('pt-PT');
+  await later.focus();
+  await setLanguage(page, 'pt-PT');
   assert.match(await panel.textContent(), /Roma exige tributo a Aldeia do Vau/);
-  assert.equal(await language.evaluate(el => document.activeElement === el), true);
+  assert.equal(await later.evaluate(el => document.activeElement === el), true, 'mudar de idioma não tira o foco do painel');
   await page.keyboard.press('Escape');
   assert.match(await panel.textContent(), /Roma exige tributo a Aldeia da Ribeira/);
   assert.equal(await pay.count(), 0);
@@ -90,7 +89,7 @@ async function decisions(page) {
   await reload(page);
   await panel.waitFor();
   assert.match(await panel.textContent(), /Aldeia do Vau/);
-  await language.selectOption('en');
+  await setLanguage(page, 'en');
   await page.setViewportSize(desktop);
   await shot(page, '03-after-tribute-desktop');
   const oldPay = await pay.elementHandle();
@@ -115,7 +114,7 @@ async function interruption(page) {
   const state = await page.evaluate(historicalBaseline => {
     const campaign = window.__game.campaign, flow = campaign.flow;
     flow.state.food = 2;
-    // B3.1 keeps food warnings in the HUD. The spring harvest still pauses a march.
+    // B3.1 keeps food warnings in the HUD. The spring harvest is information: it no longer stops a march.
     if (!historicalBaseline) flow.state.day = 91;
     const place = flow.state.world.settlements.find(p => p.id === flow.state.communities.vau.settlement);
     campaign.select(place.id);
@@ -123,35 +122,25 @@ async function interruption(page) {
     campaign.step();
     return { reasons: campaign.interrupt.map(x => x.type), running: campaign.running, dest: campaign.dest };
   }, !!baseline);
-  assert.ok(state.reasons.includes(baseline ? 'comida' : 'colheita'));
-  if (!baseline) assert.ok(!state.reasons.includes('comida'));
-  assert.equal(state.running, false);
-  assert.ok(state.dest);
   assert.equal(await page.locator('#mctx').isVisible(), true);
   if (baseline) {
+    assert.ok(state.reasons.includes('comida'));
+    assert.equal(state.running, false);
     assert.equal(await page.locator('#m-int').isVisible(), false);
     await shot(page, '04-before-interruption-selected');
     return;
   }
-  const strip = page.locator('#m-int');
-  await strip.waitFor();
-  assert.match(await strip.textContent(), /The spring harvest added/);
+  assert.deepEqual(state.reasons, [], 'a colheita não interrompe');
+  assert.equal(state.running, true, 'a marcha continua');
+  assert.ok(state.dest);
+  assert.equal(await page.locator('#m-int').isVisible(), false, 'sem faixa de interrupção');
+  await page.evaluate(() => window.__game.campaign.pause());
+  const log = page.locator('#mlog');
+  assert.match(await log.textContent(), /The spring harvest added/, 'a colheita fica no registo');
   assert.equal(await page.locator('#m-food-raw').textContent(), '(0)');
-  await shot(page, '05-after-interruption-selected');
-  for (const viewport of [desktop, { width: 1024, height: 600 }, compact]) {
-    await page.setViewportSize(viewport);
-    const rect = await strip.boundingBox(), top = await page.locator('#mtop').boundingBox();
-    assert.ok(rect.y >= top.y + top.height && rect.x >= 0 && rect.x + rect.width <= viewport.width);
-  }
-  await page.locator('#m-side-toggle').click();
-  assert.equal(await page.locator('#mside').isVisible(), false);
-  assert.equal(await strip.isVisible(), true);
+  await shot(page, '05-after-harvest-no-interruption');
   await setLanguage(page, 'pt-PT');
-  assert.match(await strip.textContent(), /A colheita de primavera acrescentou/);
-  await shot(page, '06-after-interruption-closed');
-  assert.equal(await page.locator('#m-int-go').evaluate(el => {
-    el.click(); return window.__game.campaign.running;
-  }), true);
+  assert.match(await log.textContent(), /A colheita de primavera acrescentou/, 'o registo muda de idioma');
 }
 
 async function chapter(page) {
@@ -173,7 +162,8 @@ async function chapter(page) {
   const pending = await save(page);
   assert.equal(JSON.parse(pending).state.day, 10);
   assert.equal(JSON.parse(pending).battle.chapter, 'cativos');
-  await battle.locator('select').selectOption('pt-PT');
+  assert.equal(await battle.locator('select').count(), 0);
+  await setLanguage(page, 'pt-PT');
   assert.match(await battle.textContent(), /Capítulo da campanha.*Os Cativos/s);
   await shot(page, '07-after-pending-chapter');
   await reload(page);

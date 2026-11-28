@@ -331,10 +331,10 @@ test('o relato pouco fiável desenha-se com outro traço', async () => {
   assert.notDeepEqual(dashes('fraca'), dashes('boa'));
 });
 
-test('capítulo III no painel de batalha: diz como entrar sem ser descoberto (agachar) e o perigo de ficar à vista', () => {
+test('capítulo III no painel de batalha: diz o objetivo, sem instruções de teclas nem conselhos', () => {
   const t = EPISODES.acampamento[1];
-  assert.match(t, /agacha-te \(C\)/i, t);
-  assert.match(t, /à vista/, t);
+  assert.doesNotMatch(t, /agacha|\(C\)/i, t);
+  assert.match(t, /Queima os três depósitos e derruba o centurião/, t);
   assert.match(t, /Invenção do jogo/, 'continua a dizer que o episódio é invenção');
 });
 
@@ -343,7 +343,7 @@ test('painel «Objetivo»: a comida vem dos castros e do saque, nunca «das alde
   const text = goalLines(s).join(' ');
   assert.match(text, /Comida: pede ajuda nos castros e obtém mantimentos como saque nas vitórias em combate/);
   assert.doesNotMatch(text, /pede-a nas aldeias|pede comida .*aldeia|comida.{0,40}aldeias? e saqueia/i, 'a indicação errada não pode voltar');
-  assert.match(text, /recruta numa aldeia, pede ajuda \(comida\) num castro/);
+  assert.doesNotMatch(text, /Primeiros dias|clica numa/, 'sem conselhos de tutorial no Objetivo');
   // as mecânicas reais por trás do texto
   const at = (st, p) => { st.party.x = p.x; st.party.y = p.y; };
   const castro = s.world.settlements.find(x => x.kind === 'castro'), aldeia = s.world.settlements.find(x => x.kind === 'aldeia');

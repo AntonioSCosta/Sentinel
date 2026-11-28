@@ -91,3 +91,14 @@ for (const file of ['index.html', 'campaign-map-3d.html']) {
     dom.window.close();
   });
 }
+
+test('the language is chosen only in the main menu: no other selector in the game or the tactical prototype', () => {
+  const read = file => new JSDOM(fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')).window.document;
+  const game = read('index.html');
+  assert.equal(game.querySelectorAll('[data-language], select[id*="lang"]').length, 0, 'no language select in the game');
+  const menuButtons = [...game.querySelectorAll('[data-menu-language]')];
+  assert.equal(menuButtons.length, 2);
+  assert.ok(menuButtons.every(button => button.closest('#menu-language')), 'the only language buttons live in the main menu');
+  const proto = read('tactical-proto.html');
+  assert.equal(proto.querySelectorAll('#lang, [data-language], select').length, 0, 'no language select in the tactical prototype');
+});

@@ -45,7 +45,7 @@ try {
     assert.deepEqual(await renderer(page), { canvas: true, stage3d: null }, 'mapa ilustrado visível, 3D nunca montado');
     await page.waitForTimeout(500);
     // HUD limpo: sem «Ir», sem seletor de idioma no cabeçalho; a marcha é o clique simples no mapa.
-    assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('#mbot > button')].map(b => b.id)), ['m-ambush', 'm-hide', 'm-recon', 'm-diary']);
+    assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('#mbot > button')].map(b => b.id)), ['m-camp', 'm-ambush', 'm-hide', 'm-recon', 'm-diary']);
     assert.equal(await page.locator('#m-go, #map-language, #mtop select').count(), 0);
     await shot(page, '01-mapa-inicial');
     // Capitães: dois selos discretos; a ficha abre no painel lateral, no lugar dos assuntos, e fecha com Esc (fica no mapa)
@@ -109,7 +109,8 @@ try {
     assert.equal(await dest(), null, 'clicar no bando cancela a marcha');
     await page.locator('#m-ambush').click();
     assert.equal(await page.evaluate(() => window.__game.campaign.stance), 'esperar');
-    assert.match(await page.locator('#m-status').textContent(), /clica no mapa para (voltar a )?marchar/);
+    assert.match(await page.locator('#m-status').textContent(), /Emboscada montada|longe da estrada/);
+    assert.doesNotMatch(await page.locator('#m-status').textContent(), /clica/, 'o estado não dá instruções');
     await page.mouse.click(target.x, target.y);
     assert.notEqual(await dest(), null, 'depois de Emboscar, um clique no mapa volta a marchar');
     assert.equal(await page.evaluate(() => window.__game.campaign.stance), null);

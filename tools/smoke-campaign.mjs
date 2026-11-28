@@ -47,17 +47,18 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   check('HUD shows men, food autonomy, arms and fame toward the year-end goal', num('m-men') === s.men && /\d+ dias/.test($('m-food').textContent) && $('m-food-raw').textContent.includes(String(s.food)) && num('m-arms') === s.arms && $('m-fame').textContent === `${s.fame} / ${WIN_FAME}`);
   check('HUD shows date and season', $('m-date').textContent.length > 3 && $('m-season').textContent.length > 2);
   check('log is a live status region', $('mlog').getAttribute('role') === 'status');
-  check('the bottom bar has only Emboscar, Esconder, Reconhecer and Diário (no Ir, no Acampar)', ['m-ambush', 'm-hide', 'm-recon', 'm-diary'].every(id => $(id)?.tagName === 'BUTTON' && $(id).textContent.trim())
-    && $('mbot').querySelectorAll(':scope > button').length === 4 && !$('m-go') && !$('m-acampar'));   // os selos dos capitães vivem em #m-captains
+  check('the bottom bar has Acampar, Emboscar, Esconder, Reconhecer and Diário (no Ir)', ['m-camp', 'm-ambush', 'm-hide', 'm-recon', 'm-diary'].every(id => $(id)?.tagName === 'BUTTON' && $(id).textContent.trim())
+    && $('mbot').querySelectorAll(':scope > button').length === 5 && !$('m-go'));   // os selos dos capitães vivem em #m-captains
   check('the top bar has no language selector and the map has no title card', !$('map-language') && !$('mtop').querySelector('select'));
   check('the time starts paused, with pause, 1×, 2× and 4×', !G.campaign.running && $('m-pause').getAttribute('aria-pressed') === 'true' && [...$('m-time').querySelectorAll('[data-speed]')].map(b => b.dataset.speed).join() === '1,2,4');
   // um dia sem ordem: o bando acampa (parar é não dar ordem)
   const d0 = s.day, date0 = $('m-date').textContent; G.campaign.step();
   check('a day with no order camps and the date moves on', s.day === d0 + 1 && $('m-date').textContent !== date0);
+  check('stopped on the map, the time does not run', !G.campaign.running && G.campaign.activity === null);
   win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'Space', key: ' ' }));
-  check('Space resumes the time', G.campaign.running && $('m-pause').getAttribute('aria-pressed') === 'false');
-  win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'Space', key: ' ' }));
-  check('Space pauses it again', !G.campaign.running);
+  check('holding Space while stopped runs the time (wait in the open)', G.campaign.running && G.campaign.holding && $('m-pause').getAttribute('aria-pressed') === 'false');
+  win.dispatchEvent(new win.KeyboardEvent('keyup', { code: 'Space', key: ' ' }));
+  check('releasing Space stops it again', !G.campaign.running && !G.campaign.holding);
   // clicar numa aldeia mostra o painel contextual
   const vill = s.world.settlements.find(x => x.kind === 'aldeia'), view = G.campaign.view();
   const cv = $('mapcv'); cv.getBoundingClientRect = () => ({ left: 0, top: 0, width: view.width, height: view.height });
@@ -78,7 +79,7 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
     s.patrols = [{ id: 'oculta', kind: 'legio', x: vill.x + 6, y: vill.y, men: 6, i: 1 }]; G.campaign.render();
     const hidden = panelText();
     check('the village panel is identical with and without an undiscovered patrol next to it', clean === hidden && !/castiga|combate|romanos/i.test(hidden));
-    check('the panel always says there are risks not yet known (same words, whatever is hidden)', clean.includes('Há riscos que ainda não conheces.') && hidden.includes('Há riscos que ainda não conheces.'));
+    check('the panel has no fixed «unknown risks» filler line', !/riscos que ainda não conheces/.test(clean + hidden));
     const co = s.communities.souto, so = s.world.settlements.find(x => x.id === co.settlement), kept = { t: co.trust, f: co.fear, p: co.posture };
     co.trust = 50; co.fear = 30; co.posture = 'amiga'; s.party = { x: so.x, y: so.y };
     s.patrols = [{ id: 'oculta', kind: 'legio', x: so.x + 6, y: so.y, men: 6, i: 1 }]; s.intel.known = {}; G.campaign.render();
@@ -131,6 +132,144 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
     G.campaign.pause(); delete doc.hidden;
     win.setTimeout = real.st; win.clearTimeout = real.ct; q = [];
     $('m-hide').getAttribute('aria-pressed') === 'true' && $('m-hide').click();
+  }
+  // O relógio ao estilo de M&B (tempo virtual): parado não passa tempo; um destino, Acampar, Emboscar, Esconder ou o Espaço
+  // premido fazem-no passar; chegar, cancelar, largar a tecla ou perder o foco param-no. Uma só autoridade (pace.clockRuns).
+  { const real = { st: win.setTimeout, ct: win.clearTimeout };
+    let now = 0, q = [], seq = 0;
+    win.setTimeout = (fn, ms) => { const id = ++seq; q.push({ id, at: now + ms, fn }); return id; };
+    win.clearTimeout = id => { q = q.filter(t => t.id !== id); };
+    const advance = ms => { const end = now + ms; for (;;) { q.sort((a, b) => a.at - b.at); const t = q[0]; if (!t || t.at > end) break; q.shift(); now = t.at; t.fn(); } now = end; };
+    const DAY = 1400, C = G.campaign;
+    const calm = () => { s.food = 1e6; s.men = 40; s.praetor = null; s.patrols = []; if (!s.done.includes('cativos')) s.done.push('cativos'); };
+    const space = (type, init = {}, target = win) => target.dispatchEvent(new win.KeyboardEvent(type, { code: 'Space', key: ' ', bubbles: true, ...init }));
+    const tap = () => { space('keydown'); space('keyup'); };
+    const clickBand = () => { const v = C.view(); cv.dispatchEvent(new win.MouseEvent('click', { clientX: v.ox + s.party.x * v.scale, clientY: v.oy + s.party.y * v.scale, bubbles: true })); };
+    const stand = () => { if (C.stance) $({ acampar: 'm-camp', esperar: 'm-ambush', esconder: 'm-hide' }[C.stance]).click(); if (C.dest) clickBand(); };
+    const march = () => {   // um dia de marcha para o lado com mais espaço (a seta põe o destino a um dia)
+      const code = s.party.x > s.world.w / 2 ? 'ArrowLeft' : 'ArrowRight';
+      win.dispatchEvent(new win.KeyboardEvent('keydown', { code, key: code }));
+    };
+    const idle = (days = 4) => { const d = s.day; advance(DAY * days); return s.day === d; };
+    calm(); C.pause(); stand(); C.play(1);
+
+    check('stationary: no order, no activity, the time does not pass', !C.running && C.activity === null && idle() && $('m-status').textContent === 'Parado.');
+    $('m-time').querySelector('[data-speed="4"]').click();
+    check('changing the speed while stopped does not resume the time (4× is shown chosen)', C.speed === 4 && !C.running && idle()
+      && $('m-time').querySelector('[data-speed="4"]').getAttribute('aria-pressed') === 'true');
+    $('m-time').querySelector('[data-speed="1"]').click();
+
+    // destino → marcha; chegada → parado
+    march(); const dm = s.day;
+    check('a destination starts the march and the clock', !!C.dest && C.running && C.activity === 'marchar');
+    advance(DAY);
+    check('arriving stops the band and suspends the time', s.day === dm + 1 && !C.dest && !C.running && idle() && /Chegaste|Chegada/.test($('mlog').textContent));
+    march(); clickBand();
+    check('cancelling the march (click on the band) suspends the time', !C.dest && !C.running && idle());
+
+    // Acampar: ação explícita
+    $('m-camp').click(); const dc = s.day;
+    check('Acampar runs the time with the band still', C.stance === 'acampar' && C.running && $('m-camp').getAttribute('aria-pressed') === 'true' && $('m-status').textContent === 'Acampado.');
+    advance(DAY * 2);
+    check('two days of camp pass in two days of clock', s.day === dc + 2);
+    $('m-camp').click();
+    check('Acampar again stops it', C.stance === null && !C.running && idle());
+
+    // Espaço premido: esperar ao relento
+    space('keydown'); const dh = s.day;
+    check('holding Space while stopped waits in the open', C.holding && C.running && C.activity === 'aguardar' && $('m-status').textContent === 'À espera ao relento.');
+    advance(DAY);
+    space('keydown', { repeat: true }); space('keydown', { repeat: true });
+    check('keyboard auto-repeat changes nothing while holding', C.holding && C.running && s.day === dh + 1);
+    space('keyup');
+    check('releasing Space ends the wait', !C.holding && !C.running && idle());
+    space('keydown'); win.dispatchEvent(new win.Event('blur'));
+    check('losing the window focus ends the wait', !C.holding && !C.running && idle());
+    space('keyup');
+    check('…and the late keyup does nothing', !C.holding && !C.running);
+
+    // Espaço com uma ordem em curso: pausa e retoma, nunca começa a esperar
+    march(); tap();
+    check('a Space tap during the march pauses it and keeps the destination', !!C.dest && C.paused && !C.running && !C.holding && / · em pausa$/.test($('m-status').textContent) && idle(2));
+    space('keydown');   // a mesma pressão retoma e fica premida até à chegada
+    check('Space resumes the march', C.running && !C.paused && !C.holding);
+    advance(DAY);
+    check('Space held through the arrival: the band stops and the held key never turns into a wait', !C.dest && !C.running && !C.holding && idle());
+    space('keyup');
+    check('…releasing it afterwards still changes nothing', !C.running && !C.holding);
+    march(); $('m-pause').click();
+    check('❚❚ pauses the march (and keeps it)', C.paused && !C.running && !!C.dest);
+    $('m-pause').click();
+    check('❚❚ again resumes it', C.running && !C.paused);
+    stand();
+
+    // Espaço em campos e menus
+    space('keydown', {}, $('m-community'));
+    check('Space in a select does not wait or pause', !C.holding && !C.running);
+    space('keyup', {}, $('m-community'));
+    C.openDiary(); space('keydown');
+    check('Space with the Diário open does nothing', !C.holding && !C.running);
+    space('keyup'); C.closeDiary();
+
+    // Diário e Crónica suspendem; ao fechar o relógio volta ao que era
+    march(); C.openDiary(); const dd = s.day;
+    check('opening the Diário during the march suspends the time and keeps the order', !C.running && !!C.dest && !C.paused && idle());
+    C.closeDiary();
+    check('closing it lets the march go on', C.running && !!C.dest && s.day === dd);
+    tap(); C.openChronicle(); C.closeChronicle();
+    check('a manual pause survives the Crónica', C.paused && !C.running && !!C.dest && idle());
+    stand(); C.openDiary(); C.closeDiary();
+    check('stationary before the Diário, stationary after it', !C.running && C.activity === null && idle());
+    space('keydown'); C.openDiary();
+    check('opening the Diário ends a wait in the open', !C.holding && !C.running);
+    C.closeDiary(); space('keyup');
+    check('…and closing it does not bring the wait back', !C.holding && !C.running && idle());
+
+    // uma decisão aberta e fechada sem ser resolvida não faz passar tempo
+    const vau = s.communities.vau, keepVau = JSON.stringify(vau);
+    Object.assign(vau, { situation: 'tributada', due: { day: s.day + 4, food: 6 } }); C.render();
+    check('a pending tribute opens its decision while stopped', shown('mtribute') && !C.running);
+    const dt = s.day; $('mtribute-later').click();
+    check('«Decidir depois» closes it without advancing time', !shown('mtribute') && !C.running && s.day === dt && idle());
+    Object.assign(vau, JSON.parse(keepVau)); C.render();
+
+    // uma interrupção obrigatória (a crise de um capitão, decisão com prazo) com o Espaço premido: pára e não retoma sozinha
+    const cap = s.captains[0], keepCap = { loyalty: cap.loyalty };
+    cap.loyalty = 10; delete cap.crisis;
+    space('keydown'); const di = s.day; advance(DAY);
+    check('a mandatory interruption while holding Space stops the time and ends the wait', s.day === di + 1 && C.interrupt.some(x => x.type === 'capitao')
+      && !C.running && !C.holding && C.paused);
+    space('keyup');
+    check('…releasing the key afterwards does not resume it', !C.running && idle());
+    cap.loyalty = keepCap.loyalty; delete cap.crisis; C.render();
+    calm(); C.pause(); stand(); C.play(1);
+    win.setTimeout = real.st; win.clearTimeout = real.ct; q = [];
+  }
+  // A ficha do capitão: natureza inata à parte, cartas (sem contar cicatrizes) com ranhuras vazias, cicatrizes à parte, sem habilidades futuras
+  { const C = G.campaign, cap = s.captains[0], keep = { traits: [...cap.traits], level: cap.level, active: cap.active, offer: cap.offer, lastCard: cap.lastCard };
+    const sheet = patch => { Object.assign(cap, { traits: [], active: true, level: 1 }, patch); delete cap.offer; C.select(null); C.render(); if (!shown('mcap')) $('m-captains').querySelector('.cap').click(); return $('mcap'); };   // o selo alterna: já aberto, fica aberto
+    const SCARRED = ['duro-de-roer', 'olhos-de-coruja', 'conhecedor-dos-trilhos', 'rancor-a-roma', 'mao-ferida'];
+    for (const [name, traits, cards, slots, scars] of [['no cards', [], 0, 3, 0], ['one card', ['duro-de-roer'], 1, 2, 0], ['three cards and two scars', SCARRED, 3, 0, 2]]) {
+      const m = sheet({ traits }), lists = [...m.querySelectorAll('ul.cards')], hs = [...m.querySelectorAll('h4')].map(h => h.textContent).join('|');
+      check(`captain sheet, ${name}: shown, with the innate nature in its own plaque (gain and cost lines)`, shown('mcap') && !!m.querySelector('.plaque .fx.gain li') && !!m.querySelector('.plaque .fx.cost li') && !lists[0].querySelector('.plaque'));
+      check(`captain sheet, ${name}: «${cards} de 3» cards (scars not counted) and ${slots} empty slot(s)`, lists[0].querySelectorAll('.ccard:not(.slot)').length === cards
+        && lists[0].querySelectorAll('.ccard.slot').length === slots && new RegExp(`Cartas${cards} de 3`).test(hs) && !lists[0].querySelector('.cicatriz'));
+      check(`captain sheet, ${name}: ${scars} scar(s) in their own section`, m.querySelectorAll('.ccard.cicatriz').length === scars && /Cicatrizes/.test(hs) === (scars > 0));
+      check(`captain sheet, ${name}: every card has a symbol, a title, a rarity and short «+» and «−» lines`, [...m.querySelectorAll('.ccard:not(.slot)')].every(c => !!c.querySelector('.med svg path,.med svg circle')
+        && c.querySelector('.t b').textContent.length > 2 && c.querySelector('.t small').textContent.length > 2 && c.querySelectorAll('.fx.gain li').length >= 1 && c.querySelectorAll('.fx.cost li').length >= 1));
+      check(`captain sheet, ${name}: no tactical-skill section or «not yet in play» message`, !/Nas emboscadas|ainda não está em jogo|Fumaça e Fogo/.test(m.textContent));
+    }
+    // a escolha de carta usa as mesmas cartas
+    Object.assign(cap, { active: true, level: 2, traits: [], offer: { options: ['conhecedor-dos-trilhos', 'ladrao-de-galinhas', 'olhos-de-coruja'], why: 'nivel' }, lastCard: s.day });
+    G.i18n.setLocale('en'); G.i18n.setLocale('pt-PT'); C.select(null); C.render();
+    if (!shown('mcap')) $('m-captains').querySelector('.cap').click();
+    $('mcap').querySelector('.act button').click();
+    const choices = [...$('mcapdlg').querySelectorAll('.decision-choice.ccard')];
+    check('card choice: three cards in the same design, no language selector in the dialog', shown('mcapdlg') && choices.length === 3 && !$('mcapdlg').querySelector('select')
+      && choices.every(c => !!c.querySelector('.med svg') && c.querySelectorAll('.fx.gain li').length >= 1 && c.querySelectorAll('.fx.cost li').length >= 1));
+    choices[0].click();
+    check('card choice: choosing still gives the card and closes the offer', cap.traits.join() === 'conhecedor-dos-trilhos' && !cap.offer && !shown('mcapdlg'));
+    Object.assign(cap, keep); if (keep.offer === undefined) delete cap.offer; if (keep.lastCard === undefined) delete cap.lastCard; C.select(null); C.render();
   }
   // acampar até haver batalha (máx. 300)
   let n = 0; while (f.phase === 'mapa' && n < 300) { G.campaign.order({ kind: 'acampar' }); n++; }
@@ -502,7 +641,7 @@ function decisive({ G, doc, win, check, st, setGod, $, shown }) {
     check(`year end (${verdict}): the end screen with the flow's result (${$('mend-result').textContent})`, f.phase === 'fim' && shown('mend') && $('mend-title').textContent === 'Fim do ano de 147 a.C.'
       && $('mend-result').textContent === (f.state.over === 'vitoria' ? 'Vitória' : 'Derrota') && $('mend-result').textContent === verdict && sum('days') === f.state.day);
     check(`year end (${verdict}): closing line, no citation without the decisive battle (${$('mend-chron').textContent})`, !/Periochae|Vetílio/.test($('mend-chron').textContent)
-      && (verdict === 'Vitória' ? $('mend-text').textContent === 'Viriato chegou ao fim do ano. Roma não o venceu.' : $('mend-chron').textContent === 'Os montes ficaram em silêncio.'));
+      && (verdict === 'Vitória' ? $('mend-text').textContent === 'Viriato chegou ao fim do ano. Roma não o venceu.' : $('mend-chron').textContent === ''));
   }
   { // the «bando inteiro» line only with at least the men he started with
     G.campaignStorage.clear(); G.startCampaign(5); G.showCampaignMap(); const f = G.campaign.flow;
@@ -688,7 +827,7 @@ function fixWave({ G, doc, win, check, st, setGod, $, shown }) {
   $('m-recon').click();
   check('«Reconhecer» arms the scouting mode, pauses and says what the click will do', $('m-recon').getAttribute('aria-pressed') === 'true' && /batedores/.test($('m-status').textContent) && !G.campaign.running);
   $('m-recon').click();
-  check('pressing it again gives up without spending the day', $('m-recon').getAttribute('aria-pressed') === 'false' && f.state.day === 0 && /Acampado/.test($('m-status').textContent));
+  check('pressing it again gives up without spending the day', $('m-recon').getAttribute('aria-pressed') === 'false' && f.state.day === 0 && /Parado/.test($('m-status').textContent));
   G.campaign.order({ kind: 'reconhecer', to: { x: f.state.party.x + 60, y: f.state.party.y } });
   check(`scouting spends one day and the scouts report back (${[...$('mlog').children].at(-1)?.textContent})`, f.state.day === 1 && /Os batedores voltam/.test($('mlog').textContent) && /Batedores:/.test(diaryTab('relatos').textContent));
   $('mdiary-close').click();
@@ -751,13 +890,13 @@ function fixWave({ G, doc, win, check, st, setGod, $, shown }) {
     $('m-recon').click(); $('m-recon').click();
     check('clicking Reconhecer again drops the scouting mode too', $('m-recon').getAttribute('aria-pressed') === 'false');
     $('m-ambush').click();
-    check('after Emboscar the status line says how to march again', G.campaign.stance === 'esperar' && /clica no mapa/.test($('m-status').textContent));
+    check('after Emboscar the status line states the ambush, without instructions', G.campaign.stance === 'esperar' && /Emboscada montada|longe da estrada/.test($('m-status').textContent) && !/clica/.test($('m-status').textContent));
     const west = { x: rv.ox + (f.state.party.x - 60) * rv.scale, y: rv.oy + f.state.party.y * rv.scale };   // longe do último clique de reconhecimento
     cv.dispatchEvent(new win.MouseEvent('click', { clientX: west.x, clientY: west.y, bubbles: true }));
     check('a click on the map after Emboscar goes back to marching', !!G.campaign.dest && G.campaign.stance === null);
     G.campaign.pause(); clickWarband();
     $('m-hide').click();
-    check('after Esconder the status line says how to march again', G.campaign.stance === 'esconder' && /clica no mapa/.test($('m-status').textContent));
+    check('after Esconder the status line states the band is hiding, without instructions', G.campaign.stance === 'esconder' && $('m-status').textContent === 'O bando está escondido');
     $('m-hide').click();
     check('Esconder toggles off with a second click', G.campaign.stance === null);
     $('m-recon').click();
@@ -781,9 +920,9 @@ function fixWave({ G, doc, win, check, st, setGod, $, shown }) {
   check('Escape closes the panel first, stays on the map, back to the issues', !shown('mctx') && shown('missues') && G.state === 'map');
   // --- objetivo: regras reais, no separador «Campanha» do Diário ---
   const gt = diaryTab('campanha').textContent;
-  check(`«Campanha» states the real win/lose numbers (${WIN_MEN} homens, ${WIN_FAME} fama, ${YEAR_DAYS} dias), the fame and the first steps`,
+  check(`«Campanha» states the real win/lose numbers (${WIN_MEN} homens, ${WIN_FAME} fama, ${YEAR_DAYS} dias) and the fame, without tutorial advice`,
     gt.includes(`${WIN_MEN}+ homens`) && gt.includes(`${WIN_FAME}+ de fama`) && gt.includes(String(YEAR_DAYS)) && /Vitória/.test(gt) && /Derrota/.test(gt)
-    && /Homens/.test(gt) && /Comida/.test(gt) && /Armas/.test(gt) && /Fama: \d+/.test(gt) && /Primeiros dias/.test(gt) && /Agora: \d+ homens/.test(gt));
+    && /Homens/.test(gt) && /Comida/.test(gt) && /Armas/.test(gt) && /Fama: \d+/.test(gt) && !/Primeiros dias|clica/i.test(gt) && /Agora: \d+ homens/.test(gt));
   win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'Escape', key: 'Escape' }));
   check('Escape closes the Diário, stays on the map', !shown('mdiary') && G.state === 'map');
   check('map copy uses post-1990 spelling', !/acç|direcç|selecç/.test($('map').innerHTML));

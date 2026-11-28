@@ -46,11 +46,8 @@ export async function startBrowser({ root = ROOT, entry = 'index.html?manual=1',
   return { url, browser, close };
 }
 
-/** Troca o idioma como o jogo o faz: pelo seletor `data-language` do menu de pausa (o do HUD do mapa saiu). */
-export const setLanguage = (page, locale) => page.evaluate(locale => {
-  const select = document.getElementById('pause-language');
-  select.value = locale; select.dispatchEvent(new Event('change', { bubbles: true }));
-}, locale);
+/** Troca o idioma como os botões do menu principal (o único seletor do jogo): `i18n.setLocale`, a mesma chave gravada. */
+export const setLanguage = (page, locale) => page.evaluate(locale => window.__game.i18n.setLocale(locale), locale);
 
 /** Arranca o servidor estático, o Chrome e devolve { url, browser, check, hit, fmt, finish }. */
 export async function startE2E(options) {

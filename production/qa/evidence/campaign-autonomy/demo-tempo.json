@@ -1,0 +1,149 @@
+{
+  "steps": [
+    {
+      "step": "1-parado (4 s)",
+      "day": 0,
+      "running": false,
+      "paused": false,
+      "holding": false,
+      "activity": null,
+      "dest": false,
+      "status": "Parado.",
+      "strip": false
+    },
+    {
+      "step": "2-destino → marcha",
+      "day": 0,
+      "running": true,
+      "paused": false,
+      "holding": false,
+      "activity": "marchar",
+      "dest": true,
+      "status": "Destino: o ponto marcado — 3 dias, cerca de 6 de comida.",
+      "strip": false
+    },
+    {
+      "step": "3-patrulha avistada",
+      "day": 1,
+      "running": true,
+      "paused": false,
+      "holding": false,
+      "activity": "marchar",
+      "dest": true,
+      "status": "Destino: o ponto marcado — 2 dias, cerca de 4 de comida.",
+      "strip": false,
+      "known": true
+    },
+    {
+      "step": "4-chegada",
+      "day": 3,
+      "running": false,
+      "paused": false,
+      "holding": false,
+      "activity": null,
+      "dest": false,
+      "status": "Parado.",
+      "strip": false
+    },
+    {
+      "step": "4b-chegada (+3 s)",
+      "day": 3,
+      "running": false,
+      "paused": false,
+      "holding": false,
+      "activity": null,
+      "dest": false,
+      "status": "Parado.",
+      "strip": false
+    },
+    {
+      "step": "5-Espaço premido (3,2 s)",
+      "day": 5,
+      "running": true,
+      "paused": false,
+      "holding": true,
+      "activity": "aguardar",
+      "dest": false,
+      "status": "À espera ao relento.",
+      "strip": false
+    },
+    {
+      "step": "5b-Espaço largado",
+      "day": 5,
+      "running": false,
+      "paused": false,
+      "holding": false,
+      "activity": null,
+      "dest": false,
+      "status": "Parado.",
+      "strip": false
+    },
+    {
+      "step": "6-toque no Espaço: pausa",
+      "day": 6,
+      "running": false,
+      "paused": true,
+      "holding": false,
+      "activity": "marchar",
+      "dest": true,
+      "status": "Destino: o ponto marcado — 2 dias, cerca de 4 de comida. · em pausa",
+      "strip": false
+    },
+    {
+      "step": "6b-pausa (+2,5 s)",
+      "day": 6,
+      "running": false,
+      "paused": true,
+      "holding": false,
+      "activity": "marchar",
+      "dest": true,
+      "status": "Destino: o ponto marcado — 2 dias, cerca de 4 de comida. · em pausa",
+      "strip": false
+    },
+    {
+      "step": "6c-4× em pausa",
+      "day": 6,
+      "running": false,
+      "paused": true,
+      "holding": false,
+      "activity": "marchar",
+      "dest": true,
+      "status": "Destino: o ponto marcado — 2 dias, cerca de 4 de comida. · em pausa",
+      "strip": false
+    },
+    {
+      "step": "7a-marcha cancelada",
+      "day": 6,
+      "running": false,
+      "paused": true,
+      "holding": false,
+      "activity": null,
+      "dest": false,
+      "status": "Parado.",
+      "strip": false
+    },
+    {
+      "step": "7-Acampar (3,1 s)",
+      "day": 8,
+      "running": true,
+      "paused": false,
+      "holding": false,
+      "activity": "acampar",
+      "dest": false,
+      "status": "Acampado.",
+      "strip": false
+    },
+    {
+      "step": "7b-Acampar desligado",
+      "day": 8,
+      "running": false,
+      "paused": false,
+      "holding": false,
+      "activity": null,
+      "dest": false,
+      "status": "Parado.",
+      "strip": false
+    }
+  ],
+  "errors": []
+}
