@@ -13,7 +13,8 @@ import { patrolColumn, patrolPlacement, patrolResult } from '../../campaign/tact
 const $ = id => document.getElementById(id);
 const campaign = window.frameElement?.sentinelCampaignArena;
 let storage; try { storage = window.localStorage; } catch { /* sem armazenamento */ }
-const i18n = campaign?.i18n ?? createI18n({ storage, languages: ['en'] });   // inglês por omissão; a escolha do jogador fica guardada
+// O idioma escolhe-se só no menu principal do jogo (mesma chave); sem escolha gravada, o do browser, como no jogo.
+const i18n = campaign?.i18n ?? createI18n({ storage, languages: navigator.languages?.length ? navigator.languages : [navigator.language] });
 const t = (k, p) => i18n.t(`tactical.${k}`, p);
 
 let view;
@@ -32,7 +33,6 @@ const BAND_IDS = ui.placement.map(p => p.id);
 function applyTexts() {
   document.documentElement.lang = i18n.locale;
   for (const el of document.querySelectorAll('[data-t]')) el.textContent = t(el.dataset.t);
-  $('lang').value = i18n.locale;
   $('seed').textContent = t('battleNo', { seed: ui.seed });
   $('fallback').title = t('cmd.fallBackTip'); $('retreat').title = t('cmd.retreatTip');
   $('ver').textContent = PROTO_VERSION;   // discreto, para não misturar resultados de versões diferentes no playtest
@@ -144,9 +144,9 @@ function renderOrders() {
   const open = exposedNames();
   if (ui.phase === 'prep') $('prep-warn').textContent = open ? t('prep.exposed', { groups: open, range: STUB.spotOpen }) : t('prep.allHidden');
   $('prep-warn').classList.toggle('bad', !!open);
-  const hint = ui.phase === 'waiting' ? (late ? t('wait.seen') : open ? t('wait.exposed', { groups: open, range: STUB.spotOpen }) : t('wait.hint'))
-    : ui.phase === 'battle' ? t('battle.hint') : '';
-  $('hint').classList.toggle('bad', ui.phase === 'waiting' && (late || !!open));
+  // Só avisos de estado na espera (a coluna já viu alguém, ou há grupos à vista); os controlos estão em «Controlos».
+  const hint = ui.phase !== 'waiting' ? '' : late ? t('wait.seen') : open ? t('wait.exposed', { groups: open, range: STUB.spotOpen }) : '';
+  $('hint').classList.toggle('bad', !!hint);
   $('hint').hidden = !hint; $('hint').textContent = hint;
   $('phase').textContent = t(`phase.${ui.phase === 'over' ? 'over' : ui.phase}`);
   renderMarch();
@@ -463,7 +463,6 @@ for (const b of document.querySelectorAll('[data-speed]')) b.addEventListener('c
 $('replay').addEventListener('click', () => { ui.seed++; applyTexts(); startBattle(); });
 $('plan').addEventListener('click', () => backToPrep(true));
 $('copy').addEventListener('click', copyResults);
-$('lang').addEventListener('change', () => i18n.setLocale($('lang').value));
 $('sound').addEventListener('click', () => { sfx.unlock(); sfx.setMuted(!sfx.muted); $('sound').classList.toggle('on', !sfx.muted); });
 $('help-btn').addEventListener('click', () => { $('help').hidden = !$('help').hidden; });
 

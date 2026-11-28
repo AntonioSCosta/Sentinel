@@ -60,10 +60,10 @@ try {
     await page.waitForTimeout(300);
     const lay = await page.evaluate(() => {
       const r = id => document.getElementById(id).getBoundingClientRect();
-      return { hint: r('hint').bottom, bar: r('bar').top, text: document.getElementById('hint').innerText, tip: document.getElementById('retreat').title, label: document.getElementById('retreat').innerText };
+      return { hintShown: !document.getElementById('hint').hidden, help: document.getElementById('help').innerText, tip: document.getElementById('retreat').title, label: document.getElementById('retreat').innerText };
     });
-    check(`${tag}: dica da batalha acima da barra de baixo`, lay.hint <= lay.bar, `dica até ${Math.round(lay.hint)} · barra desde ${Math.round(lay.bar)}`);
-    check(`${tag}: dica distingue B (fica) de R (abandona)`, /stay in the fight/.test(lay.text) && /leave the battle for good/.test(lay.text));
+    check(`${tag}: sem dica automática de controlos na batalha`, !lay.hintShown);
+    check(`${tag}: «Controlos» (a pedido) distingue B (fica) de R (abandona)`, /stays on the field/.test(lay.help) && /leave the field for good/.test(lay.help));
     check(`${tag}: R diz que abandona a batalha (botão e dica do botão)`, /Leave battle/.test(lay.label) && /for good/.test(lay.tip));
     if (w === 1366) await page.screenshot({ path: path.join(OUT, `primeiro-ecra-${w}-batalha.jpg`), type: 'jpeg', quality: 82 });
     check(`${tag}: sem erros na consola`, errors.length === 0, errors.join(' | '));
@@ -71,10 +71,12 @@ try {
   }
 
   // Português de Portugal: o objetivo também está traduzido.
+  // O idioma gravado pelo menu do jogo (mesma chave) é o que o protótipo usa: não há seletor próprio.
   const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+  await page.addInitScript(() => localStorage.setItem('viriato.language', 'pt-PT'));
   await page.goto(url);
   await page.waitForFunction(() => window.__proto?.info().calls > 0);
-  await page.selectOption('#lang', 'pt-PT');
+  check('pt-PT: sem seletor de idioma, usa a escolha gravada', !(await page.$('#lang')) && await page.evaluate(() => document.documentElement.lang) === 'pt-PT');
   const goal = await page.locator('#goal').innerText();
   check('pt-PT: objetivo traduzido', /Desbarata-a antes que saia do vale/.test(goal), goal);
   await page.screenshot({ path: path.join(OUT, 'primeiro-ecra-1366-pt.jpg'), type: 'jpeg', quality: 82 });

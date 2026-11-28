@@ -969,7 +969,7 @@ function dropShield(ent, mine = false) {
   const c = sh.clone(); sh.matrixWorld.decompose(c.position, c.quaternion, c.scale); scene.add(c); sh.visible = false;
   fallen.push({ mesh: c, vy: 1.5, t: 0, spin: rr(-3, 3) });
   SFX.thud(mine ? 1 : spatial(c.position)); burst('dust', c.position, 5);
-  if (mine) { showPrompt('O escudo partiu-se. Apara com a falcata (BOTÃO DIREITO ou Q)', 2.4); clog('Escudo partido', '#e08a6a'); } else if (!ent.ally) feed('Escudo romano partido');
+  if (mine) { showPrompt('O escudo partiu-se.', 2.4); clog('Escudo partido', '#e08a6a'); } else if (!ent.ally) feed('Escudo romano partido');
 }
 const FLAT = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
 function updateFallen(dt) {
@@ -1171,13 +1171,8 @@ function resetVillage(plan) {
     e.route = route; e.wp = 0;
   }
 }
-const CAMP_OPENING = {
-  emboscada: ['Emboscada', 'A patrulha vem pela estrada. Espera que passe por baixo de ti e cai-lhe em cima.'],
-  'campo-aberto': ['Campo aberto', 'Os romanos já te viram e vêm em linha. Z segue-me · X bandeira · T ao ataque.'],
-  'assalto-coluna': ['Assalto à coluna', 'Os carros descem a estrada com a escolta. Mata-a antes que saiam do vale; chega-te a um carro para o tomar.'],
-  'defesa-aldeia': ['Defesa da aldeia', 'Os romanos vêm pela estrada para a queimar. Não os deixes chegar ao centro.'],
-  decisiva: ['Batalha decisiva', 'O pretor está à frente da linha, com o grosso do exército. Z segue-me · X bandeira · T ao ataque.'],
-};
+// Só o título: o objetivo está no painel e os controlos no menu de pausa (sem conselhos automáticos).
+const CAMP_OPENING = { emboscada: 'Emboscada', 'campo-aberto': 'Campo aberto', 'assalto-coluna': 'Assalto à coluna', 'defesa-aldeia': 'Defesa da aldeia', decisiva: 'Batalha decisiva' };
 function checkCampaignBattle(dt = 0) {
   if (!campBattle || campBattle.result || campBattle.story) return;   // um capítulo da história acaba quando o capítulo acaba
   setObjective();
@@ -1427,7 +1422,7 @@ function betray() {
   near.slice(0, 3).forEach((e, i) => { e.alertIn = 3 + i * 1.2; });
   // the signal: a volley of pila into the crowd at once, a few of them at Viriato
   near.forEach((e, i) => { e.huntIn = rr(1, 16); e.style = rand() < .35 ? 'bash' : 'sword'; if (i < 3) { e.pilaAt = 'P'; e.pilaT = rr(1.6, 3.4); } else if (rand() < .12) { e.pilaAt = nearestAdultCiv(e.pos, 30); e.pilaT = rr(0, 6); } });   // the nearest legionaries turn on Viriato a few seconds later
-  showMsg('A TRAIÇÃO', 'Há uma brecha no cerco. Corre por ela até ao fumo na orla da floresta.', 6);
+  showMsg('A TRAIÇÃO', '', 6);
 }
 function nearestAdultCiv(pos, r) {
   let best = null, bd = r;
@@ -1943,7 +1938,7 @@ const patrolLeft = () => enemies.filter(e => e.group === 'patrol' && !e.dead).le
 const STORY_LABEL = { cativos: 'OS CATIVOS', acampamento: 'O ACAMPAMENTO' };
 function setObjective() { chapterObjective(); if (campBattle?.story) $('objm').textContent = 'CAMPANHA · ' + STORY_LABEL[chapter]; }
 function chapterObjective() { $('objh').classList.toggle('hidden', !campBattle?.retreat);
-  if (campBattle && !campBattle.story) { $('objm').textContent = 'CAMPANHA · ' + CAMP_OPENING[campBattle.plan.type][0].toUpperCase(); const left = enemies.filter(e => !e.dead).length, rt = campBattle.retreat;
+  if (campBattle && !campBattle.story) { $('objm').textContent = 'CAMPANHA · ' + CAMP_OPENING[campBattle.plan.type].toUpperCase(); const left = enemies.filter(e => !e.dead).length, rt = campBattle.retreat;
     if (rt) $('objh').textContent = rt.on ? 'G desfaz a retirada.' : `Retirada possível: orla a ${rt.dir} (G).`;
     if (rt && rt.on) { $('objt').textContent = `Retirada — chega à orla a ${rt.dir}`; return; }
     if (campBattle.plan.type === 'decisiva') { $('objt').textContent = `Decisiva — ${campBattle.spec.commander || 'o pretor'} (${left} romanos)`; return; }
@@ -2385,7 +2380,7 @@ function damagePlayer(dmg, from, ranged) {
     const fromAngle = deg(Math.acos(clamp(flatFwd().dot(dd), -1, 1)));
     const res = C.resolveHit(P.f, { dir: 'left', power: 1, fromAngle, baseDamage: dmg * DIFF[diff].dmg, kind: 'javelin' });
     P.lastDefense = res.result;
-    if (res.result === 'blocked') { SFX.thud(); P.shake = .15; clog('Dardo bloqueado', '#a8c8e0'); if (res.stuck) showPrompt('Dardo cravado no escudo — R para arrancar', 1.4); return; }
+    if (res.result === 'blocked') { SFX.thud(); P.shake = .15; clog('Dardo bloqueado', '#a8c8e0'); if (res.stuck) showPrompt('[R] Arrancar o dardo', 1.4); return; }
     hurtPlayer(res.damage, from); return;
   }
   hurtPlayer(dmg * DIFF[diff].dmg, from);
@@ -2812,7 +2807,7 @@ function updatePlayer(dt) {
   if (P.cleanT > 0) { P.cleanT -= dt; if (P.cleanT <= 0) { P.f.stuckJavelins = 0; feed('Escudo limpo'); } }
   // press / release edges of the left button
   if (mouseL && !P.prevL && placing) { placeFlag(); P.prevL = true; }
-  else if (mouseL && !P.prevL && P.unarmed) { showPrompt('Estás desarmado: recua', 1); }
+  else if (mouseL && !P.prevL && P.unarmed) { showPrompt('Estás desarmado', 1); }
   else if (mouseL && !P.prevL) {
     if (P.w === 0) { P.charging = true; P.chargeT = 0; P.acc.x = P.intent.x; P.acc.y = P.intent.y; }
     else beginThrow();
@@ -2844,8 +2839,6 @@ function updatePlayer(dt) {
   let inc = null, incD = 4;
   for (const e of enemies) if (!e.dead && e.f.phase === 'windup') { const d = e.pos.distanceTo(P.pos); if (d < incD) { incD = d; inc = e.f.dir; } }
   P.incomingDir = inc;
-  P.hintCd = Math.max(0, (P.hintCd || 0) - dt);
-  if (inc && incD < 3.4 && !P.f.blocking && !P.unarmed && P.w !== 2 && (P.blockHints || 0) < 4 && P.hintCd <= 0) { P.blockHints = (P.blockHints || 0) + 1; P.hintCd = 6; showPrompt('Golpe a caminho: segura o BOTÃO DIREITO para levantar o escudo', 1.4); }
   for (const ev of C.tickFighter(P.f, dt)) if (ev.type === 'swing') playerSwing(ev);
   sampleTrail('player', P.pos, playerFacing(), P.f);
   if (P.throwPending) { P.throwPending -= dt; if (P.throwPending <= 0) { P.throwPending = 0; releaseThrow(); } }
@@ -3039,11 +3032,7 @@ function skipHint() {
   if (skipEl) skipEl.style.display = on ? 'block' : 'none';
 }
 let introVeil = null, introTitled = false, introHorn = false;
-const OPENING = {
-  cativos: ['I · Os Cativos', 'Agacha-te (C), mata os guardas pelas costas ou com dardos, e corta as cordas (E). Os teus dois homens só atacam quando a luta começar.'],
-  emboscada: ['II · A Emboscada', 'Agacha-te (C) e aproxima-te sem seres visto. Um golpe pelas costas é mortal.'],
-  acampamento: ['III · O Acampamento', 'Agacha-te (C) e avança pelo mato: à vista, a guarnição dá o alarme. Queima os três depósitos (E) e o centurião sai para te enfrentar.'],
-};
+const OPENING = { cativos: 'I · Os Cativos', emboscada: 'II · A Emboscada', acampamento: 'III · O Acampamento' };   // só o título do capítulo
 function startGame(intro = false) {
   initAudio();
   campIntro = false;   // qualquer arranque de capítulo/batalha limpa o prólogo-da-campanha; startCampaign volta a ligá-lo depois
@@ -3060,7 +3049,7 @@ function startGame(intro = false) {
     introVeil.style.display = 'block'; introVeil.style.opacity = 1;
   }
   else if (chapter === 'prologo') { setRing(RING_R1); for (const e of enemies) if (e.group === 'cordon') { e.pos.set(e.home.x, heightAt(e.home.x, e.home.z), e.home.z); e.m.root.position.copy(e.pos); } betray(); }
-  else showMsg(...(campBattle && !campBattle.story ? CAMP_OPENING[campBattle.plan.type].map(t => campBattle.spec.commander ? t.replace('O pretor', campBattle.spec.commander) : t) : OPENING[chapter] || OPENING.emboscada), 5);
+  else showMsg(campBattle && !campBattle.story ? CAMP_OPENING[campBattle.plan.type] : OPENING[chapter] || OPENING.emboscada, '', 5);
   lock();
 }
 const INTRO_P = 17;
@@ -3136,7 +3125,7 @@ function endIntro() {
     for (const e of enemies) { if (e.hidden) { e.hidden = false; e.m.root.visible = true; } if (e.group === 'cordon' && !e.party && Math.hypot(e.pos.x - e.home.x, e.pos.z - e.home.z) > 6) { e.pos.set(e.home.x, heightAt(e.home.x, e.home.z), e.home.z); e.m.root.position.copy(e.pos); } }   // skipped: the ring is already shut
     betray(); return;
   } view = introView; $('hud').classList.remove('hidden'); updateHUDWeapon();
-  showMsg(...OPENING[chapter] || OPENING.emboscada, 5);
+  showMsg(OPENING[chapter] || OPENING.emboscada, '', 5);
 }
 /** Drop every held input and combat stance (used when the game loses focus). */
 function releaseAll() {
@@ -3299,7 +3288,7 @@ setListener(camera);
 resetWorld();
 $('start').disabled = false; $('start').textContent = i18n.t('interface.start');
 return {
-  startCampaign, showCampaignMap, get campIntro() { return campIntro; }, campaignStorage: storage, campaign: campUI, startCampaignBattle,
+  startCampaign, showCampaignMap, get campIntro() { return campIntro; }, campaignStorage: storage, i18n, campaign: campUI, startCampaignBattle,
   campaignTest: { YEAR_DAYS, get retreat() { const r = campBattle?.retreat; return r ? { on: r.on, at: { ...r.at }, via: r.via ? { ...r.via } : null, dir: r.dir } : { on: false, at: null, via: null }; }, forceBattle: spec => { const f = campUI.flow; f.battle = spec; f.phase = 'batalha'; campUI.render(); return f; } },
   start: (d, ch = 'emboscada') => { if (d != null) diff = d; setChapter(ch); startGame(false); }, startIntro: (ch = chapter) => { setChapter(ch); startGame(true); }, get civs() { return civs; }, get riders() { return riders; }, get chapter() { return chapter; }, MEADOW, ESCAPE, CASTRO, roadX, get carts() { return carts; }, get introT() { return introT; }, step, render: () => { if (state === 'menu' || state === 'map') return; updateBoughs(P.pos.x, P.pos.z, camera.position.x, camera.position.z); cullChunks(CHUNKS, camera.position); cullCharacters(enemies, camera.position); cullCharacters(allies, camera.position); cullCharacters(civs, camera.position); R.render(); }, setQuality: q => R.setQuality(q), get quality() { return R.state.preset; }, resume, use, damagePlayer,
   P, supplyTents, heightAt, CAMP, scene, camera, CHUNKS,

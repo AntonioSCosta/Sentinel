@@ -110,7 +110,8 @@ try {
   await shot('02-tactical-battle');
   await iframe.locator('#view').evaluate(() => window.__proto.run(600));
   await iframe.locator('#campaign-return').waitFor({ timeout: 20000 });
-  await iframe.locator('#lang').selectOption('pt-PT');
+  assert.equal(await iframe.locator('#lang').count(), 0, 'a arena não tem seletor de idioma');
+  await page.evaluate(() => window.__game.i18n.setLocale('pt-PT'));   // como o menu principal: a arena partilha o i18n do jogo
   assert.equal(await iframe.locator('h1').textContent(), 'A Emboscada');
   assert.equal(await iframe.locator('#campaign-return').textContent(), 'Voltar à campanha');
   await shot('03-tactical-result');

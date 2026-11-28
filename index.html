@@ -87,22 +87,60 @@
   #m-captains .cap[aria-pressed="true"]{outline:2px solid var(--gold);outline-offset:2px}
   #m-captains .cap:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
   @media (max-width:550px){   /* no telemóvel os selos saem do rodapé (que fica como estava) para uma doca pequena sobre o mapa */
+    #mcap{padding-bottom:64px}   /* a ficha rola até libertar a doca dos selos */
     #m-captains{position:absolute;right:8px;bottom:calc(var(--map-compact-footer,56px) + 8px);z-index:2;gap:4px;padding:4px;border:1px solid #4a3a2a;border-radius:22px;background:rgba(16,13,10,.88)}
     #m-captains .cap{width:32px;height:32px;padding:2px}#m-captains .cap svg{width:15px;height:15px}#m-captains .cap .lvl{display:none}}
-  #mcap{padding:10px 16px 16px}
+  /* A ficha do capitão e as cartas (a mesma moldura na ficha e na escolha ao subir de nível). A cor da moldura acompanha a raridade; o rótulo está sempre em texto. */
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  #mcap{padding:10px 16px 16px;border-left:2px solid var(--gold)}
   #mcap .back{min-height:32px;padding:2px 10px;font-family:'EB Garamond',serif;font-size:15px;letter-spacing:0}
-  #mcap h3{margin:10px 0 2px;font-family:'Cinzel',serif;color:var(--gold);font-size:20px;font-weight:400}#mcap h3:focus{outline:none}
-  #mcap .sub{margin:0 0 6px;color:var(--dim);font-size:15px;line-height:1.3}
-  #mcap h4{font-family:'Cinzel',serif;font-size:12px;letter-spacing:.18em;color:var(--dim);text-transform:uppercase;margin:14px 0 6px;font-weight:400}
-  #mcap p{margin:3px 0;font-size:15px;line-height:1.3}#mcap .dim{color:var(--dim)}#mcap .gain{color:#d9e3bf}#mcap .cost{color:#e6c9a8}
-  #mcap .bar{height:5px;margin:2px 0 4px;background:#2a2119;border:1px solid #4a3a2a}#mcap .bar i{display:block;height:100%}
-  #mcap .traits,#mcap .notes{list-style:none;margin:0;padding:0}
-  #mcap .traits li{margin:0 0 8px;padding-left:10px;border-left:2px solid #6a5238}#mcap .traits li.scar{border-left-color:#8a3a2a}#mcap .traits b{font-weight:400;font-size:16px}
+  #mcap .head{display:flex;align-items:center;gap:12px;margin:12px 0 6px}
+  #mcap .seal{position:relative;flex:none;width:60px;height:60px;padding:4px;border-radius:50%;background:conic-gradient(var(--ring,#d8b25e) calc(var(--l,60) * 1%),#3a2e22 0)}
+  #mcap .seal .face{display:flex;align-items:center;justify-content:center;width:100%;height:100%;border-radius:50%;background:radial-gradient(circle at 35% 30%,#3d2e1e,#16110b 70%);color:#e9d29c}
+  #mcap .seal svg{width:28px;height:28px}
+  #mcap .seal .lvl{position:absolute;right:-4px;bottom:-2px;min-width:16px;padding:0 4px;border:1px solid #6a5238;border-radius:8px;background:#16110b;color:var(--gold);font:11px/15px 'Cinzel',serif;text-align:center}
+  #mcap svg{fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+  #mcap h3{margin:0;font-family:'Cinzel',serif;color:var(--gold);font-size:20px;font-weight:400}#mcap h3:focus{outline:none}
+  #mcap .sub{margin:1px 0 0;color:var(--dim);font-size:15px;line-height:1.3}
+  #mcap .meter{display:grid;grid-template-columns:72px 1fr auto;align-items:center;gap:8px;margin:6px 0 0;font-size:14px;color:var(--dim)}
+  #mcap .meter b{font-weight:400;color:var(--ink)}
+  #mcap .bar{display:block;height:5px;background:#2a2119;border:1px solid #4a3a2a}#mcap .bar i{display:block;height:100%}
+  #mcap h4{display:flex;justify-content:space-between;font-family:'Cinzel',serif;font-size:12px;letter-spacing:.18em;color:var(--dim);text-transform:uppercase;margin:16px 0 7px;font-weight:400}
+  #mcap h4 span{letter-spacing:.06em}
+  #mcap p{margin:3px 0;font-size:15px;line-height:1.3}#mcap .dim{color:var(--dim)}
+  #mcap .fx{list-style:none;margin:0;padding:0}
+  #mcap .fx li{display:flex;gap:6px;margin:2px 0;font-size:14.5px;line-height:1.28}
+  #mcap .fx i{flex:none;width:12px;font-style:normal;text-align:center}
+  #mcap .fx.gain li{color:#d9e3bf}#mcap .fx.gain i{color:#a9d08a}
+  #mcap .fx.cost li{color:#e6c9a8}#mcap .fx.cost i{color:#ff9a7a}
+  #mcap .plaque{display:flex;gap:10px;padding:9px 10px;border:1px solid #4a3a2a;border-radius:3px;background:linear-gradient(180deg,#1f1810,#17120c)}
+  #mcap .plaque .med{flex:none;width:34px;height:34px;border-radius:50%;border:1px solid #6a5238;display:flex;align-items:center;justify-content:center;color:#e9d29c}
+  #mcap .plaque .med svg{width:18px;height:18px}
+  #mcap .plaque b{display:block;margin-bottom:2px;font:400 13px 'Cinzel',serif;letter-spacing:.08em;color:var(--ink)}
+  #mcap .cards,#mcap .notes{list-style:none;margin:0;padding:0}
+  .ccard{--edge:#a07c4e;--glyph:#e9d29c;position:relative;display:flex;gap:10px;padding:10px 10px 9px 12px;margin:0 0 8px;border:1px solid var(--edge);border-radius:6px;
+    background:radial-gradient(120% 90% at 0% 0%,rgba(224,166,74,.10),transparent 60%),linear-gradient(180deg,#2a2016,#1b150e)}
+  .ccard::before,.ccard::after{content:'';position:absolute;width:7px;height:7px;border:1px solid var(--edge);transform:rotate(45deg);background:#16110b}
+  .ccard::before{top:-4px;left:14px}.ccard::after{bottom:-4px;right:14px}
+  .ccard.incomum{--edge:#b9b3a6}.ccard.rara{--edge:#e0a64a;--glyph:#f3d58e}
+  .ccard.cicatriz{--edge:#a3483a;--glyph:#e3a08c;background:radial-gradient(120% 90% at 0% 0%,rgba(200,56,42,.12),transparent 60%),linear-gradient(180deg,#26160f,#1a110c)}
+  .ccard .med{flex:none;width:44px;height:44px;border-radius:50%;border:1px solid var(--edge);display:flex;align-items:center;justify-content:center;color:var(--glyph);
+    background:radial-gradient(circle at 35% 30%,#3d2e1e,#140f0a 72%);box-shadow:inset 0 0 0 3px #140f0a,inset 0 0 0 4px rgba(224,166,74,.25)}
+  .ccard .med svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+  .ccard .cbody{flex:1;min-width:0}
+  .ccard .t{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
+  .ccard .t b{font:400 15px 'Cinzel',serif;letter-spacing:.04em;color:var(--ink)}
+  .ccard .t small{font:10px 'Cinzel',serif;letter-spacing:.14em;text-transform:uppercase;color:var(--edge)}
+  .ccard.slot{min-height:46px;align-items:center;border-style:dashed;background:none;color:#6a5238;font:12px 'Cinzel',serif;letter-spacing:.14em}
+  .ccard.slot::before,.ccard.slot::after{display:none}
   #mcap .notes li{font-size:14px;margin:2px 0}#mcap .notes .up b{color:#a9d08a}#mcap .notes .down b{color:#ff9a7a}#mcap .notes b{font-weight:400;display:inline-block;min-width:28px}
   #mcap .act{margin:8px 0 0}#mcap .act button{display:block;width:100%;min-height:40px;padding:6px 12px;font-family:'EB Garamond',serif;font-size:17px;letter-spacing:0;text-align:left}#mcap .act small{display:block;color:var(--dim);font-size:14px;margin-top:3px}
-  #mcapdlg .decision-choice b{display:block;font-weight:400;font-size:17px}
-  #mcapdlg .decision-choice .rar{float:right;margin-left:8px;font-family:'Cinzel',serif;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
-  #mcapdlg .decision-choice small.gain{color:#d9e3bf}#mcapdlg .decision-choice small.cost{color:#e6c9a8}
+  #mcapdlg .decision-choice.ccard{display:flex;gap:10px;width:100%;margin:0 0 10px;padding:10px 10px 9px 12px;border-color:var(--edge);background:radial-gradient(120% 90% at 0% 0%,rgba(224,166,74,.10),transparent 60%),linear-gradient(180deg,#2a2016,#1b150e);text-align:left}
+  #mcapdlg .decision-choice.ccard.cicatriz{background:radial-gradient(120% 90% at 0% 0%,rgba(200,56,42,.12),transparent 60%),linear-gradient(180deg,#26160f,#1a110c)}
+  #mcapdlg .decision-choice.ccard:hover,#mcapdlg .decision-choice.ccard:focus-visible{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
+  #mcapdlg .fx{list-style:none;margin:0;padding:0}#mcapdlg .fx li{display:flex;gap:6px;margin:2px 0;font-size:14.5px;line-height:1.28}#mcapdlg .fx i{flex:none;width:12px;font-style:normal;text-align:center}
+  #mcapdlg .fx.gain li{color:#d9e3bf}#mcapdlg .fx.gain i{color:#a9d08a}#mcapdlg .fx.cost li{color:#e6c9a8}#mcapdlg .fx.cost i{color:#ff9a7a}
+  #mcapdlg .decision-choice .t small{display:inline;margin:0;font:10px 'Cinzel',serif;color:var(--edge)}
   #mcapdlg .decision-choice:disabled{opacity:.6;cursor:not-allowed}
   #mctx .act{margin:0 0 8px}#mctx .act button{display:block;width:100%;min-height:40px;padding:6px 12px;font-family:'EB Garamond',serif;font-size:17px;letter-spacing:0;text-align:left}
   #mctx .act small{display:block;color:var(--dim);font-size:14px;line-height:1.25;margin-top:2px}
@@ -208,6 +246,8 @@
   .menu-fold .brief{margin:0 4px 8px}
   #sec-controls .row:first-child{margin-top:0}
   #sec-controls .keys{grid-template-columns:auto minmax(0,1fr) auto minmax(0,1fr);padding-inline:4px}
+  .pause-keys{text-align:left;margin:4px 0}.pause-keys .keys{font-size:14px;margin:6px 0 10px}
+  @media (max-width:520px){.pause-keys .keys{grid-template-columns:auto minmax(0,1fr)}}
   #camp-confirm{margin-top:18px;padding:14px 0 0;border-top:1px solid #6b5438}
   #camp-confirm p{margin:0 0 8px}
   #camp-confirm .row{margin:0}
@@ -437,7 +477,7 @@
 <div id="map" class="hidden">
   <header id="mtop">
     <div class="when"><b id="m-date"></b><span id="m-season"></span><span id="m-left"></span></div>
-    <div id="m-time" role="group" aria-label="Tempo (Espaço: pausa e retoma)" data-i18n-aria="map.a11y.time" data-state="pause">
+    <div id="m-time" role="group" aria-label="Tempo (Espaço: pausa ou retoma a ordem em curso; com o bando parado, mantém o Espaço premido para esperar)" data-i18n-aria="map.a11y.time" data-state="pause">
       <button type="button" id="m-pause" aria-pressed="true" aria-label="Pausa" data-i18n-aria="map.a11y.pause"><span aria-hidden="true">❚❚</span></button>
       <button type="button" data-speed="1" aria-pressed="false" aria-label="Velocidade 1×" data-i18n-aria="map.a11y.speed1">1×</button>
       <button type="button" data-speed="2" aria-pressed="false" aria-label="Velocidade 2×" data-i18n-aria="map.a11y.speed2">2×</button>
@@ -475,7 +515,7 @@
   <div id="mtip" class="hidden" role="tooltip"></div>
   <ul id="mlog" role="status" aria-live="polite" aria-label="Últimos acontecimentos" data-i18n-aria="map.a11y.recent" data-reserve-labels></ul>
   <section id="m-int" class="hidden" aria-labelledby="m-int-title" data-reserve-labels>
-    <div role="status" aria-live="polite"><h2 id="m-int-title"></h2><ul id="m-int-list"></ul><p id="m-int-hint"></p></div>
+    <div role="status" aria-live="polite"><h2 id="m-int-title"></h2><ul id="m-int-list"></ul></div>
     <div class="row"><button type="button" id="m-review" class="hidden" aria-haspopup="dialog" data-i18n="map.issuesCopy.review">Ver decisão</button>
       <button type="button" id="m-int-go" class="go hidden" data-i18n="map.resumeTime">Continuar</button></div>
   </section>
@@ -488,6 +528,7 @@
     <section id="mcap" class="hidden" role="region" aria-label="Capitão" aria-labelledby="mcap-name"></section>
   </aside>
   <footer id="mbot">
+    <button type="button" data-act="acampar" id="m-camp" aria-pressed="false" data-i18n="map.camp">Acampar</button>
     <button type="button" data-act="esperar" id="m-ambush" aria-pressed="false" data-i18n="map.ambush">Emboscar</button>
     <button type="button" data-act="esconder" id="m-hide" aria-pressed="false" data-i18n="map.hide">Esconder</button>
     <button type="button" data-act="reconhecer" id="m-recon" aria-pressed="false" data-i18n="map.scout">Reconhecer</button>
@@ -511,8 +552,7 @@
     <div class="decision-head"><span class="kicker" id="mtribute-deadline"></span><span class="decision-time" id="mtribute-time"></span></div>
     <h2 id="mtribute-title"></h2><p id="mtribute-detail"></p>
     <div id="mtribute-options"></div><p id="mtribute-consequence"></p>
-    <div class="decision-foot"><button type="button" id="mtribute-later" data-i18n="map.issuesCopy.later">Decidir depois</button>
-      <label class="language-option"><span data-i18n="interface.language">Idioma</span> <select data-language><option value="en" lang="en">English</option><option value="pt-PT" lang="pt-PT">Português (Portugal)</option></select></label></div>
+    <div class="decision-foot"><button type="button" id="mtribute-later" data-i18n="map.issuesCopy.later">Decidir depois</button></div>
   </div></div>
   <div id="mcapdlg" class="hidden" role="dialog" aria-modal="true" aria-labelledby="mcapdlg-title" aria-describedby="mcapdlg-detail mcapdlg-consequence"><div class="card">
     <div class="decision-head"><span class="kicker" id="mcapdlg-kicker"></span><span class="decision-time" id="mcapdlg-time"></span></div>
@@ -521,10 +561,9 @@
     <div class="decision-foot"><button type="button" id="mcapdlg-later" data-i18n="map.captains.later">Decidir depois</button></div>
   </div></div>
   <div id="mbattle" class="hidden" role="dialog" aria-modal="true" aria-labelledby="mb-type" aria-describedby="mb-info"><div class="card">
-    <div class="decision-head"><span class="kicker">BATALHA</span><span class="decision-time" data-i18n="map.issuesCopy.paused">O tempo está parado</span></div>
+    <div class="decision-head"><span class="kicker">BATALHA</span></div>
     <h2 id="mb-type"></h2><p class="brief" id="mb-info" aria-live="polite"></p>
     <div class="row"><button type="button" class="go" id="mb-fight">Lutar</button><button type="button" id="mb-withdraw" class="hidden">Recusar e recuar</button></div>
-    <div class="decision-foot"><label class="language-option"><span data-i18n="interface.language">Idioma</span> <select data-language><option value="en" lang="en">English</option><option value="pt-PT" lang="pt-PT">Português (Portugal)</option></select></label></div>
   </div></div>
   <div id="mend" class="hidden" role="dialog" aria-modal="true" aria-labelledby="mend-title" aria-describedby="mend-text"><div class="card">
     <p class="kicker">FIM DA CAMPANHA</p><h1 id="mend-title"></h1><p id="mend-result"></p>
@@ -554,7 +593,19 @@
       <button type="button" data-q="high" aria-pressed="false" data-i18n="interface.high">Alta</button>
     </div>
     <div class="row"><label class="lbl" for="sens2" data-i18n="interface.mouse">RATO</label><input id="sens2" type="range" min="1" max="10" value="5"></div>
-    <div class="row"><label class="language-option" for="pause-language"><span data-i18n="interface.language">Idioma</span> <select id="pause-language" data-language><option value="en" lang="en">English</option><option value="pt-PT" lang="pt-PT">Português (Portugal)</option></select></label></div>
+    <details class="menu-fold pause-keys">
+      <summary data-i18n="interface.menuBindings">Controlos</summary>
+      <div class="keys">
+        <b>W A S D</b><span data-i18n="interface.move">mover</span><b data-i18n="interface.mouse">RATO</b><span data-i18n="interface.look">olhar</span>
+          <b data-i18n="interface.click">CLIQUE</b><span data-i18n="interface.attack">atacar ou lançar — segura para mais força</span><b data-i18n="interface.rightClick">CLIQUE DIR.</b><span data-i18n="interface.shield">escudo</span>
+        <b>Q</b><span data-i18n="interface.parry">aparar com a falcata</span><b>Z</b><span data-i18n="interface.follow">companheiros: sigam-me</span><b>X</b><span data-i18n="interface.flag">companheiros: bandeira (aponta e clica)</span><b>T</b><span data-i18n="interface.charge">companheiros: ao ataque</span>
+        <b>R</b><span data-i18n="interface.clearShield">arrancar dardos do escudo</span><b>G</b><span data-i18n="interface.retreatHint">campanha: retirada, se houver serra perto</span>
+          <b data-i18n="interface.weaponKeys">1 2 3 / RODA</b><span data-i18n="interface.weapons">armas</span><b>SHIFT</b><span data-i18n="interface.sprint">correr</span>
+          <b data-i18n="interface.space">ESPAÇO</b><span data-i18n="interface.jump">saltar</span><b>C</b><span data-i18n="interface.crouch">agachar</span>
+        <b>E</b><span data-i18n="interface.use">usar</span><b>ESC</b><span data-i18n="interface.pauseKey">pausa</span>
+        <b>V</b><span data-i18n="interface.perspective">1.ª / 3.ª pessoa</span><span></span><span></span>
+      </div>
+    </details>
     <p id="fps" role="status" style="font-size:15px;opacity:.7;margin-top:6px"></p>
     <p id="pausehint" role="status" style="font-size:16px;color:var(--gold)"></p>
     <div class="row"><button type="button" class="go" id="resume" data-i18n="interface.resume">CONTINUAR</button><button type="button" id="restart" data-i18n="interface.restart">RECOMEÇAR</button><button type="button" id="pretreat" class="hidden" data-i18n="interface.retreat">RETIRAR</button><button type="button" id="abandon" class="hidden" data-i18n="interface.abandon">ABANDONAR (DERROTA)</button></div>

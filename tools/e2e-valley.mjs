@@ -91,13 +91,16 @@ for (const vp of [{ width: 1366, height: 768 }, { width: 844, height: 390 }]) {
   await page.keyboard.press('Escape');
   if (narrow && await page.locator('#mside').isVisible()) await page.keyboard.press('Escape');
 
-  // 6: pausa, 4×, retomar com Espaço; a velocidade fica guardada
-  check(`${tag}: 6 · o tempo começa em pausa`, await page.evaluate(() => !window.__game.campaign.running));
+  // 6: parado o tempo não passa (nem a 4×); Acampar faz passar; pausa e retoma com Espaço; a velocidade fica guardada
+  check(`${tag}: 6 · o tempo começa parado`, await page.evaluate(() => !window.__game.campaign.running));
   const d0 = await page.evaluate(() => window.__game.campaign.flow.state.day);
   await page.click('[data-speed="4"]');
   await page.waitForTimeout(1300);
+  check(`${tag}: 6 · parado, escolher 4× não faz passar dias`, await page.evaluate(d => window.__game.campaign.flow.state.day === d && !window.__game.campaign.running, d0));
+  await page.click('#m-camp');
+  await page.waitForTimeout(1300);
   const d1 = await page.evaluate(() => window.__game.campaign.flow.state.day);
-  check(`${tag}: 6 · a 4× passam dias sozinhos`, d1 >= d0 + 2, `${d0}→${d1}`);
+  check(`${tag}: 6 · a acampar, a 4× passam dias`, d1 >= d0 + 2, `${d0}→${d1}`);
   await page.click('#m-pause');
   const d2 = await page.evaluate(() => window.__game.campaign.flow.state.day);
   await page.waitForTimeout(800);
@@ -107,6 +110,8 @@ for (const vp of [{ width: 1366, height: 768 }, { width: 844, height: 390 }]) {
   check(`${tag}: 6 · Espaço retoma à velocidade escolhida`, await page.evaluate(() => window.__game.campaign.running && window.__game.campaign.speed === 4));
   await page.keyboard.press('Space');
   check(`${tag}: 6 · Espaço volta a pausar; a velocidade está guardada à parte do save`, await page.evaluate(() => !window.__game.campaign.running && localStorage.getItem('viriato.campaign.speed') === '4' && JSON.parse(localStorage.getItem('viriato.campaign')).v === 1));
+  await page.click('#m-camp');
+  check(`${tag}: 6 · desligar Acampar deixa o bando parado`, await page.evaluate(() => window.__game.campaign.stance === null && !window.__game.campaign.running));
 
   // 7: o Diário
   await page.click('#m-diary');

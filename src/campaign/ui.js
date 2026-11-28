@@ -15,7 +15,7 @@ import { TRIBUTE, PUNISH } from './rome.js';
 import { placeName, communityOf, POSTURE_LABEL, SITUATION_LABEL, POSTURE_HINT, SITUATION_HINT, communityLine, chiefLine, officeLine, daysText, UI, ACTION_NO, EFFECT, DIARY, ROME_BAND } from './strings.js';
 import { buildIssues, detectInterruptions, foodDays, interruptionText, LOW_FOOD_DAYS } from './issues.js';
 import { dueScheduled, DECK } from './events.js';
-import { SPEEDS, DAY_MS, loadSpeed, saveSpeed, standingOrder } from './pace.js';
+import { SPEEDS, DAY_MS, loadSpeed, saveSpeed, standingOrder, activityOf, clockRuns } from './pace.js';
 import { categoryOf } from './journal.js';
 import { youth, topMotives, IDENTITY, COMMUNITY_IDS } from './communities.js';
 import { winterReserve } from './harvest.js';
@@ -45,7 +45,6 @@ export function goalLines(s) {
     `Vitória: derrotar o pretor romano na batalha decisiva, ou chegar ao fim do ano com ${WIN_MEN}+ homens e ${WIN_FAME}+ de fama.`,
     `Derrota: ficar sem homens ou sem fama, ou acabar o ano abaixo desses mínimos.`,
     `Homens: o teu bando; comem ${foodPerDay(s.men)} de comida por dia e, sem comida, morrem. Comida: pede ajuda nos castros e obtém mantimentos como saque nas vitórias em combate. Armas: vêm do saque e gastam-se a recrutar nas aldeias. Fama: sobe com vitórias, desce com derrotas e recuos. Recrutas: cada aldeia dá o que a confiança permite, enquanto tiver jovens e tu armas.`,
-    'Primeiros dias: clica numa das cinco aldeias do vale para ver o que pode dar: recruta numa aldeia, pede ajuda (comida) num castro, manda batedores (Reconhecer) e lê os Relatos no Diário antes de aceitar combate.',
   ];
 }
 
@@ -236,7 +235,9 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   let refineTimer = 0;
   let mode = null, reconClick = null, focus = null;   // mode: null | 'reconhecer' (marchar é o clique simples no mapa)
   let dest = null, stance = null;                     // a ordem permanente do bando quando o tempo corre
-  let speed = loadSpeed(storage), running = false, timer = 0;
+  // `running` só se escreve em syncClock (pace.clockRuns); `paused` é a pausa do jogador ou de uma interrupção obrigatória;
+  // `holding` é a espera ao relento (Espaço premido com o bando parado); `space` diz o que a pressão atual do Espaço faz.
+  let speed = loadSpeed(storage), running = false, timer = 0, paused = false, holding = false, space = null;
   let memory = {}, interrupt = [], dismissed = new Set(), flash = {}, flashT = 0, logTimer = 0;
   const LOG_MS = 9000;
   const trail = [];
@@ -273,6 +274,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   const eventMessage = (ev, events) => ev.type === 'emboscada-tatica' ? tMap(`tactical.outcome.${ev.outcome}`, ev)
     : ev.type === 'capitao' ? captainLog(ev)
     : ev.type === 'acontecimento' && DECK.some(e => e.id === ev.id) ? tMap(`deck.${ev.id}`)   // saves antigos trazem também `text` em pt-PT: o id manda
+    : ev.type === 'postura' || ev.type === 'colheita' ? interruptionText({ type: ev.type, event: ev, place: ev.id }, flow.state, i18n)   // já não param o tempo: ficam no registo
     : eventText(ev, flow.state, events);
   const duration = count => tMap('days', { count });
   const settlement = id => flow.state.world.settlements.find(x => x.id === id);
@@ -384,7 +386,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     $('m-food-box').title = tMap('foodTip', { food: s.food, daily: foodPerDay(s.men) });
     $('m-food-box').classList.toggle('low', fd < LOW_FOOD_DAYS);
     $('m-pause').setAttribute('aria-pressed', running ? 'false' : 'true');
-    for (const b of $('m-time').querySelectorAll('[data-speed]')) b.setAttribute('aria-pressed', running && Number(b.dataset.speed) === speed ? 'true' : 'false');
+    for (const b of $('m-time').querySelectorAll('[data-speed]')) b.setAttribute('aria-pressed', Number(b.dataset.speed) === speed ? 'true' : 'false');   // a velocidade escolhida, a correr ou não
     $('m-time').dataset.state = running ? 'run' : 'pause';
     const n = currentIssues().filter(i => i.kind === 'decisao').length;
     $('m-side-toggle').textContent = n ? tMap('countIssues', { name: tMap('issues'), count: n }) : tMap('issues');
@@ -414,6 +416,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
 
   // --- barra de baixo: ordem permanente do bando ---
   function renderStatus() {
+    $('m-camp').setAttribute('aria-pressed', stance === 'acampar' ? 'true' : 'false');
     $('m-ambush').setAttribute('aria-pressed', stance === 'esperar' ? 'true' : 'false');
     $('m-hide').setAttribute('aria-pressed', stance === 'esconder' ? 'true' : 'false');
     $('m-recon').setAttribute('aria-pressed', mode === 'reconhecer' ? 'true' : 'false');
@@ -424,6 +427,9 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
       message = tMap('going', { name: destName(), duration: duration(days), food: days * foodPerDay(flow.state.men) });
     } else if (stance === 'esperar') message = tMap(nearRoadNow() ? 'waiting' : 'waitingFar');
     else if (stance === 'esconder') message = tMap('hiding');
+    else if (stance === 'acampar') message = tMap('camping');
+    else if (holding) message = tMap('holding');
+    if (mode !== 'reconhecer' && paused && ordered()) message = tMap('onHold', { status: message });
     $('m-status').textContent = message;
   }
   const destName = (point = dest) => {
@@ -432,33 +438,55 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   };
   const nearRoadNow = () => nearRoad(flow.state.world, flow.state.party);
 
-  function setDest(p) { dest = p ? { x: p.x, y: p.y } : null; if (dest) stance = null; mode = null; if (dest) play(); else render(); }
-  function setStance(st) { stance = stance === st ? null : st; if (stance) dest = null; mode = null; if (stance) play(); else render(); }
-  function setMode(m) { mode = mode === m ? null : m; if (mode) pause(); render(); }
+  // Uma ordem nova (destino ou postura) põe o tempo a correr; cancelá-la, ou chegar, pára-o (parado, o tempo não passa).
+  function setDest(p) { dest = p ? { x: p.x, y: p.y } : null; if (dest) { stance = null; holding = false; resume(); } mode = null; render(); }
+  function setStance(st) { stance = stance === st ? null : st; if (stance) { dest = null; holding = false; resume(); } mode = null; render(); }
+  function setMode(m) { mode = mode === m ? null : m; render(); }   // a escolher o ponto do reconhecimento o tempo fica suspenso
 
-  // --- tempo ---
-  function play(n) {
-    if (!active || !flow || flow.phase !== 'mapa' || decisionOverlay || map3d?.failed) { render(); return; }
-    if (n) { speed = n; saveSpeed(storage, n); }
-    interrupt = []; tributeNotice = null; running = true; schedule(); render();
+  // --- tempo: uma só autoridade. Corre se e só se há atividade, sem pausa e sem nada que o suspenda (pace.clockRuns) ---
+  const activity = () => activityOf({ dest, stance, holding });
+  const ordered = () => !!activityOf({ dest, stance });   // uma ordem em curso (sem contar a espera ao relento)
+  // Um painel aberto (Diário, Crónica, decisão, escolha do reconhecimento), a batalha, o mapa 3D falhado ou o separador
+  // escondido suspendem o tempo sem apagar a ordem nem a pausa: ao fechar, o relógio volta ao que era.
+  const blocked = () => !active || !flow || flow.phase !== 'mapa' || !!decisionOverlay || diaryOpen() || cronOpen() || !!mode
+    || map3d?.failed === true || !!doc.hidden;
+  /** Arma ou desarma o dia seguinte conforme o estado (`restart`: um dia inteiro a contar de agora). Devolve se mudou. */
+  function syncClock(restart = false) {
+    if (holding && blocked()) holding = false;   // a espera ao relento não sobrevive a um painel: só volta com nova pressão
+    const on = clockRuns({ activity: activity(), paused, blocked: blocked() });
+    if (timer && (!on || restart)) { win.clearTimeout?.(timer); timer = 0; }
+    if (on && !timer) timer = win.setTimeout?.(tick, DAY_MS / speed) ?? 0;
+    const changed = on !== running;
+    running = on;
+    return changed;
+  }
+  /** Retoma a ordem em curso (Continuar, Espaço, ❚❚): tira a pausa e a interrupção já vista. */
+  function resume() { paused = false; interrupt = []; tributeNotice = null; }
+  /** Continuar (e gancho de testes): retoma; `n` também muda a velocidade. Sem ordem em curso, o tempo continua parado. */
+  function play(n) { if (n) setSpeed(n); resume(); render(); }
+  function pause() { paused = true; holding = false; if (active && flow) render(); else syncClock(); }
+  /** Muda e grava a velocidade; se o relógio corria, o dia seguinte conta a partir de agora. Nunca retoma o tempo. */
+  function setSpeed(n) {
+    if (!SPEEDS.includes(n) || n === speed) { render(); return; }
+    speed = n; saveSpeed(storage, n);
+    if (running) syncClock(true);
+    render();
   }
   // O tempo não corre com o separador escondido (ninguém está a ver): pára, e fica parado ao voltar (a velocidade guarda-se).
-  // Um só ouvinte, registado quando a interface é criada.
-  doc.addEventListener('visibilitychange', () => { if (doc.hidden && running) pause(); });
-  function pause() { running = false; if (timer) win.clearTimeout?.(timer); timer = 0; if (active && flow) render(); }
-  function schedule() { if (timer) win.clearTimeout?.(timer); timer = running ? win.setTimeout?.(tick, DAY_MS / speed) ?? 0 : 0; }
+  // Perder o foco da janela acaba a espera ao relento (a tecla pode ser largada noutra janela). Ouvintes registados uma vez.
+  doc.addEventListener('visibilitychange', () => { if (!doc.hidden) return; space = null; if (running) pause(); else { holding = false; syncClock(); } });
+  win.addEventListener('blur', () => { space = null; if (!holding) return; holding = false; if (active && flow) render(); else syncClock(); });
   /** Um dia com o tempo a correr: a ordem permanente do bando, e pára se houver motivo (issues.detectInterruptions). */
   function tick() {
     timer = 0;
-    if (!running || !active || !flow || flow.phase !== 'mapa') { running = false; render(); return; }
+    if (!clockRuns({ activity: activity(), paused, blocked: blocked() })) { if (active && flow) render(); else syncClock(); return; }
     step(standingOrder({ dest, stance }));
-    if (running) schedule();
   }
   /** Dá um dia com a ordem `o` e trata do que veio: chegada, interrupções, batalha. Devolve o resultado do fluxo. */
   function step(o) {
     const r = order(o);
     if (!r) return r;
-    if (dest && !r.refused && Math.hypot(flow.state.party.x - dest.x, flow.state.party.y - dest.y) < ARRIVAL) { const arrived = dest; log.push(() => tMap('arrived', { name: destName(arrived) })); logDirty = true; dest = null; }
+    if (dest && !r.refused && Math.hypot(flow.state.party.x - dest.x, flow.state.party.y - dest.y) < ARRIVAL) { const arrived = dest; const place = flow.state.world.settlements.some(x => Math.hypot(x.x - arrived.x, x.y - arrived.y) < 1); log.push(() => (place ? tMap('arrived', { name: destName(arrived) }) : tMap('arrivedPoint'))); logDirty = true; dest = null; }
     if (r.refused && o.kind === 'marchar') dest = null;
     const wasLow = memory.lowFood ?? false, wasEmpty = memory.emptyFood ?? false;
     const reasons = r.refused ? [] : detectInterruptions({ state: flow.state, events: r.events, memory, battle: r.battle });
@@ -473,8 +501,9 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
       memory.lowFood = low;
       memory.emptyFood = empty;
     }
-    if (reasons.length || flow.phase !== 'mapa') { interrupt = reasons.filter(x => x.type !== 'batalha'); tributeNotice = null; running = false; if (timer) win.clearTimeout?.(timer); timer = 0; }
-    else if (running) schedule();   // uma ordem dada a meio de um dia reinicia o relógio: o dia seguinte vem um dia inteiro depois, não o que faltava
+    // Encontro ou decisão obrigatória: pára (a ordem fica, para retomar com Continuar ou Espaço; a espera ao relento acaba).
+    if (reasons.length || flow.phase !== 'mapa') { interrupt = reasons.filter(x => x.type !== 'batalha'); tributeNotice = null; paused = true; holding = false; }
+    syncClock(true);   // uma ordem dada a meio de um dia reinicia o relógio: o dia seguinte vem um dia inteiro depois, não o que faltava
     render();
     return r;
   }
@@ -487,10 +516,10 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
       if (!t) continue;
       if (ev.id && ['postura', 'castigo', 'ocupada', 'comunidade-queimada', 'comunidade-abandonada', 'tributo-pago', 'castigo-fim', 'ocupada-fim'].includes(ev.type)) flash[ev.id] = now();
       // The state strip or decision panel presents these events. The journal retains every event.
-      if (['postura', 'colheita', 'tributo-exigido', 'tributo-pago', 'tributo-recusado'].includes(ev.type)) continue;
+      if (['tributo-exigido', 'tributo-pago', 'tributo-recusado'].includes(ev.type)) continue;
       if (ev.type === 'capitao' && ['evolucao', 'crise', 'desertor', 'acalmou', 'fama'].includes(ev.what)) continue;   // o selo, os assuntos e o topo já o mostram
       if (t === lastSaid && log.length) { repeat += 1; log[log.length - 1] = `${t} (${repeat}.º dia)`; }
-      else { lastSaid = t; repeat = 1; log.push(ev.type === 'emboscada-tatica' || ev.type === 'capitao' ? () => eventMessage(ev) : t); }
+      else { lastSaid = t; repeat = 1; log.push(['emboscada-tatica', 'capitao', 'postura', 'colheita'].includes(ev.type) ? () => eventMessage(ev) : t); }
       logDirty = true;
     }
     if (log.length > 40) log.splice(0, log.length - 40);
@@ -524,20 +553,12 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   function renderIssues() {
     const box = $('missues'), list = $('missues-list'), panel = !!((selected || capSelected) && flow.phase === 'mapa');
     box.classList.toggle('hidden', panel);
-    const covered = i => interrupt.some(x => {
-      if (x.type !== i.type) return false;
-      if (x.type === 'comida') return true;
-      if (!i.event || i.day < flow.state.day - 1) return false;
-      if (x.type === 'postura') return x.place === i.place && x.event.from === i.event.from && x.event.to === i.event.to;
-      return x.type === 'colheita' && x.event.season === i.event.season && x.event.total === i.event.total;
-    });
-    const items = currentIssues().filter(i => !covered(i));
+    const items = currentIssues();
     const key = `${issuesKey}:${items.map(i => i.key).join('|')}`;
     if (list.dataset.key === key) return;
     list.dataset.key = key;
     const keep = list.contains(doc.activeElement) ? doc.activeElement.dataset.issue : null;
     list.textContent = '';
-    if (!items.length) { list.append(el('li', 'none', tMap('noIssues'))); return; }
     for (const i of items) list.append(issueCard(i));
     if (keep) list.querySelector(`[data-issue="${CSS_ESC(keep)}"]`)?.focus?.();
   }
@@ -635,7 +656,6 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     $('mtribute-title').textContent = issue.title;
     $('mtribute-deadline').textContent = `${tIssue('decision')} · ${tIssue('deadline', { duration: duration(issue.deadline) })}`;
     $('mtribute-detail').textContent = issue.detail;
-    $('mtribute-time').textContent = tIssue(running ? 'running' : 'paused');
     $('mtribute-consequence').textContent = issue.consequence;
     const options = $('mtribute-options'), had = options.contains(doc.activeElement) ? doc.activeElement.dataset.act : null;
     options.replaceChildren();
@@ -667,7 +687,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const reasons = mapPhase ? interrupt.filter(reason => reason.type !== 'pedido' || pending.some(i => i.place === reason.place)) : [];
     const notice = mapPhase && tributeNotice;
     const stopped = !running && !!(reasons.length || notice || pending.length || scheduled);
-    const heading = stopped ? tMap('timeStopped') : pending.length ? tIssue('remaining', { count: pending.length })
+    const heading = stopped ? (reasons.length || pending.length ? tIssue('decision') : tIssue('chapter')) : pending.length ? tIssue('remaining', { count: pending.length })
       : scheduled ? tIssue('chapter') : notice ? tIssue('decision') : '';
     const lines = reasons.map(reason => interruptionText(reason, flow.state, i18n));
     if (notice) lines.push(tIssue(notice.action === 'pagar' ? 'paid' : 'refused', { ...notice, name: displayName(notice.place) }));
@@ -676,12 +696,10 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     $('m-int').classList.toggle('hidden', !(heading || lines.length));
     $('m-review').classList.toggle('hidden', !pending.length);
     $('m-int-go').classList.toggle('hidden', !stopped || map3d?.failed === true);
-    const hint = stopped && !map3d?.failed ? tIssue('resumeHint') : '';
-    const key = JSON.stringify([i18n.locale, heading, lines, hint, reasons]);
+    const key = JSON.stringify([i18n.locale, heading, lines, reasons]);
     if (stripContent === key) return;
     stripContent = key;
     $('m-int-title').textContent = heading;
-    $('m-int-hint').textContent = hint;
     const ul = $('m-int-list'); ul.replaceChildren();
     for (const [index, text] of lines.entries()) {
       const reason = reasons[index];
@@ -787,7 +805,6 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     }
     for (const a of actionsFor(s, c)) acts.append(actionRow(a));
     if (c) { box.append(el('p', 'later', UI.panel.later)); }
-    if (flow.phase === 'mapa') box.append(el('p', 'risk dim', tMap('panelRisk')));   // sempre o mesmo texto: não diz se há ou não algo escondido
     if (had) box.querySelector(`[data-act="${CSS_ESC(had)}"]`)?.focus?.();
   }
   /** As ações que existem para este lugar, cada uma com o que daria (pré-visualização) ou porque não se pode. */
@@ -881,6 +898,38 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     incendiario: '<path d="M12 3.2c.8 3.6 5.6 5.4 4.8 10.3a4.9 4.9 0 0 1-9.6 0c0-2.6 1.6-3.7 2-6.2 1 1.6 1.7 2.4 2.7 2.6.4-2.4-.6-4.4.1-6.7z"/>',
     veterano: '<path d="M5.5 15a6.5 6.5 0 0 1 13 0v3.5h-13z"/><path d="M12 8.5V4"/><path d="M8 4.5h8"/><path d="M9 18.5v-3h6v3"/>',
   };
+  const TRAIT_GLYPH = {   // o mesmo traço de pena dos selos: escudo, moeda, galinha, folha, trilho, punhal, coruja, torque, mão, garras
+    'duro-de-roer': '<path d="M12 3.5 5 6v5.5c0 4.2 3 7.2 7 9 4-1.8 7-4.8 7-9V6z"/><path d="M12 8v8M8.5 11.5h7"/>',
+    'olho-no-ouro': '<circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="3.8"/><path d="M12 4.5v3.2"/>',
+    'ladrao-de-galinhas': '<path d="M7 14c0-3.5 2-6 5-6 2.5 0 4 1.5 4 3.5 0 1 .6 1.7 1.5 2-1 2.8-3.5 4.5-6.5 4.5C8.5 18 7 16.5 7 14z"/><path d="M13.5 8.5c0-1.5.8-2.5 2-2.5"/><path d="M17.2 11.2l2 .8-2 .8"/>',
+    'emboscador-nato': '<path d="M4.5 19C5 10 11 5 19.5 4.5c-.5 8.5-5.5 14.5-15 14.5z"/><path d="M4.5 19 14 9.5"/>',
+    'conhecedor-dos-trilhos': '<path d="M4 20c2-4 5-5 8-5s5-3 4-6-4-4-6-2"/><path d="M6 17.5h.01M9.5 15h.01M13 13.5h.01"/>',
+    vingativo: '<path d="M12 3 14 12h-4z"/><path d="M12 12v5"/><path d="M8.5 17h7"/><path d="M12 17v3.5"/>',
+    'olhos-de-coruja': '<circle cx="8.5" cy="11" r="3.2"/><circle cx="15.5" cy="11" r="3.2"/><path d="M5 6.5 8.5 8M19 6.5 15.5 8M12 14.5l-1 2h2z"/>',
+    'querido-do-povo': '<path d="M6 15a6.5 6.5 0 1 1 12 0"/><circle cx="6" cy="15.5" r="1.4"/><circle cx="18" cy="15.5" r="1.4"/><path d="M8.5 19h7"/>',
+    'mao-ferida': '<path d="M8.5 20v-5l-2-3c-.5-.9.6-1.8 1.4-1l1.6 1.8V6c0-1.2 1.8-1.2 1.8 0v5.5V5c0-1.2 1.8-1.2 1.8 0v6.5V6c0-1.2 1.8-1.2 1.8 0V15c0 3-1 4-2 5z"/><path d="M7 15.5l9-3"/>',
+    'rancor-a-roma': '<path d="M7 4.5l5 15M11 4l4.5 14M15 4.5l3.5 11"/>',
+  };
+  const svgOf = paths => `<svg viewBox="0 0 24 24" aria-hidden="true">${paths}</svg>`;
+  const cardsOf = c => c.traits.filter(t => TRAITS[t]);   // as cartas: as cicatrizes contam à parte
+  /** Uma lista de linhas curtas (a chave guarda uma por linha): «+» benefício, «−» custo; o marcador é só desenho, o leitor de ecrã ouve «Ganho» ou «Custo». */
+  function fxList(text, kind) {
+    const ul = el('ul', `fx ${kind}`);
+    for (const line of String(text).split('\n')) {
+      const li = el('li'), mark = el('i', null, kind === 'gain' ? '+' : '−'); mark.setAttribute('aria-hidden', 'true');
+      li.append(mark, el('span', 'sr', `${tCap(kind)}: `), line);
+      ul.append(li);
+    }
+    return ul;
+  }
+  /** O interior de uma carta (traço ou cicatriz), igual na ficha e na escolha ao subir de nível: medalhão, título, raridade, ganho e custo. */
+  function cardInner(id) {
+    const kind = SCARS[id] ? 'cicatriz' : TRAITS[id].rarity;
+    const med = el('span', 'med'); med.innerHTML = svgOf(TRAIT_GLYPH[id] ?? '');
+    const head = el('span', 't'); head.append(el('b', null, tCap(`trait.${id}`)), el('small', null, tCap(`rarity.${kind}`)));
+    const body = el('span', 'cbody'); body.append(head, fxList(tCap(`traitGain.${id}`), 'gain'), fxList(tCap(`traitCost.${id}`), 'cost'));
+    return { kind, nodes: [med, body] };
+  }
   let capSelected = null, capKey = null, capsKey = '', capPanelKey = '', capDlgKey = '';
   const capOf = id => flow.state.captains?.find(c => c.id === id) ?? null;
   const ringOf = l => (l <= CAPTAIN_RULES.loyalty.crisis ? '#c8382a' : l < 50 ? '#c07a32' : '#d8b25e');
@@ -895,13 +944,13 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     capSelected = id;
     if (id) { selected = null; if (narrow()) setSide(true); }
     render();
-    if (id) $('mcap').querySelector('h3')?.focus?.();
+    if (id) { $('mside').scrollTop = 0; $('mcap').querySelector('h3')?.focus?.({ preventScroll: true }); }   // a ficha abre sempre vista de cima
     else $('m-captains').querySelector('.cap')?.focus?.();
   }
   /** Os selos: um por capitão, com a lealdade no anel, o nível e um ponto quando há uma decisão dele à espera. */
   function renderCaptains() {
     const box = $('m-captains'), list = flow.state.captains || [];
-    const key = JSON.stringify([i18n.locale, capSelected, list.map(c => [c.id, c.level, c.loyalty, c.active, !!c.offer, !!c.crisis])]);
+    const key = JSON.stringify([i18n.locale, capSelected, list.map(c => [c.id, c.level, c.loyalty, c.active, !!c.offer, !!c.crisis, c.traits.length])]);
     if (key === capsKey) return;
     capsKey = key;
     const had = box.contains(doc.activeElement) ? doc.activeElement.dataset.cap : null;
@@ -910,8 +959,8 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
       const b = el('button', `cap${c.active ? '' : ' reserve'}${c.crisis ? ' crisis' : ''}`); b.type = 'button'; b.dataset.cap = c.id;
       b.style.setProperty('--l', c.loyalty); b.style.setProperty('--ring', ringOf(c.loyalty));
       const status = c.crisis ? tCap('issue.crisis', { name: c.name }) : c.offer ? tCap('pending') : null;
-      const head = tCap(c.active ? 'tip' : 'tipReserve', { name: c.name, archetype: capName(c.archetype), level: c.level, loyalty: c.loyalty });
-      b.title = [head, status, tCap(`passive.${c.archetype}`)].filter(Boolean).join('\n');
+      const head = tCap(c.active ? 'tip' : 'tipReserve', { name: c.name, archetype: capName(c.archetype), level: c.level, loyalty: c.loyalty, cards: cardsOf(c).length, max: CAPTAIN_RULES.cards.maxTraits });
+      b.title = [head, status, tCap(`passive.${c.archetype}`).split('\n')[0]].filter(Boolean).join('\n');
       b.setAttribute('aria-label', [head, status].filter(Boolean).join(' · '));
       b.setAttribute('aria-pressed', capSelected === c.id ? 'true' : 'false');
       const face = el('span', 'face'); face.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${GLYPH[c.archetype]}</svg>`;
@@ -922,7 +971,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     }
     if (had) box.querySelector(`[data-cap="${CSS_ESC(had)}"]`)?.focus?.();
   }
-  /** A ficha do capitão escolhido, no lugar dos assuntos: o que faz no mapa e na batalha, traços, lealdade e reserva. */
+  /** A ficha do capitão escolhido, no lugar dos assuntos: cabeçalho, natureza inata, cartas (e cicatrizes) e o que lhe mexeu na lealdade. */
   function renderCaptain() {
     const box = $('mcap'), c = capSelected && flow.phase === 'mapa' ? capOf(capSelected) : null;
     if (capSelected && !c) capSelected = null;
@@ -934,34 +983,46 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (key === capPanelKey) return;
     capPanelKey = key;
     box.textContent = '';
+    const head = (title, note) => { const h = el('h4', null, title); if (note) h.append(el('span', null, note)); return h; };
     const back = el('button', 'back', tCap('back')); back.type = 'button'; back.addEventListener('click', () => selectCaptain(null));
+    const seal = el('span', 'seal'); seal.style.setProperty('--l', c.loyalty); seal.style.setProperty('--ring', ringOf(c.loyalty));
+    const face = el('span', 'face'); face.innerHTML = svgOf(GLYPH[c.archetype]);
+    seal.append(face, el('span', 'lvl', ROMAN[c.level]));
     const h = el('h3', null, c.name); h.id = 'mcap-name'; h.tabIndex = -1;
-    box.append(back, h, el('p', 'sub', `${capName(c.archetype)} · ${tCap('level', { level: c.level })} · ${c.active ? tCap('active') : tCap('reserve')}`));
+    const who = el('div', 'who'); who.append(h, el('p', 'sub', `${capName(c.archetype)} · ${c.active ? tCap('active') : tCap('reserve')}`));
+    const top = el('div', 'head'); top.append(seal, who);
+    box.append(back, top);
+    const meter = (label, fraction, color, value) => {
+      const row = el('div', 'meter'), bar = el('span', 'bar'), fill = el('i'); fill.style.width = `${fraction * 100}%`; fill.style.background = color; bar.append(fill);
+      row.append(el('span', null, label), bar, el('b', null, value)); return row;
+    };
+    const next = CAPTAIN_RULES.xp.levels[c.level - 1];
+    box.append(meter(tCap('loyaltyLabel'), c.loyalty / 100, ringOf(c.loyalty), c.loyalty),
+      meter(tCap('level', { level: ROMAN[c.level] }), next === undefined ? 1 : c.xp / next, '#8a6a42', next === undefined ? tCap('xpMax') : tCap('xpPair', { xp: c.xp, next })));
     for (const i of pending) {
       const row = el('div', 'act'), b = el('button', null, i.type === 'capitao-evolucao' ? tCap('pending') : tCap('resolve'));
       b.type = 'button'; b.setAttribute('aria-haspopup', 'dialog'); b.addEventListener('click', () => openCapDecision(i.key));
       row.append(b, el('small', null, i.title)); box.append(row);
     }
-    box.append(el('h4', null, tCap('loyalty', { value: c.loyalty })));
-    const bar = el('div', 'bar'), fill = el('i'); fill.style.width = `${c.loyalty}%`; fill.style.background = ringOf(c.loyalty); bar.append(fill);
-    const next = CAPTAIN_RULES.xp.levels[c.level - 1];
-    box.append(bar, el('p', 'dim', next === undefined ? tCap('xpMax') : tCap('xp', { xp: c.xp, next })));
-    box.append(el('h4', null, tCap('onMap')), el('p', 'gain', tCap(`passive.${c.archetype}`)), el('p', 'cost', tCap(`costs.${c.archetype}`)));
-    box.append(el('h4', null, tCap('inBattle')), el('p', 'dim', tCap('skillSoon', { skill: tCap(`skill.${c.activeSkill}`) })));
-    box.append(el('h4', null, tCap('traits')));
-    if (!c.traits.length) box.append(el('p', 'dim', tCap('noTraits')));
-    else {
-      const ul = el('ul', 'traits');
-      for (const t of c.traits) {
-        const li = el('li', SCARS[t] ? 'scar' : '');
-        li.append(el('b', null, `${tCap(`trait.${t}`)} · ${tCap(`rarity.${SCARS[t] ? 'cicatriz' : TRAITS[t].rarity}`)}`), el('p', 'gain', tCap(`traitGain.${t}`)), el('p', 'cost', tCap(`traitCost.${t}`)));
-        ul.append(li);
-      }
-      box.append(ul);
+    // a natureza do arquétipo: inata, numa placa, para não se confundir com as cartas que a progressão dá
+    const plaque = el('div', 'plaque'), pm = el('span', 'med'), pb = el('span', 'cbody');
+    pm.innerHTML = svgOf(GLYPH[c.archetype]);
+    pb.append(el('b', null, capName(c.archetype)), fxList(tCap(`passive.${c.archetype}`), 'gain'), fxList(tCap(`costs.${c.archetype}`), 'cost'));
+    plaque.append(pm, pb);
+    box.append(head(tCap('nature'), tCap('natureNote')), plaque);
+    // as cartas (até ao máximo; as ranhuras livres ficam vazias) e, à parte, as cicatrizes
+    const cards = cardsOf(c), max = CAPTAIN_RULES.cards.maxTraits, list = el('ul', 'cards');
+    for (const id of cards) { const { kind, nodes } = cardInner(id), li = el('li', `ccard ${kind}`); li.append(...nodes); list.append(li); }
+    for (let n = cards.length; n < max; n++) { const li = el('li', 'ccard slot', ROMAN[n + 1]); li.setAttribute('aria-label', tCap('slot')); list.append(li); }
+    box.append(head(tCap('cards'), tCap('cardsOf', { n: cards.length, max })), list);
+    const scars = c.traits.filter(t => SCARS[t]);
+    if (scars.length) {
+      const sl = el('ul', 'cards');
+      for (const id of scars) { const { kind, nodes } = cardInner(id), li = el('li', `ccard ${kind}`); li.append(...nodes); sl.append(li); }
+      box.append(head(tCap('scars')), sl);
     }
-    box.append(el('h4', null, tCap('recent')));
-    if (!c.notes?.length) box.append(el('p', 'dim', tCap('noRecent')));
-    else {
+    if (c.notes?.length) {
+      box.append(head(tCap('recent')));
       const ul = el('ul', 'notes');
       for (const n of c.notes) {
         const li = el('li', n.d > 0 ? 'up' : 'down');
@@ -995,7 +1056,6 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (key === capDlgKey) return;
     capDlgKey = key;
     $('mcapdlg-kicker').textContent = issue.deadline == null ? tIssue('decision') : `${tIssue('decision')} · ${tIssue('deadline', { duration: duration(issue.deadline) })}`;
-    $('mcapdlg-time').textContent = tIssue(running ? 'running' : 'paused');
     $('mcapdlg-title').textContent = issue.title;
     $('mcapdlg-detail').textContent = issue.detail ?? '';
     $('mcapdlg-consequence').textContent = issue.consequence ?? '';
@@ -1003,8 +1063,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     box.textContent = '';
     for (const a of issue.actions) {
       const b = el('button', 'decision-choice'); b.type = 'button'; b.dataset.act = a.id;
-      if (issue.type === 'capitao-evolucao') b.append(el('span', 'rar', tCap(`rarity.${TRAITS[a.id].rarity}`)), el('b', null, a.label),
-        el('small', 'gain', `${tCap('gain')}: ${a.gain}`), el('small', 'cost', `${tCap('cost')}: ${a.cost}`));
+      if (issue.type === 'capitao-evolucao') { const { kind, nodes } = cardInner(a.id); b.classList.add('ccard', kind); b.append(...nodes); }   // a mesma carta da ficha
       else { b.append(el('b', null, a.label)); if (a.info) b.append(el('small', null, a.info)); }
       const why = capBlocked(issue, a.id);
       if (why) { b.disabled = true; b.append(el('small', 'cost', why)); }
@@ -1038,7 +1097,8 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (diaryOpen()) renderDiary();
     const busy = flow.phase !== 'mapa' || map3d?.failed === true;
     for (const b of $('map').querySelectorAll('#mbot [data-act], #m-time [data-speed], #m-pause')) b.disabled = busy;
-    if (busy && running) pause();
+    if (busy) { paused = true; holding = false; }   // batalha, fim ou mapa falhado: no regresso o tempo está parado e a ordem fica
+    if (syncClock()) { renderTop(); renderStatus(); }
   }
 
   // --- reconhecimento ---
@@ -1052,10 +1112,10 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   function openDiary(tab) {
     if (!active || !flow || decisionOverlay) return;
     diaryOpener = doc.activeElement; if (tab) diaryTab = tab;
-    $('mdiary').classList.remove('hidden'); pause();
+    $('mdiary').classList.remove('hidden'); render();
     $('mdiary-tabs').querySelector('[aria-selected="true"]')?.focus?.();
   }
-  function closeDiary() { if (!diaryOpen()) return; $('mdiary').classList.add('hidden'); diaryOpener?.focus?.(); diaryOpener = null; }
+  function closeDiary() { if (!diaryOpen()) return; $('mdiary').classList.add('hidden'); diaryOpener?.focus?.(); diaryOpener = null; render(); }
   function renderDiary() {
     for (const b of $('mdiary-tabs').querySelectorAll('[role="tab"]')) { const on = b.dataset.tab === diaryTab; b.setAttribute('aria-selected', on ? 'true' : 'false'); b.tabIndex = on ? 0 : -1; }
     const body = $('mdiary-body'); body.textContent = ''; body.setAttribute('aria-labelledby', `mdiary-tab-${diaryTab}`);
@@ -1232,6 +1292,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   // --- botões ---
   $('m-ambush').addEventListener('click', () => { if (active && flow?.phase === 'mapa') setStance('esperar'); });
   $('m-hide').addEventListener('click', () => { if (active && flow?.phase === 'mapa') setStance('esconder'); });
+  $('m-camp').addEventListener('click', () => { if (active && flow?.phase === 'mapa') setStance('acampar'); });
   $('m-recon').addEventListener('click', () => { if (active && flow?.phase === 'mapa') setMode('reconhecer'); });
   $('m-diary').addEventListener('click', () => (diaryOpen() ? closeDiary() : openDiary()));
   $('mdiary-close').addEventListener('click', closeDiary);
@@ -1241,8 +1302,8 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const j = e.key === 'ArrowRight' ? (i + 1) % tabs.length : e.key === 'ArrowLeft' ? (i - 1 + tabs.length) % tabs.length : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : -1;
     if (j < 0) return; e.preventDefault(); diaryTab = tabs[j].dataset.tab; renderDiary(); tabs[j].focus();
   });
-  $('m-pause').addEventListener('click', () => { if (active && flow?.phase === 'mapa') pause(); });
-  for (const b of $('m-time').querySelectorAll('[data-speed]')) b.addEventListener('click', () => { if (active && flow?.phase === 'mapa') play(Number(b.dataset.speed)); });
+  $('m-pause').addEventListener('click', () => { if (!active || flow?.phase !== 'mapa') return; if (running) pause(); else if (ordered()) play(); });
+  for (const b of $('m-time').querySelectorAll('[data-speed]')) b.addEventListener('click', () => { if (active && flow?.phase === 'mapa') setSpeed(Number(b.dataset.speed)); });
   $('m-int-go').addEventListener('click', () => { play(); if (running) $('m-pause').focus(); });
   $('m-review').addEventListener('click', () => {
     const issue = nextTribute() ?? pendingTributes()[0];
@@ -1311,7 +1372,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
       const ent = localizedChronicleEntry('vetilio', i18n), line = ent.text.split(/(?<=\.)\s+/).find(x => x.includes('Periochae')) || ent.title;
       const c = doc.createElement('cite'); c.textContent = ent.citation;
       chron.append(line, c);
-    } else if (!won) chron.textContent = 'Os montes ficaram em silêncio.';
+    }
     if (!e.dataset.shown) { e.dataset.shown = '1'; $('mend-new').focus?.(); }
   }
   function launchTactical() {
@@ -1404,7 +1465,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (!flow || cronOpen()) return;
     cronOpener = opener || doc.activeElement;
     $('mcron').classList.remove('hidden');
-    pause(); renderChronicle();
+    renderChronicle(); if (active) render(); else syncClock();
     $('mcron-list').scrollTop = 0;
     $('mcron-list').firstElementChild?.focus?.();
   }
@@ -1412,6 +1473,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (!cronOpen()) return;
     $('mcron').classList.add('hidden');
     cronOpener?.focus?.(); cronOpener = null;
+    if (active) render(); else syncClock();
   }
   $('m-cronica').addEventListener('click', () => { if (active && flow) openChronicle($('m-cronica')); });
   $('mend-cronica').addEventListener('click', () => { if (active && flow?.phase === 'fim') openChronicle($('mend-cronica')); });
@@ -1442,8 +1504,16 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   const typing = e => /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName ?? '');
   win.addEventListener('keydown', e => {
     if (!active || !flow || decisionOverlay || cronOpen() || diaryOpen() || typing(e)) return;
-    // Espaço pausa e retoma em todo o mapa; num botão qualquer carrega nele, salvo nos do tempo (aí também alterna)
-    if (e.code === 'Space' && flow.phase === 'mapa' && (e.target?.tagName !== 'BUTTON' || e.target.closest?.('#m-time'))) { e.preventDefault(); if (running) pause(); else play(); return; }
+    // Espaço contextual (num botão qualquer carrega nele, salvo nos do tempo): com uma ordem em curso pausa ou retoma; com o
+    // bando parado, premido, espera ao relento até o largar. Cada pressão decide uma vez o que faz (`space`) e ignora a
+    // repetição automática: a mesma pressão nunca pausa a marcha e começa a esperar.
+    if (e.code === 'Space' && flow.phase === 'mapa' && (e.target?.tagName !== 'BUTTON' || e.target.closest?.('#m-time'))) {
+      e.preventDefault();
+      if (e.repeat || space) return;
+      if (ordered()) { space = 'toggle'; if (running) paused = true; else resume(); }
+      else { space = 'hold'; resume(); holding = true; }
+      render(); return;
+    }
     if (flow.phase !== 'mapa') return;
     // setas: um dia de marcha para norte/sul/este/oeste como destino (o mapa também se joga sem rato)
     const dir = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.code];
@@ -1451,6 +1521,11 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     e.preventDefault();
     const p = flow.state.party;
     setDest({ x: p.x + dir[0] * MARCH_SPEED, y: p.y + dir[1] * MARCH_SPEED });
+  });
+  win.addEventListener('keyup', e => {   // largar o Espaço acaba a espera ao relento (mesmo com um painel ou campo à frente)
+    if (e.code !== 'Space') return;
+    const was = space; space = null;
+    if (was === 'hold' && holding) { holding = false; if (active && flow) render(); else syncClock(); }
   });
   win.addEventListener('keydown', e => {
     if (!active || !decisionOverlay || tacticalArena) return;
@@ -1486,11 +1561,11 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     reconClick = null;
     flow = f; active = true; selected = null; log.length = 0; logDirty = true; lastSaid = null; repeat = 1;
     stopMarch(); shown = null; hover = null; facing = 1; trail.length = 0; mode = null; dest = null; stance = null;
+    paused = false; holding = false; space = null;   // ao abrir, o bando está parado: o tempo não passa até haver ordem
     memory = {}; interrupt = []; dismissed = new Set(); flash = {}; focus = null; issuesKey = ''; ctxKey = '';
     detectInterruptions({ state: flow.state, events: [], memory });   // o que já se sabe ao abrir não interrompe
     $('mcron').classList.add('hidden'); cronOpener = null; $('mdiary').classList.add('hidden'); setSide(!narrow());
-    const welcome = flow.state.day ? 'continued' : 'welcome';
-    log.push(() => tMap(welcome, { men: WIN_MEN, fame: WIN_FAME }));
+    if (!flow.state.day) log.push(() => tMap('welcome', { men: WIN_MEN, fame: WIN_FAME }));
     if (!flow.state.day) {
       const initial = flow.state.intel?.reports?.find(r => r.src === 'inicio' && r.got <= flow.state.day);
       if (initial) log.push(reportText(initial, flow.state));
@@ -1520,7 +1595,8 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     open, close, render, order, openChronicle, closeChronicle, openDiary, closeDiary, simulateBattle, suspend, battleDone,
     select: id => { if (id) pick(id); else { selected = null; render(); } }, view: () => view,
     /** O tempo: pause(), play(n?) com n em SPEEDS, e o estado. step() dá um dia com a ordem permanente (testes). */
-    pause, play, step: () => step(standingOrder({ dest, stance })), get running() { return running; }, get speed() { return speed; },
+    pause, play, setSpeed, step: () => step(standingOrder({ dest, stance })), get running() { return running; }, get speed() { return speed; },
+    get paused() { return paused; }, get holding() { return holding; }, get activity() { return activity(); },
     get dest() { return dest; }, get stance() { return stance; }, get interrupt() { return interrupt.slice(); },
     get flow() { return flow; }, get active() { return active; }, mapMetrics: () => map3d?.metrics(),
     hasSave: () => !!loadFlow(storage),

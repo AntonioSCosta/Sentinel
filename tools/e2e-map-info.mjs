@@ -22,7 +22,7 @@ for (const vp of [{ width: 1366, height: 768 }, { width: 1280, height: 800 }, { 
   for (const id of ['m-date', 'm-pause', 'm-men', 'm-food', 'm-arms']) { const b = await box('#' + id); check(`${tag}: «${id}» à vista na barra de cima`, inside(b, vp), fmt(b)); }
   for (const s of [1, 2, 4]) { const b = await box(`[data-speed="${s}"]`); check(`${tag}: ${s}× à vista`, inside(b, vp), fmt(b)); }
   const bot = await page.evaluate(() => [...document.querySelectorAll('#mbot > button')].map(b => b.textContent.trim()));
-  check(`${tag}: a barra de baixo tem só Emboscar, Esconder, Reconhecer e Diário (o «Ir» saiu: marchar é o clique no mapa)`, bot.join('|') === 'Emboscar|Esconder|Reconhecer|Diário', bot.join('|'));
+  check(`${tag}: a barra de baixo tem só Acampar, Emboscar, Esconder, Reconhecer e Diário (sem «Ir»: marchar é o clique no mapa)`, bot.join('|') === 'Acampar|Emboscar|Esconder|Reconhecer|Diário', bot.join('|'));
   for (const id of ['m-ambush', 'm-hide', 'm-recon', 'm-diary']) { const b = await box('#' + id); check(`${tag}: «${id}» à vista`, inside(b, vp), fmt(b)); }
   const hint = await page.evaluate(() => [...document.querySelectorAll('div')].some(d => /ENTER para saltar/.test(d.textContent) && d.children.length === 0 && getComputedStyle(d).display !== 'none' && d.getBoundingClientRect().width > 0));
   check(`${tag}: «ENTER para saltar» não aparece no mapa`, !hint);
@@ -32,7 +32,7 @@ for (const vp of [{ width: 1366, height: 768 }, { width: 1280, height: 800 }, { 
   const d = await box('#mdiary .card'), top = await box('#mtop');
   check(`${tag}: o Diário abre e cabe no ecrã`, inside(d, vp), fmt(d));
   const all = await page.evaluate(() => ({ text: document.getElementById('mdiary-body').textContent, tab: document.querySelector('#mdiary-tabs [aria-selected="true"]')?.dataset.tab }));
-  check(`${tag}: abre em «Campanha», com vitória, derrota, fama e primeiros dias`, all.tab === 'campanha' && /Vitória/.test(all.text) && /Derrota/.test(all.text) && /Fama: \d+/.test(all.text) && /Primeiros dias/.test(all.text));
+  check(`${tag}: abre em «Campanha», com vitória, derrota e fama, sem conselhos de tutorial`, all.tab === 'campanha' && /Vitória/.test(all.text) && /Derrota/.test(all.text) && /Fama: \d+/.test(all.text) && !/Primeiros dias/.test(all.text));
   if (OUT) { fs.mkdirSync(OUT, { recursive: true }); await page.screenshot({ path: path.join(OUT, `mapa-diario-${tag}.png`) }); }
   await page.keyboard.press('Escape');
   check(`${tag}: ESC fecha o Diário e fica no mapa`, await page.evaluate(() => document.getElementById('mdiary').classList.contains('hidden') && !document.getElementById('map').classList.contains('hidden')), fmt(top));

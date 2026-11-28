@@ -96,7 +96,6 @@ export const INTERRUPT = {
   comida: d => (d <= 0 ? 'O bando ficou sem comida.' : `Comida do bando só para ${daysText(d)}.`),
   forca: (who, where) => `${who} à vista, a menos de um dia ${where}.`,
   batalha: 'Um encontro pede batalha.',
-  title: 'O tempo parou',
   resume: 'Continuar',
 };
 
@@ -106,14 +105,9 @@ export const UI = {
   foodDays: d => `${daysText(d)}`, foodTip: (food, per) => `${food} de comida; o bando come ${per} por dia`,
   left: n => `faltam ${daysText(n)}`,
   go: 'Ir', ambush: 'Emboscar', hide: 'Esconder', recon: 'Reconhecer', diary: 'Diário',
-  idle: 'Acampado: o bando espera ordens.',
-  goPick: 'Clica no mapa para onde ir (ou numa povoação) · ESC desiste',
   goingTo: (name, days, food) => `Destino: ${name} — ${daysText(days)}, cerca de ${food} de comida.`,
-  waiting: 'Emboscada montada: o bando espera na estrada · clica no mapa para voltar a marchar',
-  waitingFar: 'À espera, mas longe da estrada: daqui não se embosca ninguém · clica no mapa para marchar',
-  hiding: 'O bando está escondido · clica no mapa para voltar a marchar',
   arrived: name => `Chegaste a ${name}.`,
-  issues: 'Assuntos', noIssues: 'Nada espera por ti. O vale segue a sua vida.',
+  issues: 'Assuntos',
   decision: 'Decisão', attention: 'Atenção', deadline: d => (d <= 0 ? 'último dia' : `prazo: ${daysText(d)}`),
   dismiss: 'Dispensar', back: '← Assuntos', close: 'Fechar',
   panel: {

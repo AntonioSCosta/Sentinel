@@ -117,7 +117,8 @@ try {
   const report = await arena.locator('#view').evaluate(() => window.__proto.ui.session.report().data);
   assert.deepEqual([report.outcome, report.lusitanians.dead, report.romans.dead], ['vitoria', 2, 6]);
   data.tacticalReport = report;
-  await arena.locator('#lang').selectOption('pt-PT');
+  assert.equal(await arena.locator('#lang').count(), 0, 'a arena não tem seletor de idioma');
+  await page.evaluate(() => window.__game.i18n.setLocale('pt-PT'));   // como o menu principal: a arena partilha o i18n do jogo
   assert.equal(await arena.locator('h1').textContent(), 'A Emboscada');
   await shot('03-tactical-result');
   await arena.locator('#campaign-return').click();

@@ -122,10 +122,10 @@ function captainIssues(state, i18n) {
 }
 
 /**
- * O que obriga o tempo a parar depois de um dia: um pedido novo (tributo), uma força romana vista hoje a menos de um dia do
- * bando ou de uma aldeia amiga ou comprometida, um encontro que pede batalha, uma mudança de postura e a colheita. Devolve [{ type, text, place? }] (vazio: o tempo continua). Todos os motivos
- * do mesmo dia vêm juntos (uma só interrupção). `memory` (objeto que a interface guarda) evita repetir o mesmo aviso: a
- * mesma força enquanto continua perto. A comida é apenas rastreada para avisos no log.
+ * O que obriga o tempo a parar depois de um dia: só encontros militares e decisões obrigatórias (um pedido de tributo novo,
+ * a crise de um capitão ou o desertor, uma batalha). Devolve [{ type, text, place? }] (vazio: o tempo continua); todos os
+ * motivos do mesmo dia vêm juntos. Avistamentos, mudanças de postura e colheitas não param o tempo: ficam no mapa, no
+ * registo e no Diário. `memory` (objeto que a interface guarda) só rastreia a comida, para os avisos no registo.
  */
 export function detectInterruptions({ state, events = [], memory = {}, battle = null }) {
   const out = [];
@@ -135,25 +135,12 @@ export function detectInterruptions({ state, events = [], memory = {}, battle = 
   };
   for (const ev of events) {
     if (ev.type === 'tributo-exigido') add('pedido', { event: ev }, { place: ev.id });
-    else if (ev.type === 'postura') add('postura', { event: ev }, { place: ev.id });
-    else if (ev.type === 'colheita') add('colheita', { event: ev });
     else if (ev.type === 'capitao' && (ev.what === 'crise' || ev.what === 'desertor')) add('capitao', { event: ev });   // decisões com prazo
   }
   const fd = foodDays(state), low = fd < LOW_FOOD_DAYS;
   // Comida baixa/esgotada é aviso, não uma razão para parar o relógio.
   memory.lowFood = low;
   memory.emptyFood = fd <= 0;
-  const friends = state.communities ? COMMUNITY_IDS.map(id => state.communities[id]).filter(c => alive(c) && (c.posture === 'amiga' || c.posture === 'comprometida')) : [];
-  const was = new Set(memory.near || []), near = [];
-  for (const f of intelView(state).forces) {
-    if (f.age > 0) continue;
-    const byBand = dist(f, state.party) <= NEAR;
-    const friend = byBand ? null : friends.find(c => { const p = placeOf(state, c); return p && dist(f, p) <= NEAR; });
-    if (!byBand && !friend) continue;
-    near.push(f.id);
-    if (!was.has(f.id)) add('forca', { force: f.id, kind: f.kind, nearPlace: friend?.settlement }, { at: { x: f.x, y: f.y } });
-  }
-  memory.near = near;
   if (battle) add('batalha');
   return out;
 }
@@ -168,7 +155,6 @@ export function interruptionText(reason, state, i18n) {
     case 'postura': return t('postura', { name: name(reason.place), to: postureLabel(i18n, ev.to), from: postureLabel(i18n, ev.from) });
     case 'colheita': return t('colheita', { season: i18n.t(`map.season.${ev.season}`), total: ev.total });
     case 'comida': return t(reason.foodDays <= 0 ? 'emptyFood' : 'lowFood', { duration: i18n.t('map.days', { count: reason.foodDays }) });
-    case 'forca': return t(reason.nearPlace ? 'forceByPlace' : 'forceByBand', { who: forceLabel(i18n, reason.kind), name: name(reason.nearPlace) });
     case 'capitao': return i18n.t(`map.captains.stop.${ev.what}`, { name: ev.name });
     default: return t('batalha');
   }

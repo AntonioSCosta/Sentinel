@@ -127,9 +127,15 @@ async function replay(legacy) {
       await page.locator(`#campaign-map-3d [data-id="${march.place.id}"]`).evaluate(button => button.click());
       assert.equal(await page.evaluate(() => window.__game.campaign.flow.state.day), 3);
       await page.locator('#m-time [data-speed="1"]').click();
+      await page.waitForTimeout(2000);
+      assert.deepEqual(await page.evaluate(() => [window.__game.campaign.flow.state.day, window.__game.campaign.running]), [3, false],
+        'parado, mudar a velocidade não faz passar tempo');
+      await page.locator('#m-camp').click();   // acampar é a ação explícita que faz passar o tempo com o bando parado
       await page.waitForFunction(() => window.__game.campaign.flow.state.day >= 4);
       await page.locator('#m-pause').click();
       assert.equal(await page.evaluate(() => window.__game.campaign.running), false);
+      await page.locator('#m-camp').click();
+      assert.equal(await page.evaluate(() => [window.__game.campaign.stance, window.__game.campaign.running].join()), ',false');
       await checkReconClicks(page);
       await page.setViewportSize({ width: 844, height: 390 });
       if (!await page.locator('#mside').isVisible()) await page.locator('#m-side-toggle').click();

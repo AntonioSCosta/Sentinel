@@ -11,6 +11,7 @@ import { ensureDoctrine } from '../src/campaign/doctrine.js';
 import { COMMUNITY_IDS, IDENTITY, postureFor, margin } from '../src/campaign/communities.js';
 import { punish, burn, ensureRome, TRIBUTE } from '../src/campaign/rome.js';
 import { MARCH_SPEED } from '../src/campaign/simulation.js';
+import { intelView } from '../src/campaign/intel.js';
 import { placeName, POSTURE_LABEL, SITUATION_LABEL } from '../src/campaign/strings.js';
 import { postureSnapshot, postureChanges, record, validJournal, JOURNAL_MAX, categoryOf } from '../src/campaign/journal.js';
 import { buildIssues, detectInterruptions, foodDays, interruptionText, LOW_FOOD_DAYS, RECENT_DAYS } from '../src/campaign/issues.js';
@@ -216,24 +217,30 @@ test('o idioma muda os textos da decisão e da mesma interrupção sem mudar o e
   const locale = createI18n({ languages: ['en'] });
   const events = [{ type: 'tributo-exigido', id: vau.settlement, food: 6, day: 4 }, { type: 'colheita', season: 'outono', total: 9 }];
   const reasons = detectInterruptions({ state, events });
+  const harvest = { type: 'colheita', event: events[1] };   // a colheita já não interrompe, mas o registo usa o mesmo texto
   const [en] = buildIssues(state, journal, { i18n: locale });
   assert.match(en.title, /Rome demands tribute from Vau Village/);
-  assert.match(interruptionText(reasons[1], state, locale), /autumn harvest added 9 food/);
+  assert.match(interruptionText(reasons[0], state, locale), /Rome has demanded tribute from Vau Village/);
+  assert.match(interruptionText(harvest, state, locale), /autumn harvest added 9 food/);
   locale.setLocale('pt-PT');
   const [pt] = buildIssues(state, journal, { i18n: locale });
   assert.match(pt.title, /Roma exige tributo a Aldeia do Vau/);
-  assert.match(interruptionText(reasons[1], state, locale), /colheita de outono acrescentou 9/);
+  assert.match(interruptionText(harvest, state, locale), /colheita de outono acrescentou 9/);
   assert.deepEqual([en.key, en.deadline, en.actions.map(a => a.id)], [pt.key, pt.deadline, pt.actions.map(a => a.id)]);
   assert.equal(JSON.stringify({ state, journal }), before);
 });
 
 // ——— interrupções ———
 
-test('interrupções: tributo exigido, postura e colheita agrupados; comida não interrompe', () => {
+test('interrupções: só o tributo exigido para o tempo; postura, colheita e comida não interrompem', () => {
   const f = quietFlow(), s = f.state, id = s.communities.vau.settlement;
   const mem = {};
   const r = detectInterruptions({ state: s, events: [{ type: 'tributo-exigido', id, food: 5, day: 10 }, { type: 'postura', id, community: 'vau', from: 'amiga', to: 'neutra' }, { type: 'colheita', season: 'primavera', total: 9, villages: [] }, { type: 'espera' }], memory: mem });
-  assert.deepEqual(r.map(x => x.type), ['pedido', 'postura', 'colheita']);
+  assert.deepEqual(r.map(x => x.type), ['pedido']);
+  assert.deepEqual(detectInterruptions({ state: s, events: [{ type: 'postura', id, community: 'vau', from: 'amiga', to: 'neutra' }, { type: 'colheita', season: 'primavera', total: 9, villages: [] }], memory: {} }), [], 'postura e colheita são informação: não param o tempo');
+  for (const what of ['crise', 'desertor']) {
+    assert.deepEqual(detectInterruptions({ state: s, events: [{ type: 'capitao', what, id: 'c1', name: 'Caturo' }], memory: {} }).map(x => x.type), ['capitao'], `decisão obrigatória do capitão (${what}) para o tempo`);
+  }
   s.food = foodPerDay(s.men) * 2; // 2 dias de comida: baixa, mas não esgotada.
   assert.equal(foodDays(s), 2);
   assert.deepEqual(detectInterruptions({ state: s, events: [], memory: mem }).map(x => x.type), [], 'comida baixa nunca interrompe');
@@ -250,22 +257,15 @@ test('interrupções: tributo exigido, postura e colheita agrupados; comida não
   assert.deepEqual(detectInterruptions({ state: s, events: [], memory: mem }), [], 'nova quebra não interrompe');
 });
 
-test('interrupções: força conhecida a menos de um dia do bando ou de uma aldeia amiga, uma vez por aproximação', () => {
-  const f = quietFlow(), s = f.state, mem = {};
+test('interrupções: uma força avistada perto do bando ou de uma aldeia amiga não para o tempo (fica no mapa)', () => {
+  const f = quietFlow(), s = f.state;
   s.intel.known = { p1: { kind: 'patrulha', x: s.party.x + MARCH_SPEED - 1, y: s.party.y, day: s.day, men: 6 } };
-  assert.deepEqual(detectInterruptions({ state: s, events: [], memory: mem }).map(x => x.type), ['forca']);
-  assert.deepEqual(detectInterruptions({ state: s, events: [], memory: mem }), [], 'a mesma força, ainda perto: não repete');
-  s.intel.known.p1.x = s.party.x + 400; detectInterruptions({ state: s, events: [], memory: mem });
-  s.intel.known.p1.x = s.party.x + 10;
-  assert.deepEqual(detectInterruptions({ state: s, events: [], memory: mem }).map(x => x.type), ['forca'], 'afastou-se e voltou');
-  const g = quietFlow(), t = g.state, m2 = {}, v = place(t, 'vau'); t.party = { x: 0, y: 0 };
-  be(t.communities.vau, 'receosa');
+  assert.deepEqual(detectInterruptions({ state: s, events: [{ type: 'avistamento', id: 'p1', kind: 'patrulha' }], memory: {} }), []);
+  assert.ok(intelView(s).forces.some(x => x.id === 'p1'), 'a força continua no mapa');
+  const g = quietFlow(), t = g.state, v = place(t, 'vau'); t.party = { x: 0, y: 0 };
+  be(t.communities.vau, 'amiga');
   t.intel.known = { p2: { kind: 'patrulha', x: v.x + 10, y: v.y, day: t.day, men: 6 } };
-  assert.deepEqual(detectInterruptions({ state: t, events: [], memory: m2 }), [], 'perto de uma aldeia receosa não interrompe');
-  be(t.communities.vau, 'amiga'); t.intel.known.p2.day = t.day;
-  assert.deepEqual(detectInterruptions({ state: t, events: [], memory: {} }).map(x => x.type), ['forca']);
-  t.intel.known.p2.day = t.day - 1;
-  assert.deepEqual(detectInterruptions({ state: t, events: [], memory: {} }), [], 'só avistamentos de hoje');
+  assert.deepEqual(detectInterruptions({ state: t, events: [], memory: {} }), []);
 });
 
 test('interrupções: uma batalha pedida interrompe', () => {
