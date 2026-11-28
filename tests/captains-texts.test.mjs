@@ -74,3 +74,11 @@ test('a ficha não fala de habilidades que ainda não existem', () => {
     assert.equal(catalogs[locale].map['captains.inBattle'], undefined);
   }
 });
+
+test('a interface geral diz «companheiros»: «capitão» fica para a função militar (nenhum texto geral o usa hoje)', () => {
+  for (const locale of ['en', 'pt-PT']) {
+    const bad = Object.entries(catalogs[locale].map).filter(([key, text]) => key.startsWith('captains.') && /capit[ãa]|captain/i.test(String(text)));
+    assert.deepEqual(bad, [], `${locale}: textos gerais que ainda falam em capitães`);
+    assert.match(catalogs[locale].map['captains.title'], locale === 'en' ? /^Companions$/ : /^Companheiros$/);
+  }
+});

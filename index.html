@@ -74,50 +74,8 @@
   #mctx .motives{list-style:none;margin:0;padding:0;font-size:15px;line-height:1.3}
   #mctx .motives li{margin:2px 0}#mctx .motives .sign{display:inline-block;width:16px}#mctx .motives .up .sign{color:#a9d08a}#mctx .motives .down .sign{color:#ff9a7a}
   #mctx .motives small,#mctx .dim{color:var(--dim)}
-  /* capitães: selos discretos no rodapé, ficha no painel lateral, escolhas num painel temporário */
-  #m-captains{display:flex;align-items:center;gap:6px;flex:none}
-  #m-captains:empty{display:none}
-  #m-captains .cap{position:relative;flex:none;width:38px;height:38px;min-height:0;min-width:0;padding:3px;border:0;border-radius:50%;background:conic-gradient(var(--ring,#d8b25e) calc(var(--l,60) * 1%),#3a2e22 0);cursor:pointer}
-  #m-captains .cap .face{display:flex;align-items:center;justify-content:center;width:100%;height:100%;border-radius:50%;background:radial-gradient(circle at 35% 30%,#3d2e1e,#16110b 70%);color:#e9d29c}
-  #m-captains .cap svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
-  #m-captains .cap .lvl{position:absolute;right:-4px;bottom:-3px;min-width:14px;padding:0 2px;border:1px solid #6a5238;border-radius:7px;background:#16110b;color:var(--gold);font:9px/12px 'Cinzel',serif;letter-spacing:0}
-  #m-captains .cap .dot{position:absolute;top:-1px;right:-1px;width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 2px #100d0a}
-  #m-captains .cap.crisis .dot{background:var(--red)}
-  #m-captains .cap.reserve{opacity:.5;filter:grayscale(.7)}
-  #m-captains .cap[aria-pressed="true"]{outline:2px solid var(--gold);outline-offset:2px}
-  #m-captains .cap:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
-  @media (max-width:550px){   /* no telemóvel os selos saem do rodapé (que fica como estava) para uma doca pequena sobre o mapa */
-    #mcap{padding-bottom:64px}   /* a ficha rola até libertar a doca dos selos */
-    #m-captains{position:absolute;right:8px;bottom:calc(var(--map-compact-footer,56px) + 8px);z-index:2;gap:4px;padding:4px;border:1px solid #4a3a2a;border-radius:22px;background:rgba(16,13,10,.88)}
-    #m-captains .cap{width:32px;height:32px;padding:2px}#m-captains .cap svg{width:15px;height:15px}#m-captains .cap .lvl{display:none}}
-  /* A ficha do capitão e as cartas (a mesma moldura na ficha e na escolha ao subir de nível). A cor da moldura acompanha a raridade; o rótulo está sempre em texto. */
+  /* A ficha e as cartas (a mesma moldura na ficha e na escolha ao subir de nível). A cor da moldura acompanha a raridade; o rótulo está sempre em texto. */
   .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-  #mcap{padding:10px 16px 16px;border-left:2px solid var(--gold)}
-  #mcap .back{min-height:32px;padding:2px 10px;font-family:'EB Garamond',serif;font-size:15px;letter-spacing:0}
-  #mcap .head{display:flex;align-items:center;gap:12px;margin:12px 0 6px}
-  #mcap .seal{position:relative;flex:none;width:60px;height:60px;padding:4px;border-radius:50%;background:conic-gradient(var(--ring,#d8b25e) calc(var(--l,60) * 1%),#3a2e22 0)}
-  #mcap .seal .face{display:flex;align-items:center;justify-content:center;width:100%;height:100%;border-radius:50%;background:radial-gradient(circle at 35% 30%,#3d2e1e,#16110b 70%);color:#e9d29c}
-  #mcap .seal svg{width:28px;height:28px}
-  #mcap .seal .lvl{position:absolute;right:-4px;bottom:-2px;min-width:16px;padding:0 4px;border:1px solid #6a5238;border-radius:8px;background:#16110b;color:var(--gold);font:11px/15px 'Cinzel',serif;text-align:center}
-  #mcap svg{fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
-  #mcap h3{margin:0;font-family:'Cinzel',serif;color:var(--gold);font-size:20px;font-weight:400}#mcap h3:focus{outline:none}
-  #mcap .sub{margin:1px 0 0;color:var(--dim);font-size:15px;line-height:1.3}
-  #mcap .meter{display:grid;grid-template-columns:72px 1fr auto;align-items:center;gap:8px;margin:6px 0 0;font-size:14px;color:var(--dim)}
-  #mcap .meter b{font-weight:400;color:var(--ink)}
-  #mcap .bar{display:block;height:5px;background:#2a2119;border:1px solid #4a3a2a}#mcap .bar i{display:block;height:100%}
-  #mcap h4{display:flex;justify-content:space-between;font-family:'Cinzel',serif;font-size:12px;letter-spacing:.18em;color:var(--dim);text-transform:uppercase;margin:16px 0 7px;font-weight:400}
-  #mcap h4 span{letter-spacing:.06em}
-  #mcap p{margin:3px 0;font-size:15px;line-height:1.3}#mcap .dim{color:var(--dim)}
-  #mcap .fx{list-style:none;margin:0;padding:0}
-  #mcap .fx li{display:flex;gap:6px;margin:2px 0;font-size:14.5px;line-height:1.28}
-  #mcap .fx i{flex:none;width:12px;font-style:normal;text-align:center}
-  #mcap .fx.gain li{color:#d9e3bf}#mcap .fx.gain i{color:#a9d08a}
-  #mcap .fx.cost li{color:#e6c9a8}#mcap .fx.cost i{color:#ff9a7a}
-  #mcap .plaque{display:flex;gap:10px;padding:9px 10px;border:1px solid #4a3a2a;border-radius:3px;background:linear-gradient(180deg,#1f1810,#17120c)}
-  #mcap .plaque .med{flex:none;width:34px;height:34px;border-radius:50%;border:1px solid #6a5238;display:flex;align-items:center;justify-content:center;color:#e9d29c}
-  #mcap .plaque .med svg{width:18px;height:18px}
-  #mcap .plaque b{display:block;margin-bottom:2px;font:400 13px 'Cinzel',serif;letter-spacing:.08em;color:var(--ink)}
-  #mcap .cards,#mcap .notes{list-style:none;margin:0;padding:0}
   .ccard{--edge:#a07c4e;--glyph:#e9d29c;position:relative;display:flex;gap:10px;padding:10px 10px 9px 12px;margin:0 0 8px;border:1px solid var(--edge);border-radius:6px;
     background:radial-gradient(120% 90% at 0% 0%,rgba(224,166,74,.10),transparent 60%),linear-gradient(180deg,#2a2016,#1b150e)}
   .ccard::before,.ccard::after{content:'';position:absolute;width:7px;height:7px;border:1px solid var(--edge);transform:rotate(45deg);background:#16110b}
@@ -133,8 +91,107 @@
   .ccard .t small{font:10px 'Cinzel',serif;letter-spacing:.14em;text-transform:uppercase;color:var(--edge)}
   .ccard.slot{min-height:46px;align-items:center;border-style:dashed;background:none;color:#6a5238;font:12px 'Cinzel',serif;letter-spacing:.14em}
   .ccard.slot::before,.ccard.slot::after{display:none}
-  #mcap .notes li{font-size:14px;margin:2px 0}#mcap .notes .up b{color:#a9d08a}#mcap .notes .down b{color:#ff9a7a}#mcap .notes b{font-weight:400;display:inline-block;min-width:28px}
-  #mcap .act{margin:8px 0 0}#mcap .act button{display:block;width:100%;min-height:40px;padding:6px 12px;font-family:'EB Garamond',serif;font-size:17px;letter-spacing:0;text-align:left}#mcap .act small{display:block;color:var(--dim);font-size:14px;margin-top:3px}
+  /* Companheiros: botão no extremo direito da barra e painel ascendente (lista + ficha). As cartas são o elemento principal. */
+  #m-comp[aria-pressed="true"]{border-color:var(--gold);background:#2a2016;color:var(--gold)}
+  #m-break{display:none}
+  #m-tray{position:absolute;right:0;bottom:var(--map-compact-footer,56px);z-index:2;box-sizing:border-box;width:min(900px,100%);
+    height:min(440px,calc(100% - var(--map-compact-header,48px) - var(--map-compact-footer,56px) - 12px));display:grid;grid-template-columns:244px minmax(0,1fr);
+    background:rgba(16,13,10,.985);border:1px solid #4a3a2a;border-top:2px solid var(--gold);border-bottom:0;box-shadow:0 -12px 30px rgba(0,0,0,.5)}
+  #m-tray.hidden{display:none}
+  #m-tray *{box-sizing:border-box}
+  #m-tray svg{fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+  #m-tray .roster{overflow-y:auto;border-right:1px solid #3a2e22;padding:8px 8px 10px;display:flex;flex-direction:column;gap:2px;scrollbar-width:thin;scrollbar-color:#4a3a2a transparent}
+  #m-tray .rrow{flex:none;display:flex;align-items:center;gap:10px;width:100%;min-height:0;padding:6px 8px 6px 7px;background:none;border:1px solid transparent;border-left:3px solid transparent;border-radius:0;color:var(--ink);text-align:left;font:inherit;letter-spacing:0;cursor:pointer}
+  #m-tray .rrow:hover{background:#1c150f}
+  #m-tray .rrow[aria-pressed="true"]{background:#241b12;border-left-color:var(--gold)}
+  #m-tray .rrow:focus-visible,#m-tray .foot button:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}
+  #m-tray .rrow .who{min-width:0}
+  #m-tray .rrow b{display:block;font:400 15px 'Cinzel',serif;letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #m-tray .rrow small{display:block;color:var(--dim);font-size:13.5px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #m-tray .rrow.reserve{opacity:.6}
+  #m-tray .roster hr{flex:none;width:calc(100% - 16px);margin:6px 8px;border:0;border-top:1px solid #33281d}
+  #m-tray .seal{position:relative;flex:none;width:40px;height:40px;padding:3px;border-radius:50%;background:conic-gradient(var(--ring,#d8b25e) calc(var(--l,60) * 1%),#3a2e22 0)}
+  #m-tray .seal .face{display:flex;align-items:center;justify-content:center;width:100%;height:100%;border-radius:50%;background:radial-gradient(circle at 35% 30%,#3d2e1e,#16110b 70%);color:#e9d29c}
+  #m-tray .seal svg{width:19px;height:19px}
+  #m-tray .seal .lvl{position:absolute;right:-4px;bottom:-3px;min-width:14px;padding:0 3px;border:1px solid #6a5238;border-radius:7px;background:#16110b;color:var(--gold);font:9px/12px 'Cinzel',serif;text-align:center}
+  #m-tray .seal .dot{position:absolute;top:-1px;right:-1px;width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 2px #100d0a}
+  #m-tray .seal .dot.red{background:var(--red)}
+  #m-tray .seal.big{width:60px;height:60px;padding:4px}#m-tray .seal.big svg{width:28px;height:28px}#m-tray .seal.big .lvl{font-size:11px;line-height:15px;min-width:16px}
+  #m-tray .detail{overflow-y:auto;padding:12px 20px 14px;scrollbar-width:thin;scrollbar-color:#4a3a2a transparent}
+  #m-tray .dhead{display:flex;align-items:center;gap:14px;margin-bottom:2px}
+  #m-tray h3{margin:0;font:400 21px 'Cinzel',serif;color:var(--gold)}
+  #m-tray .sub{margin:1px 0 0;color:var(--dim);font-size:15px}
+  #m-tray .meters{margin-left:auto;display:grid;gap:5px;width:min(230px,42%)}
+  #m-tray .meter{display:grid;grid-template-columns:64px 1fr auto;align-items:center;gap:8px;font-size:14px;color:var(--dim)}
+  #m-tray .meter b{font-weight:400;color:var(--ink)}
+  #m-tray .bar{display:block;height:5px;background:#2a2119;border:1px solid #4a3a2a}#m-tray .bar i{display:block;height:100%}
+  #m-tray h4{display:flex;justify-content:space-between;margin:12px 0 6px;font:400 12px 'Cinzel',serif;letter-spacing:.18em;color:var(--dim);text-transform:uppercase}
+  #m-tray h4 span{letter-spacing:.06em}
+  #m-tray .fx{list-style:none;margin:0;padding:0}
+  #m-tray .fx li{display:flex;gap:6px;margin:2px 0;font-size:14.5px;line-height:1.28}
+  #m-tray .fx i{flex:none;width:12px;font-style:normal;text-align:center}
+  #m-tray .fx.gain li{color:#d9e3bf}#m-tray .fx.gain i{color:#a9d08a}
+  #m-tray .fx.cost li{color:#e6c9a8}#m-tray .fx.cost i{color:#ff9a7a}
+  #m-tray .nature{position:relative;display:flex;gap:12px;margin-top:10px;padding:7px 12px 6px;border:1px solid #4a3a2a;border-radius:3px;background:linear-gradient(180deg,#1f1810,#17120c)}
+  #m-tray .nature>div{flex:1;min-width:0}
+  #m-tray .nature .med{flex:none;width:30px;height:30px;border-radius:50%;border:1px solid #6a5238;display:flex;align-items:center;justify-content:center;color:#e9d29c}
+  #m-tray .nature .med svg{width:17px;height:17px}
+  #m-tray .nature b{display:block;margin-bottom:1px;font:400 13px 'Cinzel',serif;letter-spacing:.08em}
+  #m-tray .nature em{position:absolute;top:7px;right:12px;font:normal 10px 'Cinzel',serif;letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+  #m-tray .nature .two{display:grid;grid-template-columns:1fr 1fr;gap:0 18px}
+  #m-tray .nature .fx li{margin:1px 0;font-size:13.5px;line-height:1.22}
+  #m-tray .cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0;padding:0;list-style:none}
+  #m-tray .ccard{flex-direction:column;gap:6px;min-height:0;margin:0;padding:12px 10px 10px;background:radial-gradient(120% 80% at 50% 0%,rgba(224,166,74,.13),transparent 62%),linear-gradient(180deg,#2a2016,#1b150e)}
+  #m-tray .ccard::before,#m-tray .ccard::after{left:50%;margin-left:-4px}
+  #m-tray .ccard.cicatriz{background:radial-gradient(120% 80% at 50% 0%,rgba(200,56,42,.14),transparent 62%),linear-gradient(180deg,#26160f,#1a110c)}
+  #m-tray .ccard .med{align-self:center;width:46px;height:46px}
+  #m-tray .ccard .med svg{width:25px;height:25px}
+  #m-tray .ccard .cbody{flex:none;min-width:0}
+  #m-tray .ccard .t{display:block;text-align:center;margin-bottom:3px}
+  #m-tray .ccard .t b{display:block;font:400 15px/1.2 'Cinzel',serif;letter-spacing:.04em;color:var(--ink)}
+  #m-tray .ccard .t small{display:block;margin-top:2px}
+  #m-tray .ccard.slot{min-height:150px;border-style:dashed;background:none;align-items:center;justify-content:center;color:#6a5238;font:13px 'Cinzel',serif;letter-spacing:.16em}
+  #m-tray .cards.scars{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #m-tray .cards.scars .ccard{flex-direction:row;align-items:flex-start;padding:10px 12px}
+  #m-tray .cards.scars .ccard .med{align-self:flex-start;width:38px;height:38px}#m-tray .cards.scars .ccard .med svg{width:21px;height:21px}
+  #m-tray .cards.scars .ccard .t{text-align:left}
+  #m-tray .cards.scars .ccard::before,#m-tray .cards.scars .ccard::after{left:14px;margin:0}
+  #m-tray .foot{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-top:14px}
+  #m-tray .notes{list-style:none;margin:0;padding:0;font-size:14px}
+  #m-tray .notes li{margin:2px 0}#m-tray .notes b{display:inline-block;min-width:28px;font-weight:400}
+  #m-tray .notes .up b{color:#a9d08a}#m-tray .notes .down b{color:#ff9a7a}#m-tray .notes .dim{color:var(--dim)}
+  #m-tray .foot button{flex:none;min-height:36px;padding:5px 14px;background:none;border:1px solid #6a5238;color:var(--ink);font:16px 'EB Garamond',serif;letter-spacing:0}
+  #m-tray .foot button:disabled{opacity:.55;cursor:not-allowed}
+  @media (max-width:900px) and (min-height:481px){   /* estreito: a lista em linha por cima da ficha */
+    #m-tray{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}
+    #m-tray .roster{flex-direction:row;overflow-x:auto;overflow-y:hidden;border-right:0;border-bottom:1px solid #3a2e22;padding:8px;gap:4px}
+    #m-tray .rrow{flex-direction:column;gap:3px;width:78px;padding:6px 4px;border-left-width:1px;border-bottom:3px solid transparent;text-align:center}
+    #m-tray .rrow[aria-pressed="true"]{border-left-color:transparent;border-bottom-color:var(--gold)}
+    #m-tray .rrow small{display:none}#m-tray .rrow b{font-size:12px;max-width:100%}
+    #m-tray .roster hr{display:none}
+    #m-tray .meters{width:180px}
+  }
+  @media (max-width:640px){   /* telemóvel: cartas logo a seguir ao cabeçalho, a natureza inata por baixo */
+    #m-tray .cards{grid-template-columns:1fr}
+    #m-tray .ccard{flex-direction:row;align-items:flex-start}
+    #m-tray .ccard .med{align-self:flex-start}#m-tray .ccard .t{text-align:left}
+    #m-tray .ccard::before,#m-tray .ccard::after{left:14px;margin:0}
+    #m-tray .cards.scars{grid-template-columns:1fr}
+    #m-tray .nature .two{grid-template-columns:1fr}
+    #m-tray .dhead{flex-wrap:wrap}#m-tray .meters{width:100%;margin-left:0}
+    #m-tray .detail{padding:12px 14px 14px;display:flex;flex-direction:column}
+    #m-tray .detail>*{flex:none}
+    #m-tray .nature{order:3;margin-top:14px}#m-tray .foot{order:4}
+  }
+  @media (max-height:480px){   /* paisagem baixa: lista à esquerda, cartas logo a seguir ao cabeçalho */
+    #m-tray{grid-template-columns:196px minmax(0,1fr)}
+    #m-tray .rrow small{display:none}
+    #m-tray .detail{display:flex;flex-direction:column;padding:10px 16px 12px}
+    #m-tray .detail>*{flex:none}
+    #m-tray .nature{order:3;margin-top:12px}#m-tray .foot{order:4}
+    #m-tray .seal.big{width:48px;height:48px}#m-tray .seal.big svg{width:23px;height:23px}
+    #m-tray h3{font-size:19px}
+  }
   #mcapdlg .decision-choice.ccard{display:flex;gap:10px;width:100%;margin:0 0 10px;padding:10px 10px 9px 12px;border-color:var(--edge);background:radial-gradient(120% 90% at 0% 0%,rgba(224,166,74,.10),transparent 60%),linear-gradient(180deg,#2a2016,#1b150e);text-align:left}
   #mcapdlg .decision-choice.ccard.cicatriz{background:radial-gradient(120% 90% at 0% 0%,rgba(200,56,42,.12),transparent 60%),linear-gradient(180deg,#26160f,#1a110c)}
   #mcapdlg .decision-choice.ccard:hover,#mcapdlg .decision-choice.ccard:focus-visible{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
@@ -525,7 +582,6 @@
       <ol id="missues-list"></ol>
     </section>
     <section id="mctx" class="hidden" role="region" aria-label="Povoação" data-i18n-aria="map.a11y.settlement"></section>
-    <section id="mcap" class="hidden" role="region" aria-label="Capitão" aria-labelledby="mcap-name"></section>
   </aside>
   <footer id="mbot">
     <button type="button" data-act="acampar" id="m-camp" aria-pressed="false" data-i18n="map.camp">Acampar</button>
@@ -533,9 +589,11 @@
     <button type="button" data-act="esconder" id="m-hide" aria-pressed="false" data-i18n="map.hide">Esconder</button>
     <button type="button" data-act="reconhecer" id="m-recon" aria-pressed="false" data-i18n="map.scout">Reconhecer</button>
     <span id="m-status" class="hint" role="status"></span>
-    <div id="m-captains" role="group" aria-label="Capitães do bando" data-i18n-aria="map.captains.a11y"></div>
+    <span id="m-break" aria-hidden="true"></span>
     <button type="button" id="m-diary" aria-haspopup="dialog" data-i18n="map.diary">Diário</button>
+    <button type="button" id="m-comp" aria-expanded="false" aria-pressed="false" aria-controls="m-tray" data-i18n="map.captains.title">Companheiros</button>
   </footer>
+  <section id="m-tray" class="hidden" data-panel="companions" role="region" aria-label="Companheiros" data-i18n-aria="map.captains.title"></section>
   <div id="mdiary" class="hidden" role="dialog" aria-modal="true" aria-labelledby="mdiary-title"><div class="card">
     <p class="kicker">A CAMPANHA DE 147 A.C.</p><h2 id="mdiary-title">Diário</h2>
     <div id="mdiary-tabs" role="tablist" aria-label="Secções do Diário">

@@ -502,7 +502,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
       memory.emptyFood = empty;
     }
     // Encontro ou decisão obrigatória: pára (a ordem fica, para retomar com Continuar ou Espaço; a espera ao relento acaba).
-    if (reasons.length || flow.phase !== 'mapa') { interrupt = reasons.filter(x => x.type !== 'batalha'); tributeNotice = null; paused = true; holding = false; }
+    if (reasons.length || flow.phase !== 'mapa') { interrupt = reasons.filter(x => x.type !== 'batalha'); tributeNotice = null; paused = true; holding = false; trayOpen = false; }   // as decisões passam à frente do painel
     syncClock(true);   // uma ordem dada a meio de um dia reinicia o relógio: o dia seguinte vem um dia inteiro depois, não o que faltava
     render();
     return r;
@@ -546,12 +546,13 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   const COMMUNITY_KEYS = () => Object.values(flow.state.communities).map(c => `${c.situation}${c.due?.day ?? ''}${c.food}`).join('|');
   function sideOpen() { return !$('mside').classList.contains('closed'); }
   function setSide(on) {
+    if (on && narrow() && trayOpen) { trayOpen = false; trayKey = ''; }
     $('mside').classList.toggle('closed', !on);
     $('m-side-toggle').setAttribute('aria-expanded', on ? 'true' : 'false');
     if (map3d) schedulePaint();
   }
   function renderIssues() {
-    const box = $('missues'), list = $('missues-list'), panel = !!((selected || capSelected) && flow.phase === 'mapa');
+    const box = $('missues'), list = $('missues-list'), panel = !!(selected && flow.phase === 'mapa');
     box.classList.toggle('hidden', panel);
     const items = currentIssues();
     const key = `${issuesKey}:${items.map(i => i.key).join('|')}`;
@@ -738,7 +739,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   // --- painel da povoação escolhida ---
   function pick(id) {
     if (!active || !flow || flow.phase !== 'mapa') return;
-    selected = id; capSelected = null; if (narrow()) setSide(true);
+    selected = id; trayOpen = false; if (narrow()) setSide(true);   // um de cada vez: o painel da povoação fecha o dos companheiros
     render();
     $('mctx').querySelector('h3')?.focus?.();
   }
@@ -887,7 +888,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     }));
   }
 
-  // --- capitães (captains.js): selos no rodapé, ficha no painel lateral, decisões num painel temporário ---
+  // --- companheiros (captains.js): painel ascendente da barra inferior, decisões num painel temporário ---
   const tCap = (key, params) => tMap(`captains.${key}`, params);
   const ROMAN = ['', 'I', 'II', 'III', 'IV'];
   const GLYPH = {   // traço de pena, na cor do bronze: lua, funda, martelo, saco, chama, elmo
@@ -930,7 +931,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     const body = el('span', 'cbody'); body.append(head, fxList(tCap(`traitGain.${id}`), 'gain'), fxList(tCap(`traitCost.${id}`), 'cost'));
     return { kind, nodes: [med, body] };
   }
-  let capSelected = null, capKey = null, capsKey = '', capPanelKey = '', capDlgKey = '';
+  let capSelected = null, capKey = null, capDlgKey = '', trayOpen = false, trayKey = '', trayFocus = null, trayFor = null;   // capSelected: o último companheiro consultado
   const capOf = id => flow.state.captains?.find(c => c.id === id) ?? null;
   const ringOf = l => (l <= CAPTAIN_RULES.loyalty.crisis ? '#c8382a' : l < 50 ? '#c07a32' : '#d8b25e');
   const capName = id => tCap(`archetype.${id}`);
@@ -939,104 +940,113 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     return tCap(`log.${key}`, { ...ev, archetype: ev.archetype ? capName(ev.archetype) : '', card: ev.card ? tCap(`trait.${ev.card}`) : '',
       scar: ev.scar ? tCap(`trait.${ev.scar}`) : '', fame: ev.fame > 0 ? `+${ev.fame}` : ev.fame });
   }
-  function selectCaptain(id) {
-    if (!active || !flow || flow.phase !== 'mapa') return;
-    capSelected = id;
-    if (id) { selected = null; if (narrow()) setSide(true); }
+  // --- Companheiros: painel ascendente da barra inferior (lista e ficha). As decisões e os acontecimentos continuam nos Assuntos. ---
+  // Abrir, fechar ou consultar o painel não mexe no relógio (marcha, velocidade, pausa): `syncClock` não o conhece.
+  /** O companheiro aberto: o último consultado ou, se já não está no bando, o primeiro disponível. */
+  const currentCompanion = () => { const list = flow.state.captains || []; return list.find(c => c.id === capSelected) ?? list[0] ?? null; };
+  function setTray(on) {
+    on = !!on && active && flow?.phase === 'mapa' && !decisionOverlay && !!currentCompanion();
+    if (on === trayOpen) return;
+    trayOpen = on;
+    if (on) { capSelected = currentCompanion().id; selected = null; if (narrow()) setSide(false); trayFocus = capSelected; }   // um de cada vez: o painel da povoação e este dividem a coluna
     render();
-    if (id) { $('mside').scrollTop = 0; $('mcap').querySelector('h3')?.focus?.({ preventScroll: true }); }   // a ficha abre sempre vista de cima
-    else $('m-captains').querySelector('.cap')?.focus?.();
+    if (!on) $('m-comp').focus?.({ preventScroll: true });
   }
-  /** Os selos: um por capitão, com a lealdade no anel, o nível e um ponto quando há uma decisão dele à espera. */
-  function renderCaptains() {
-    const box = $('m-captains'), list = flow.state.captains || [];
-    const key = JSON.stringify([i18n.locale, capSelected, list.map(c => [c.id, c.level, c.loyalty, c.active, !!c.offer, !!c.crisis, c.traits.length])]);
-    if (key === capsKey) return;
-    capsKey = key;
-    const had = box.contains(doc.activeElement) ? doc.activeElement.dataset.cap : null;
-    box.textContent = '';
-    for (const c of list) {
-      const b = el('button', `cap${c.active ? '' : ' reserve'}${c.crisis ? ' crisis' : ''}`); b.type = 'button'; b.dataset.cap = c.id;
-      b.style.setProperty('--l', c.loyalty); b.style.setProperty('--ring', ringOf(c.loyalty));
-      const status = c.crisis ? tCap('issue.crisis', { name: c.name }) : c.offer ? tCap('pending') : null;
-      const head = tCap(c.active ? 'tip' : 'tipReserve', { name: c.name, archetype: capName(c.archetype), level: c.level, loyalty: c.loyalty, cards: cardsOf(c).length, max: CAPTAIN_RULES.cards.maxTraits });
-      b.title = [head, status, tCap(`passive.${c.archetype}`).split('\n')[0]].filter(Boolean).join('\n');
-      b.setAttribute('aria-label', [head, status].filter(Boolean).join(' · '));
-      b.setAttribute('aria-pressed', capSelected === c.id ? 'true' : 'false');
-      const face = el('span', 'face'); face.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${GLYPH[c.archetype]}</svg>`;
-      b.append(face, el('span', 'lvl', ROMAN[c.level]));
-      if (c.offer || c.crisis) b.append(el('span', 'dot'));
-      b.addEventListener('click', () => selectCaptain(capSelected === c.id ? null : c.id));
-      box.append(b);
-    }
-    if (had) box.querySelector(`[data-cap="${CSS_ESC(had)}"]`)?.focus?.();
+  function selectCaptain(id) {
+    if (!trayOpen || !(flow.state.captains || []).some(c => c.id === id)) return;
+    capSelected = id; trayFocus = id;
+    render();
   }
-  /** A ficha do capitão escolhido, no lugar dos assuntos: cabeçalho, natureza inata, cartas (e cicatrizes) e o que lhe mexeu na lealdade. */
-  function renderCaptain() {
-    const box = $('mcap'), c = capSelected && flow.phase === 'mapa' ? capOf(capSelected) : null;
-    if (capSelected && !c) capSelected = null;
-    box.classList.toggle('hidden', !c);
-    if (!c) { capPanelKey = ''; return; }
-    const full = !c.active && activeCaptains(flow.state).length >= CAPTAIN_RULES.active;
-    const pending = currentIssues().filter(i => i.captain === c.id);
-    const key = JSON.stringify([i18n.locale, c, full, flow.state.day, pending.map(i => i.key)]);
-    if (key === capPanelKey) return;
-    capPanelKey = key;
-    box.textContent = '';
-    const head = (title, note) => { const h = el('h4', null, title); if (note) h.append(el('span', null, note)); return h; };
-    const back = el('button', 'back', tCap('back')); back.type = 'button'; back.addEventListener('click', () => selectCaptain(null));
-    const seal = el('span', 'seal'); seal.style.setProperty('--l', c.loyalty); seal.style.setProperty('--ring', ringOf(c.loyalty));
-    const face = el('span', 'face'); face.innerHTML = svgOf(GLYPH[c.archetype]);
-    seal.append(face, el('span', 'lvl', ROMAN[c.level]));
-    const h = el('h3', null, c.name); h.id = 'mcap-name'; h.tabIndex = -1;
-    const who = el('div', 'who'); who.append(h, el('p', 'sub', `${capName(c.archetype)} · ${c.active ? tCap('active') : tCap('reserve')}`));
-    const top = el('div', 'head'); top.append(seal, who);
-    box.append(back, top);
-    const meter = (label, fraction, color, value) => {
-      const row = el('div', 'meter'), bar = el('span', 'bar'), fill = el('i'); fill.style.width = `${fraction * 100}%`; fill.style.background = color; bar.append(fill);
-      row.append(el('span', null, label), bar, el('b', null, value)); return row;
+  /** O painel: a lista (selo com anel de lealdade, nível e um ponto se há decisão à espera) e a ficha do escolhido, com as cartas em destaque. */
+  function renderTray() {
+    const tray = $('m-tray'), btn = $('m-comp'), list = flow.state.captains || [];
+    // uma decisão obrigatória ou a batalha passam à frente: o painel fecha-se
+    if (trayOpen && (flow.phase !== 'mapa' || tributeKey || capKey || !list.length)) trayOpen = false;
+    btn.classList.toggle('hidden', !list.length);
+    btn.setAttribute('aria-pressed', trayOpen ? 'true' : 'false'); btn.setAttribute('aria-expanded', trayOpen ? 'true' : 'false');
+    const c = trayOpen ? currentCompanion() : null;
+    tray.classList.toggle('hidden', !c);
+    if (!c) { trayKey = ''; trayFor = null; return; }
+    capSelected = c.id;
+    const key = JSON.stringify([i18n.locale, c.id, list, flow.state.day]);
+    if (key === trayKey) return;
+    trayKey = key;
+    const had = trayFocus ?? (tray.contains(doc.activeElement) ? doc.activeElement.dataset.cap ?? null : null);
+    const hadToggle = tray.contains(doc.activeElement) && doc.activeElement.classList.contains('tgl');
+    const rosterTop = tray.querySelector('.roster')?.scrollTop ?? 0, detailTop = trayFor === c.id ? tray.querySelector('.detail')?.scrollTop ?? 0 : 0;
+    trayFor = c.id; trayFocus = null;
+    const seal = (x, big) => {
+      const sl = el('span', `seal${big ? ' big' : ''}`); sl.style.setProperty('--l', x.loyalty); sl.style.setProperty('--ring', ringOf(x.loyalty));
+      const face = el('span', 'face'); face.innerHTML = svgOf(GLYPH[x.archetype]);
+      sl.append(face, el('span', 'lvl', ROMAN[x.level]));
+      if (x.crisis || x.offer) sl.append(el('span', x.crisis ? 'dot red' : 'dot'));
+      return sl;
     };
-    const next = CAPTAIN_RULES.xp.levels[c.level - 1];
-    box.append(meter(tCap('loyaltyLabel'), c.loyalty / 100, ringOf(c.loyalty), c.loyalty),
+    // a lista: os ativos primeiro e, por baixo, a reserva (só mais discreta); rola se houver muitos
+    const roster = el('div', 'roster'); roster.setAttribute('role', 'group'); roster.setAttribute('aria-label', tCap('title'));
+    const row = x => {
+      const b = el('button', `rrow${x.active ? '' : ' reserve'}`); b.type = 'button'; b.dataset.cap = x.id; b.setAttribute('aria-pressed', x.id === c.id ? 'true' : 'false');
+      const who = el('span', 'who'); who.append(el('b', null, x.name), el('small', null, `${capName(x.archetype)} · ${ROMAN[x.level]}`));
+      b.append(seal(x, false), who);
+      const status = x.crisis ? tCap('issue.crisis', { name: x.name }) : x.offer ? tCap('pending') : null;
+      if (status) b.append(el('span', 'sr', status));
+      b.addEventListener('click', () => selectCaptain(x.id));
+      return b;
+    };
+    const on = list.filter(x => x.active), off = list.filter(x => !x.active);
+    for (const x of on) roster.append(row(x));
+    if (on.length && off.length) roster.append(el('hr'));
+    for (const x of off) roster.append(row(x));
+    roster.addEventListener('keydown', e => {   // as setas percorrem a lista
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const rows = [...roster.querySelectorAll('.rrow')], at = rows.findIndex(r => r.dataset.cap === c.id), to = rows[at + (e.key === 'ArrowDown' ? 1 : -1)];
+      if (to) { e.preventDefault(); selectCaptain(to.dataset.cap); }
+    });
+    // a ficha
+    const detail = el('div', 'detail'), full = !c.active && activeCaptains(flow.state).length >= CAPTAIN_RULES.active;
+    const head = (title, note) => { const h = el('h4', null, title); if (note) h.append(el('span', null, note)); return h; };
+    const h = el('h3', null, c.name); h.id = 'm-tray-name';
+    const who = el('div'); who.append(h, el('p', 'sub', `${capName(c.archetype)} · ${c.active ? tCap('active') : tCap('reserve')}`));
+    const meter = (label, fraction, color, value) => {
+      const r = el('div', 'meter'), bar = el('span', 'bar'), fill = el('i'); fill.style.width = `${fraction * 100}%`; fill.style.background = color; bar.append(fill);
+      r.append(el('span', null, label), bar, el('b', null, value)); return r;
+    };
+    const next = CAPTAIN_RULES.xp.levels[c.level - 1], meters = el('div', 'meters');
+    meters.append(meter(tCap('loyaltyLabel'), c.loyalty / 100, ringOf(c.loyalty), c.loyalty),
       meter(tCap('level', { level: ROMAN[c.level] }), next === undefined ? 1 : c.xp / next, '#8a6a42', next === undefined ? tCap('xpMax') : tCap('xpPair', { xp: c.xp, next })));
-    for (const i of pending) {
-      const row = el('div', 'act'), b = el('button', null, i.type === 'capitao-evolucao' ? tCap('pending') : tCap('resolve'));
-      b.type = 'button'; b.setAttribute('aria-haspopup', 'dialog'); b.addEventListener('click', () => openCapDecision(i.key));
-      row.append(b, el('small', null, i.title)); box.append(row);
-    }
-    // a natureza do arquétipo: inata, numa placa, para não se confundir com as cartas que a progressão dá
-    const plaque = el('div', 'plaque'), pm = el('span', 'med'), pb = el('span', 'cbody');
+    const top = el('div', 'dhead'); top.append(seal(c, true), who, meters); detail.append(top);
+    // a natureza do arquétipo: inata, numa placa fina, para não se confundir com as cartas que a progressão dá
+    const plaque = el('div', 'nature'), pm = el('span', 'med'), pb = el('div'), two = el('div', 'two');
     pm.innerHTML = svgOf(GLYPH[c.archetype]);
-    pb.append(el('b', null, capName(c.archetype)), fxList(tCap(`passive.${c.archetype}`), 'gain'), fxList(tCap(`costs.${c.archetype}`), 'cost'));
-    plaque.append(pm, pb);
-    box.append(head(tCap('nature'), tCap('natureNote')), plaque);
-    // as cartas (até ao máximo; as ranhuras livres ficam vazias) e, à parte, as cicatrizes
-    const cards = cardsOf(c), max = CAPTAIN_RULES.cards.maxTraits, list = el('ul', 'cards');
-    for (const id of cards) { const { kind, nodes } = cardInner(id), li = el('li', `ccard ${kind}`); li.append(...nodes); list.append(li); }
-    for (let n = cards.length; n < max; n++) { const li = el('li', 'ccard slot', ROMAN[n + 1]); li.setAttribute('aria-label', tCap('slot')); list.append(li); }
-    box.append(head(tCap('cards'), tCap('cardsOf', { n: cards.length, max })), list);
+    two.append(fxList(tCap(`passive.${c.archetype}`), 'gain'), fxList(tCap(`costs.${c.archetype}`), 'cost'));
+    pb.append(el('em', null, `${tCap('nature')} · ${tCap('natureNote')}`), el('b', null, capName(c.archetype)), two);
+    plaque.append(pm, pb); detail.append(plaque);
+    // as cartas, o elemento principal (as ranhuras livres ficam vazias) e, à parte, as cicatrizes
+    const cards = cardsOf(c), max = CAPTAIN_RULES.cards.maxTraits, grid = el('ul', 'cards');
+    for (const id of cards) { const { kind, nodes } = cardInner(id), li = el('li', `ccard ${kind}`); li.append(...nodes); grid.append(li); }
+    for (let n = cards.length; n < max; n++) { const li = el('li', 'ccard slot', ROMAN[n + 1]); li.setAttribute('aria-label', tCap('slot')); grid.append(li); }
+    detail.append(head(tCap('cards'), tCap('cardsOf', { n: cards.length, max })), grid);
     const scars = c.traits.filter(t => SCARS[t]);
     if (scars.length) {
-      const sl = el('ul', 'cards');
+      const sl = el('ul', 'cards scars');
       for (const id of scars) { const { kind, nodes } = cardInner(id), li = el('li', `ccard ${kind}`); li.append(...nodes); sl.append(li); }
-      box.append(head(tCap('scars')), sl);
+      detail.append(head(tCap('scars')), sl);
     }
-    if (c.notes?.length) {
-      box.append(head(tCap('recent')));
-      const ul = el('ul', 'notes');
-      for (const n of c.notes) {
-        const li = el('li', n.d > 0 ? 'up' : 'down');
-        li.append(el('b', null, `${n.d > 0 ? '+' : '−'}${Math.abs(n.d)}`), ` ${tCap(`why.${n.why}`)}`);
-        if (n.day !== flow.state.day) li.append(el('span', 'dim', ` · ${tIssue('ago', { duration: duration(flow.state.day - n.day) })}`));
-        ul.append(li);
-      }
-      box.append(ul);
+    const foot = el('div', 'foot'), notes = el('ul', 'notes'); notes.setAttribute('aria-label', tCap('recent'));
+    for (const n of c.notes || []) {
+      const li = el('li', n.d > 0 ? 'up' : 'down');
+      li.append(el('b', null, `${n.d > 0 ? '+' : '−'}${Math.abs(n.d)}`), ` ${tCap(`why.${n.why}`)}`);
+      if (n.day !== flow.state.day) li.append(el('span', 'dim', ` · ${tIssue('ago', { duration: duration(flow.state.day - n.day) })}`));
+      notes.append(li);
     }
-    const row = el('div', 'act'), toggle = el('button', null, c.active ? tCap('toReserve') : tCap('toBand'));
-    toggle.type = 'button';
-    if (full) { toggle.disabled = true; row.append(toggle, el('small', null, tCap('full'))); }
-    else { toggle.addEventListener('click', () => { flow.setCaptainActive(c.id, !c.active); render(); }); row.append(toggle); }
-    box.append(row);
+    const toggle = el('button', 'tgl', c.active ? tCap('toReserve') : tCap('toBand')); toggle.type = 'button';
+    if (full) { toggle.disabled = true; toggle.title = tCap('full'); }
+    else toggle.addEventListener('click', () => { flow.setCaptainActive(c.id, !c.active); render(); });
+    foot.append(notes, toggle); detail.append(foot);
+    tray.replaceChildren(roster, detail);
+    roster.scrollTop = rosterTop; detail.scrollTop = detailTop;
+    if (had) tray.querySelector(`.rrow[data-cap="${CSS_ESC(had)}"]`)?.focus?.({ preventScroll: true });
+    else if (hadToggle) tray.querySelector('.tgl')?.focus?.({ preventScroll: true });
   }
   function openCapDecision(key) {
     if (!active || flow.phase !== 'mapa' || decisionOverlay || !currentIssues().some(i => i.key === key)) return;
@@ -1092,7 +1102,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
       logTimer = win.setTimeout?.(() => { logTimer = 0; $('mlog').classList.add('faded'); }, LOG_MS) ?? 0;
     }
     renderBattle(); renderEnd(); renderTribute(); renderStateStrip(); renderIssues(); renderContext(); renderTip();
-    renderCaptains(); renderCaptain(); renderCapDialog();
+    renderTray(); renderCapDialog();
     syncDecisionOverlay(flow.phase === 'batalha' ? $('mbattle') : tributeKey ? $('mtribute') : capKey ? $('mcapdlg') : null);
     if (diaryOpen()) renderDiary();
     const busy = flow.phase !== 'mapa' || map3d?.failed === true;
@@ -1293,6 +1303,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
   $('m-ambush').addEventListener('click', () => { if (active && flow?.phase === 'mapa') setStance('esperar'); });
   $('m-hide').addEventListener('click', () => { if (active && flow?.phase === 'mapa') setStance('esconder'); });
   $('m-camp').addEventListener('click', () => { if (active && flow?.phase === 'mapa') setStance('acampar'); });
+  $('m-comp').addEventListener('click', () => setTray(!trayOpen));
   $('m-recon').addEventListener('click', () => { if (active && flow?.phase === 'mapa') setMode('reconhecer'); });
   $('m-diary').addEventListener('click', () => (diaryOpen() ? closeDiary() : openDiary()));
   $('mdiary-close').addEventListener('click', closeDiary);
@@ -1517,7 +1528,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (flow.phase !== 'mapa') return;
     // setas: um dia de marcha para norte/sul/este/oeste como destino (o mapa também se joga sem rato)
     const dir = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.code];
-    if (!dir || e.target?.closest?.('#mside, #mtop, #mbot')) return;
+    if (!dir || e.target?.closest?.('#mside, #mtop, #mbot, #m-tray')) return;
     e.preventDefault();
     const p = flow.state.party;
     setDest({ x: p.x + dir[0] * MARCH_SPEED, y: p.y + dir[1] * MARCH_SPEED });
@@ -1547,7 +1558,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     if (cronOpen()) { closeChronicle(); return; }
     if (diaryOpen()) { closeDiary(); return; }
     if (mode) { mode = null; render(); return; }
-    if (capSelected) { selectCaptain(null); return; }
+    if (trayOpen) { setTray(false); return; }
     if (selected) { unpick(); return; }
     if (narrow() && sideOpen()) { setSide(false); return; }
     close();
@@ -1557,7 +1568,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     tacticalArena?.dispose(); tacticalArena = null; tacticalNotice = null;
     pause();
     syncDecisionOverlay(null); tributeKey = null; tributeNotice = null; tributeContent = ''; deferredTributes.clear();
-    capSelected = null; capKey = null; capsKey = ''; capPanelKey = ''; capDlgKey = '';
+    capSelected = null; capKey = null; capDlgKey = ''; trayOpen = false; trayKey = ''; trayFor = null;
     reconClick = null;
     flow = f; active = true; selected = null; log.length = 0; logDirty = true; lastSaid = null; repeat = 1;
     stopMarch(); shown = null; hover = null; facing = 1; trail.length = 0; mode = null; dest = null; stance = null;
@@ -1597,6 +1608,7 @@ export function createCampaignUI({ document: doc, window: win, storage, onClose 
     /** O tempo: pause(), play(n?) com n em SPEEDS, e o estado. step() dá um dia com a ordem permanente (testes). */
     pause, play, setSpeed, step: () => step(standingOrder({ dest, stance })), get running() { return running; }, get speed() { return speed; },
     get paused() { return paused; }, get holding() { return holding; }, get activity() { return activity(); },
+    get trayOpen() { return trayOpen; }, get companion() { return capSelected; }, openTray: setTray,
     get dest() { return dest; }, get stance() { return stance; }, get interrupt() { return interrupt.slice(); },
     get flow() { return flow; }, get active() { return active; }, mapMetrics: () => map3d?.metrics(),
     hasSave: () => !!loadFlow(storage),

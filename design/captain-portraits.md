@@ -2,6 +2,8 @@
 
 **Estado:** apenas intenção. Nada disto está no jogo nem tem prazo.
 
+Ver também `design/companions-vision.md`: as personagens são «companheiros»; «capitão» é uma função militar possível.
+
 ## Intenção
 
 Os capitães do bando vão ganhar retratos em estilo de **gravura histórica**, inspirados na linguagem artística das cartas de unidades de *Total War: Rome II* (moldura sóbria, figura em tinta e papel, sem cor saturada).

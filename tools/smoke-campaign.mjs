@@ -47,8 +47,8 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
   check('HUD shows men, food autonomy, arms and fame toward the year-end goal', num('m-men') === s.men && /\d+ dias/.test($('m-food').textContent) && $('m-food-raw').textContent.includes(String(s.food)) && num('m-arms') === s.arms && $('m-fame').textContent === `${s.fame} / ${WIN_FAME}`);
   check('HUD shows date and season', $('m-date').textContent.length > 3 && $('m-season').textContent.length > 2);
   check('log is a live status region', $('mlog').getAttribute('role') === 'status');
-  check('the bottom bar has Acampar, Emboscar, Esconder, Reconhecer and Diário (no Ir)', ['m-camp', 'm-ambush', 'm-hide', 'm-recon', 'm-diary'].every(id => $(id)?.tagName === 'BUTTON' && $(id).textContent.trim())
-    && $('mbot').querySelectorAll(':scope > button').length === 5 && !$('m-go'));   // os selos dos capitães vivem em #m-captains
+  check('the bottom bar has Acampar, Emboscar, Esconder, Reconhecer, Diário and Companheiros (no Ir)', ['m-camp', 'm-ambush', 'm-hide', 'm-recon', 'm-diary', 'm-comp'].every(id => $(id)?.tagName === 'BUTTON' && $(id).textContent.trim())
+    && $('mbot').querySelectorAll(':scope > button').length === 6 && !$('m-go'));   // os selos dos capitães vivem em #m-captains
   check('the top bar has no language selector and the map has no title card', !$('map-language') && !$('mtop').querySelector('select'));
   check('the time starts paused, with pause, 1×, 2× and 4×', !G.campaign.running && $('m-pause').getAttribute('aria-pressed') === 'true' && [...$('m-time').querySelectorAll('[data-speed]')].map(b => b.dataset.speed).join() === '1,2,4');
   // um dia sem ordem: o bando acampa (parar é não dar ordem)
@@ -245,31 +245,68 @@ export default async function ({ G, win, doc, check, renderer, st, setGod }) {
     calm(); C.pause(); stand(); C.play(1);
     win.setTimeout = real.st; win.clearTimeout = real.ct; q = [];
   }
-  // A ficha do capitão: natureza inata à parte, cartas (sem contar cicatrizes) com ranhuras vazias, cicatrizes à parte, sem habilidades futuras
-  { const C = G.campaign, cap = s.captains[0], keep = { traits: [...cap.traits], level: cap.level, active: cap.active, offer: cap.offer, lastCard: cap.lastCard };
-    const sheet = patch => { Object.assign(cap, { traits: [], active: true, level: 1 }, patch); delete cap.offer; C.select(null); C.render(); if (!shown('mcap')) $('m-captains').querySelector('.cap').click(); return $('mcap'); };   // o selo alterna: já aberto, fica aberto
-    const SCARRED = ['duro-de-roer', 'olhos-de-coruja', 'conhecedor-dos-trilhos', 'rancor-a-roma', 'mao-ferida'];
-    for (const [name, traits, cards, slots, scars] of [['no cards', [], 0, 3, 0], ['one card', ['duro-de-roer'], 1, 2, 0], ['three cards and two scars', SCARRED, 3, 0, 2]]) {
-      const m = sheet({ traits }), lists = [...m.querySelectorAll('ul.cards')], hs = [...m.querySelectorAll('h4')].map(h => h.textContent).join('|');
-      check(`captain sheet, ${name}: shown, with the innate nature in its own plaque (gain and cost lines)`, shown('mcap') && !!m.querySelector('.plaque .fx.gain li') && !!m.querySelector('.plaque .fx.cost li') && !lists[0].querySelector('.plaque'));
-      check(`captain sheet, ${name}: «${cards} de 3» cards (scars not counted) and ${slots} empty slot(s)`, lists[0].querySelectorAll('.ccard:not(.slot)').length === cards
-        && lists[0].querySelectorAll('.ccard.slot').length === slots && new RegExp(`Cartas${cards} de 3`).test(hs) && !lists[0].querySelector('.cicatriz'));
-      check(`captain sheet, ${name}: ${scars} scar(s) in their own section`, m.querySelectorAll('.ccard.cicatriz').length === scars && /Cicatrizes/.test(hs) === (scars > 0));
-      check(`captain sheet, ${name}: every card has a symbol, a title, a rarity and short «+» and «−» lines`, [...m.querySelectorAll('.ccard:not(.slot)')].every(c => !!c.querySelector('.med svg path,.med svg circle')
-        && c.querySelector('.t b').textContent.length > 2 && c.querySelector('.t small').textContent.length > 2 && c.querySelectorAll('.fx.gain li').length >= 1 && c.querySelectorAll('.fx.cost li').length >= 1));
-      check(`captain sheet, ${name}: no tactical-skill section or «not yet in play» message`, !/Nas emboscadas|ainda não está em jogo|Fumaça e Fogo/.test(m.textContent));
-    }
-    // a escolha de carta usa as mesmas cartas
-    Object.assign(cap, { active: true, level: 2, traits: [], offer: { options: ['conhecedor-dos-trilhos', 'ladrao-de-galinhas', 'olhos-de-coruja'], why: 'nivel' }, lastCard: s.day });
-    G.i18n.setLocale('en'); G.i18n.setLocale('pt-PT'); C.select(null); C.render();
-    if (!shown('mcap')) $('m-captains').querySelector('.cap').click();
-    $('mcap').querySelector('.act button').click();
+  // Companheiros: painel ascendente da barra inferior (lista + ficha com as cartas). Os assuntos e as decisões ficam nos Assuntos.
+  { const C = G.campaign, cap = s.captains[0], keep = { traits: [...cap.traits], level: cap.level, active: cap.active, offer: cap.offer, lastCard: cap.lastCard, crisis: cap.crisis };
+    const tray = () => $('m-tray'), row = id => tray().querySelector(`.rrow[data-cap="${id}"]`), bust = () => { G.i18n.setLocale('en'); G.i18n.setLocale('pt-PT'); };
+    const sheet = patch => {   // abre o painel no companheiro `cap` com este estado
+      Object.assign(cap, { traits: [], active: true, level: 1 }, patch); delete cap.offer; delete cap.crisis;
+      if (C.trayOpen) $('m-comp').click();
+      C.render(); $('m-comp').click(); row(cap.id).click(); return tray();
+    };
+    check('companions: one button at the far right of the bottom bar after Diário; no permanent seals, no sheet in the Issues column',
+      $('mbot').lastElementChild === $('m-comp') && $('m-comp').textContent === 'Companheiros' && $('m-diary').nextElementSibling === $('m-comp') && !$('m-captains') && !$('mcap') && !$('mside').querySelector('.ccard') && !shown('m-tray'));
+    // o painel não mexe no relógio: marcha, velocidade, pausa e dia ficam como estavam
+    $('m-camp').click();
+    const clock = () => JSON.stringify([C.running, C.paused, C.holding, C.speed, !!C.dest, C.stance, s.day]), before = clock();
+    $('m-comp').click(); const opened = shown('m-tray') && $('m-comp').getAttribute('aria-expanded') === 'true';
+    const other = s.captains[1]; row(other.id).click(); $('m-comp').click();
+    check('companions: opening, consulting and closing the panel does not touch the clock (running, pause, speed, march, day)', opened && !shown('m-tray') && C.running && clock() === before);
+    $('m-camp').click(); check('companions: …and the camp can still be turned off', !C.running && C.stance === null);
+    $('m-comp').click();
+    check('companions: it opens on the last companion consulted', shown('m-tray') && row(other.id).getAttribute('aria-pressed') === 'true' && tray().querySelector('h3').textContent === other.name);
+    check('companions: no capacity counter anywhere in the panel', !/\b\d\s*\/\s*[34]\b/.test(tray().textContent) && !/\d+ de [34] (companheiros|capit)/.test(tray().textContent));
+    // o consultado deixa o bando: abre outro
+    const gone = s.captains.splice(s.captains.indexOf(other), 1)[0]; C.render();
+    check('companions: if the one consulted leaves the band, another is selected and the panel stays open', shown('m-tray') && !row(other.id) && tray().querySelector('.rrow[aria-pressed="true"]')?.dataset.cap === s.captains[0].id);
+    s.captains.splice(1, 0, gone); $('m-comp').click();
+    // Esc fecha o painel (e fica no mapa); a povoação e o painel não ficam abertos ao mesmo tempo
+    $('m-comp').click(); win.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'Escape', key: 'Escape' }));
+    check('companions: Esc closes the panel and stays on the map', !shown('m-tray') && C.active && shown('map'));
+    const vill2 = s.world.settlements.find(x => x.kind === 'aldeia'); C.select(vill2.id); $('m-comp').click();
+    check('companions: opening the panel closes the settlement panel, and picking a settlement closes the panel', shown('m-tray') && !shown('mctx') && (C.select(vill2.id), !shown('m-tray') && shown('mctx')));
+    C.select(null);
+    // as decisões passam à frente: a crise e a escolha de carta continuam nos Assuntos, com o painel aberto
+    Object.assign(cap, { crisis: { due: s.day + 3 }, offer: { options: ['conhecedor-dos-trilhos', 'ladrao-de-galinhas', 'olhos-de-coruja'], why: 'nivel' }, lastCard: s.day, active: true, level: 2, traits: [] }); bust(); C.render();
+    $('m-comp').click();
+    const issues = $('missues-list');
+    check('companions: with the panel open, the crisis and the card choice are still listed in Issues', shown('m-tray') && issues.querySelectorAll('li.t-capitao-crise').length === 1 && issues.querySelectorAll('li.t-capitao-evolucao').length === 1);
+    check('companions: the roster marks them with a dot (and a screen-reader label)', !!row(cap.id).querySelector('.seal .dot.red') && !!row(cap.id).querySelector('.sr'));
+    issues.querySelector('li.t-capitao-evolucao .acts button').click();
     const choices = [...$('mcapdlg').querySelectorAll('.decision-choice.ccard')];
-    check('card choice: three cards in the same design, no language selector in the dialog', shown('mcapdlg') && choices.length === 3 && !$('mcapdlg').querySelector('select')
+    check('card choice: opens from Issues, the panel gives way, three cards in the same design, no language selector', shown('mcapdlg') && !shown('m-tray') && choices.length === 3 && !$('mcapdlg').querySelector('select')
       && choices.every(c => !!c.querySelector('.med svg') && c.querySelectorAll('.fx.gain li').length >= 1 && c.querySelectorAll('.fx.cost li').length >= 1));
     choices[0].click();
     check('card choice: choosing still gives the card and closes the offer', cap.traits.join() === 'conhecedor-dos-trilhos' && !cap.offer && !shown('mcapdlg'));
-    Object.assign(cap, keep); if (keep.offer === undefined) delete cap.offer; if (keep.lastCard === undefined) delete cap.lastCard; C.select(null); C.render();
+    delete cap.crisis;
+    // uma exigência de tributo (decisão obrigatória) fecha o painel
+    const vau = s.communities.vau, keepVau = JSON.stringify(vau); C.render(); $('m-comp').click();
+    Object.assign(vau, { situation: 'tributada', due: { day: s.day + 4, food: 6 } }); C.render();
+    check('companions: a mandatory tribute decision takes priority over the panel', shown('mtribute') && !shown('m-tray'));
+    $('mtribute-later').click(); Object.assign(vau, JSON.parse(keepVau)); C.render();
+    // a ficha: 0, 1 e 3 cartas e um companheiro com cicatrizes
+    const SCARRED = ['duro-de-roer', 'olhos-de-coruja', 'conhecedor-dos-trilhos', 'rancor-a-roma', 'mao-ferida'];
+    for (const [name, traits, cards, slots, scars] of [['no cards', [], 0, 3, 0], ['one card', ['duro-de-roer'], 1, 2, 0], ['three cards and two scars', SCARRED, 3, 0, 2]]) {
+      const m = sheet({ traits }), lists = [...m.querySelectorAll('ul.cards:not(.scars)')], hs = [...m.querySelectorAll('h4')].map(h => h.textContent).join('|');
+      check(`companion sheet, ${name}: the innate nature in its own plaque (gain and cost lines)`, shown('m-tray') && !!m.querySelector('.nature .fx.gain li') && !!m.querySelector('.nature .fx.cost li') && !lists[0].querySelector('.nature'));
+      check(`companion sheet, ${name}: «${cards} de 3» cards (scars not counted) and ${slots} empty slot(s)`, lists[0].querySelectorAll('.ccard:not(.slot)').length === cards
+        && lists[0].querySelectorAll('.ccard.slot').length === slots && new RegExp(`Cartas${cards} de 3`).test(hs) && !lists[0].querySelector('.cicatriz'));
+      check(`companion sheet, ${name}: ${scars} scar(s) in their own section`, m.querySelectorAll('.ccard.cicatriz').length === scars && /Cicatrizes/.test(hs) === (scars > 0));
+      check(`companion sheet, ${name}: every card has a symbol, a title, a rarity and short «+» and «−» lines`, [...m.querySelectorAll('.ccard:not(.slot)')].every(c => !!c.querySelector('.med svg path,.med svg circle')
+        && c.querySelector('.t b').textContent.length > 2 && c.querySelector('.t small').textContent.length > 2 && c.querySelectorAll('.fx.gain li').length >= 1 && c.querySelectorAll('.fx.cost li').length >= 1));
+      check(`companion sheet, ${name}: no tactical-skill section or «not yet in play» message`, !/Nas emboscadas|ainda não está em jogo|Fumaça e Fogo/.test(m.textContent));
+    }
+    $('m-comp').click();
+    Object.assign(cap, keep); for (const k of ['offer', 'lastCard', 'crisis']) if (keep[k] === undefined) delete cap[k]; C.select(null); C.render();
   }
   // acampar até haver batalha (máx. 300)
   let n = 0; while (f.phase === 'mapa' && n < 300) { G.campaign.order({ kind: 'acampar' }); n++; }
